@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-const SRC = "https://link.manhaironline.com/widget/bookings/mh-consultation-call";
+const SRC = "https://link.manhaironline.com/widget/booking/wxn5qBpBWtFY1x2DPxa3";
 const FALLBACK_HEIGHT = 760;
 /** GHL only paints time slots beside the month grid above ~1024px. */
 const DESKTOP_WIDGET_WIDTH = 1100;
@@ -105,7 +105,8 @@ export default function BookingEmbed() {
         ref={frameRef}
         src={SRC}
         title="Book a ManHair consultation"
-        id="mh-consultation-call"
+        id="wxn5qBpBWtFY1x2DPxa3_1789554396720"
+        allow="payment"
         scrolling="no"
         className="mh-booking-iframe"
         style={{
