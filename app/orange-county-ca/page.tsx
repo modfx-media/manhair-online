@@ -10,7 +10,7 @@ import { getPageMeta, toMetadata } from "@/lib/pages";
 const PAGE = getPageMeta("/orange-county-ca/")!;
 export const metadata: Metadata = toMetadata(PAGE);
 
-const HERO_IMG = "/wp-content/uploads/2022/05/IMG-4430.jpg";
+const HERO_IMG = "/images/homepage-images/the-london-hair-clinic-17.jpg";
 const MAP =
   "https://maps.google.com/maps?q=Orange+County%2C+CA&t=m&z=10&output=embed&iwloc=near";
 
@@ -18,22 +18,22 @@ const EXPERIENCE = [
   {
     title: "consultation",
     body: "Schedule a free consultation with a hair expert.",
-    img: "/wp-content/uploads/2018/10/1-consult-mens-hair-replacement-min.png",
+    img: "/images/how-it-works/start-600x597.png",
   },
   {
     title: "selection",
     body: "Selection process of the best hair for your lifestyle.",
-    img: "/wp-content/uploads/2018/10/2-selection-mens-hair-replacement-min.png",
+    img: "/images/how-it-works/preparehead-600x597.png",
   },
   {
     title: "fitting",
     body: "Applying your new thick and beautiful manhair system.",
-    img: "/wp-content/uploads/2018/10/3-fitting-mens-hair-system-min.png",
+    img: "/images/how-it-works/applysystem-600x597.png",
   },
   {
     title: "servicing",
     body: "We will handle the maintenance on your unit.",
-    img: "/wp-content/uploads/2018/10/4-servicing-mens-hair-system-min.png",
+    img: "/images/how-it-works/final-600x597.png",
   },
 ];
 

@@ -11,9 +11,10 @@ import { getPageMeta, toMetadata } from "@/lib/pages";
 const PAGE = getPageMeta("/receding-hairline-restoration/")!;
 export const metadata: Metadata = toMetadata(PAGE);
 
-const HERO_IMG = "/wp-content/uploads/2023/02/restore.jpg";
-const IMG_TREATMENT = "/wp-content/uploads/2023/02/treatment.jpg";
-const IMG_REPLACEMENT = "/wp-content/uploads/2023/02/replacemnet.jpg";
+const HERO_IMG =
+  "/images/homepage-images/hairline-hair-systems-before-and-after-new-times-hair.jpg";
+const IMG_TREATMENT = "/images/non-surgical-hair-replacement/2.jpg";
+const IMG_REPLACEMENT = "/images/mens-hair-replacement-systems/4.jpg";
 
 const CTA_TICKER = [
   "Non-Surgical Hair Replacement",

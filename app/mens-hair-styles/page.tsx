@@ -11,9 +11,9 @@ import { getPageMeta, toMetadata } from "@/lib/pages";
 const PAGE = getPageMeta("/mens-hair-styles/")!;
 export const metadata: Metadata = toMetadata(PAGE);
 
-const HERO_IMG = "/wp-content/uploads/2023/02/hair-style.jpg";
-const IMG_INTRO = "/wp-content/uploads/2023/02/hair-1.jpg";
-const IMG_HAIRCUT = "/wp-content/uploads/2023/02/hair-loss.jpg";
+const HERO_IMG = "/images/homepage-images/Warren-Sims-Dallas-Man-weave.jpg";
+const IMG_INTRO = "/images/mens-hairpieces/1.jpg";
+const IMG_HAIRCUT = "/images/mens-toupees/2.jpg";
 
 const CTA_TICKER = [
   "Toupee Hair Systems",

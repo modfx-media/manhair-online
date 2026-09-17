@@ -11,9 +11,9 @@ import { getPageMeta, toMetadata } from "@/lib/pages";
 const PAGE = getPageMeta("/alopecia-hair-loss/")!;
 export const metadata: Metadata = toMetadata(PAGE);
 
-const HERO_IMG = "/wp-content/uploads/2023/02/medical.jpg";
-const IMG_HAIR = "/wp-content/uploads/2023/02/hair.jpg";
-const IMG_CUT = "/wp-content/uploads/2023/02/cut.jpg";
+const HERO_IMG = "/images/mens-hair-units/thinning-image.jpg";
+const IMG_HAIR = "/images/mens-wigs/2.jpg";
+const IMG_CUT = "/images/how-it-works/cutstyle-600x597.png";
 
 const CTA_TICKER = [
   "Get Your Hair Back",

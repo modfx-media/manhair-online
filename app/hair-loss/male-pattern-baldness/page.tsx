@@ -17,7 +17,7 @@ const PAGE = getPageMeta("/hair-loss/male-pattern-baldness/")!;
 export const metadata: Metadata = toMetadata(PAGE);
 
 const HERO_IMG = "/images/mens-hair-replacement-systems/balding.avif";
-const IMG_PATTERN = "/wp-content/uploads/2021/12/63.png";
+const IMG_PATTERN = "/images/mens-hair-replacement-systems/3.jpg";
 
 const CTA_TICKER = [
   "Non-Surgical Hair Replacement",

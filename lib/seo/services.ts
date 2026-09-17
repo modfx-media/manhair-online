@@ -140,7 +140,7 @@ export const SERVICES: Service[] = [
   },
   {
     slug: "mens-hair-systems",
-    image: "/images/homepage-images/6112mHYx3lL._AC_UF1000,1000_QL80_.jpg",
+    image: "/images/homepage-images/mens-hair-systems.jpg",
     name: "Men's Hair Systems",
     primaryKeyword: "hair systems for men near me",
     rationale: "High-volume search term. Distinct page from the pillar.",

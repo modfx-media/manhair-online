@@ -14,8 +14,8 @@ const PHONE_HREF = "tel:8886104799";
 const FACEBOOK = "https://www.facebook.com/ManHairReplacementFranchise";
 const INSTAGRAM = "https://www.instagram.com/manhairreplacementfranchise/";
 
-const HERO_IMG = "/wp-content/uploads/2018/10/header-landing-1024x1024.jpg";
-const IMG_MISSION = "/wp-content/uploads/2018/08/IMG_1207-1024x1024.jpg";
+const HERO_IMG = "/images/homepage-images/unnamed.jpg";
+const IMG_MISSION = "/images/mens-hair-replacement-systems/1.webp";
 
 /* "The advantages of being a Man hair online" — verbatim (incl. live typos). */
 const ADVANTAGES = [
