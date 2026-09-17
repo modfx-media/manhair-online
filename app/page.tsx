@@ -70,6 +70,24 @@ const IMG_CLINIC = "/images/homepage-images/the-london-hair-clinic-17.jpg";
 const IMG_HAIRLINE = "/images/homepage-images/hairline-hair-systems-before-and-after-new-times-hair.jpg";
 const IMG_DASHBOARD = "/images/homepage-images/Warren-Sims-Dallas-Man-weave.jpg";
 
+const HERO_TRUST_AVATARS = [
+  {
+    src: "/images/mens-hair-replacement-systems/4.jpg",
+    alt: "ManHair client",
+    className: "object-cover object-[50%_18%]",
+  },
+  {
+    src: "/images/homepage-images/61N7r4BnlfL._AC_UF1000,1000_QL80_.jpg",
+    alt: "ManHair client",
+    className: "object-cover object-[18%_30%]",
+  },
+  {
+    src: "/images/homepage-images/Warren-Sims-Dallas-Man-weave.jpg",
+    alt: "ManHair client",
+    className: "object-cover object-[78%_18%]",
+  },
+] as const;
+
 const BEFORE_AFTER = HOME_TRANSFORMATIONS;
 
 // Scrolling ticker — trust signals paired station-style.
@@ -449,9 +467,9 @@ export default function HomePage() {
             <Reveal direction="up" delay={0.4}>
               <div className="mh-hero2-trust mt-10">
                 <span className="mh-avatar-stack">
-                  {[TESTIMONIALS[0], TESTIMONIALS[1], TESTIMONIALS[3]].map((t) => (
-                    <span key={t.name} className="relative block h-9 w-9">
-                      <Image src={t.photo!} alt={`${t.name}, ManHair client`} fill sizes="36px" unoptimized className="object-cover" />
+                  {HERO_TRUST_AVATARS.map((a) => (
+                    <span key={a.src} className="relative block h-9 w-9">
+                      <Image src={a.src} alt={a.alt} fill sizes="36px" className={a.className} />
                     </span>
                   ))}
                   <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--mh-copper-500)] font-display text-[0.6rem] font-bold text-[color:var(--mh-on-accent)]">
