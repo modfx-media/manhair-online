@@ -41,7 +41,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const post = getPostBySlug(slug);
   if (!post) return { title: "Not Found" };
-  const preferredTitle = post.heading ?? post.title;
+  const preferredTitle =
+    post.title && post.title !== "Man Hair - Hair Replacement Solutions"
+      ? post.title
+      : (post.heading ?? post.title);
   const description = post.description ?? SITE.brandStatement;
   const url = post.canonical ?? `${SITE.origin}${post.path}`;
   const social = socialMetadata({
