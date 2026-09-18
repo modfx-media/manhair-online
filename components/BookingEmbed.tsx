@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
-const DEFAULT_SRC = "https://link.manhaironline.com/widget/booking/wxn5qBpBWtFY1x2DPxa3";
-const DEFAULT_ID = "wxn5qBpBWtFY1x2DPxa3_1789554396720";
+const DEFAULT_SRC = "https://link.manhaironline.com/widget/booking/443s29oFpvjVoKS0YNbw";
+const DEFAULT_ID = "443s29oFpvjVoKS0YNbw_1789759219236";
 const FALLBACK_HEIGHT = 760;
 /** GHL only paints time slots beside the month grid above ~1024px. */
 const DESKTOP_WIDGET_WIDTH = 1100;

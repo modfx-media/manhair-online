@@ -17,8 +17,8 @@ const PAGE = getPageMeta("/video-call/")!;
 export const metadata: Metadata = toMetadata(PAGE);
 
 const VIDEO_CALENDAR_SRC =
-  "https://api.leadconnectorhq.com/widget/booking/I6Y3roPnfTBqGqYyrB1E";
-const VIDEO_CALENDAR_ID = "I6Y3roPnfTBqGqYyrB1E_1775";
+  "https://link.manhaironline.com/widget/booking/I6Y3roPnfTBqGqYyrB1E";
+const VIDEO_CALENDAR_ID = "I6Y3roPnfTBqGqYyrB1E_1789758886173";
 
 const CHIPS = ["45 minutes", "Private video call", "From anywhere"];
 

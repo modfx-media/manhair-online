@@ -87,7 +87,11 @@ export default function Page() {
                 className="h-1 w-full bg-gradient-to-r from-[color:var(--mh-red-600)] via-[color:var(--mh-copper-500)] to-[color:var(--mh-copper-300)]"
               />
               <h2 className="sr-only">Select a day and time</h2>
-              <BookingEmbed />
+              <BookingEmbed
+                src="https://link.manhaironline.com/widget/booking/443s29oFpvjVoKS0YNbw"
+                id="443s29oFpvjVoKS0YNbw_1789759219236"
+                title="Book a ManHair consultation"
+              />
             </div>
           </div>
         </div>
