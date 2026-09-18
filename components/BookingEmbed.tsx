@@ -2,11 +2,18 @@
 
 import { useEffect, useRef } from "react";
 
-const SRC = "https://link.manhaironline.com/widget/booking/wxn5qBpBWtFY1x2DPxa3";
+const DEFAULT_SRC = "https://link.manhaironline.com/widget/booking/wxn5qBpBWtFY1x2DPxa3";
+const DEFAULT_ID = "wxn5qBpBWtFY1x2DPxa3_1789554396720";
 const FALLBACK_HEIGHT = 760;
 /** GHL only paints time slots beside the month grid above ~1024px. */
 const DESKTOP_WIDGET_WIDTH = 1100;
 const SCALE_FROM = 720;
+
+type BookingEmbedProps = {
+  src?: string;
+  id?: string;
+  title?: string;
+};
 
 /**
  * GoHighLevel consultation calendar.
@@ -15,7 +22,11 @@ const SCALE_FROM = 720;
  * On tablet / smaller laptops we render that desktop layout at 1100px
  * and scale it to the card, so times stay beside the calendar.
  */
-export default function BookingEmbed() {
+export default function BookingEmbed({
+  src = DEFAULT_SRC,
+  id = DEFAULT_ID,
+  title = "Book a ManHair consultation",
+}: BookingEmbedProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const heightRef = useRef(FALLBACK_HEIGHT);
@@ -103,9 +114,9 @@ export default function BookingEmbed() {
     <div ref={wrapRef} className="mh-booking-embed">
       <iframe
         ref={frameRef}
-        src={SRC}
-        title="Book a ManHair consultation"
-        id="wxn5qBpBWtFY1x2DPxa3_1789554396720"
+        src={src}
+        title={title}
+        id={id}
         allow="payment"
         scrolling="no"
         className="mh-booking-iframe"

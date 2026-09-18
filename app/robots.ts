@@ -10,6 +10,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           "/landing-page/",
           "/booking/",
+          "/video-call/",
           "/wp-admin/",
           "/wp-login.php",
         ],

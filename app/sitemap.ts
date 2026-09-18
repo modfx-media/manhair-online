@@ -24,7 +24,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const items: MetadataRoute.Sitemap = [];
 
   for (const p of PAGES) {
-    if (p.path === "/landing-page/" || p.path === "/booking/") continue;
+    if (p.path === "/landing-page/" || p.path === "/booking/" || p.path === "/video-call/") continue;
     items.push({
       url: p.canonical,
       lastModified: now,

@@ -124,6 +124,20 @@ export const PAGES: PageMeta[] = [
     twitterCard: "summary_large_image",
   },
   {
+    path: "/video-call/",
+    title: "Book a 45-Minute Video Consultation | ManHair",
+    description:
+      "Schedule a private 45-minute ManHair video consultation. Pick a time, join from anywhere, and review hairline options face to face.",
+    canonical: `${SITE.origin}/video-call/`,
+    robots: NOINDEX,
+    og: og(
+      "Book a 45-Minute Video Consultation | ManHair",
+      "Schedule a private 45-minute ManHair video consultation. Pick a time, join from anywhere, and review hairline options face to face.",
+      "/video-call/"
+    ),
+    twitterCard: "summary_large_image",
+  },
+  {
     path: "/results/",
     title: "Before & After Results | Men's Hair Replacement | ManHair",
     description:

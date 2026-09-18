@@ -182,6 +182,22 @@ export function ClockIcon(p: IconProps) {
 
 /** Mega-menu row icons — minimal single-stroke line marks. */
 
+export function VideoIcon(p: IconProps) {
+  return (
+    <Base {...p}>
+      <rect x="3" y="7" width="12.5" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M15.5 10.4 21 8v8l-5.5-2.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Base>
+  );
+}
+
 export function CalendarIcon(p: IconProps) {
   return (
     <Base {...p}>
