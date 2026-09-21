@@ -1,17 +1,17 @@
 // One-time build script: generates placeholder reference photos for the
-// /hair-preview/ style gallery via Gemini text-to-image, then points
-// lib/hair-styles.ts at the generated files. Not part of the live
-// request flow in app/api/hair-preview/route.ts.
+// /hair-preview/ style gallery via Pollinations.ai text-to-image (free,
+// no API key), then points lib/hair-styles.ts at the generated files.
+// Not part of the live request flow in app/api/hair-preview/route.ts.
 //
-// Requires GEMINI_API_KEY. Run with:
-//   node --env-file=.env.local scripts/generate-hairstyle-images.ts
+// Run with:
+//   node scripts/generate-hairstyle-images.ts
 
-import { GoogleGenAI, createPartFromText, createUserContent } from "@google/genai";
 import sharp from "sharp";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const MODEL = "gemini-3.1-flash-image";
+const POLLINATIONS_BASE = "https://image.pollinations.ai/prompt/";
+const REQUEST_DELAY_MS = 2000;
 const OUT_DIR = path.join(process.cwd(), "public", "hair-styles");
 const HAIR_STYLES_FILE = path.join(process.cwd(), "lib", "hair-styles.ts");
 
@@ -90,6 +90,10 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Points each style's `image` field at /hair-styles/<id>.webp. */
 async function updateHairStylesFile(generatedIds: Set<string>): Promise<void> {
   let source = await readFile(HAIR_STYLES_FILE, "utf8");
@@ -108,16 +112,7 @@ async function updateHairStylesFile(generatedIds: Set<string>): Promise<void> {
 }
 
 async function main() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error(
-      "GEMINI_API_KEY is not set. Run with: node --env-file=.env.local scripts/generate-hairstyle-images.ts"
-    );
-    process.exit(1);
-  }
-
   await mkdir(OUT_DIR, { recursive: true });
-  const ai = new GoogleGenAI({ apiKey });
   const readyIds = new Set<string>();
 
   for (const style of STYLES) {
@@ -131,20 +126,15 @@ async function main() {
 
     console.log(`[${style.id}] generating "${style.name}"...`);
     try {
-      const response = await ai.models.generateContent({
-        model: MODEL,
-        contents: createUserContent([createPartFromText(style.prompt)]),
-      });
-
-      const part = response.candidates?.[0]?.content?.parts?.find(
-        (p) => p.inlineData?.data
-      );
-      if (!part?.inlineData?.data) {
-        console.error(`[${style.id}] FAILED: Gemini returned no image`);
+      const url = `${POLLINATIONS_BASE}${encodeURIComponent(style.prompt)}?width=1024&height=1024&nologo=true`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error(`[${style.id}] FAILED: Pollinations returned ${response.status} ${response.statusText}`);
+        await sleep(REQUEST_DELAY_MS);
         continue;
       }
 
-      const inputBuffer = Buffer.from(part.inlineData.data, "base64");
+      const inputBuffer = Buffer.from(await response.arrayBuffer());
       const webpBuffer = await sharp(inputBuffer).webp({ quality: 90 }).toBuffer();
       await writeFile(outPath, webpBuffer);
       readyIds.add(style.id);
@@ -153,6 +143,8 @@ async function main() {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[${style.id}] FAILED: ${message}`);
     }
+
+    await sleep(REQUEST_DELAY_MS);
   }
 
   if (readyIds.size > 0) {
