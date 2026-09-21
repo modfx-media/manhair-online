@@ -12,9 +12,12 @@ import {
 import { Button, Card, SectionLabel } from "@/components/ui";
 import { BeforeAfterSlider } from "@/components/BeforeAfterSlider";
 import { cn } from "@/lib/cn";
-import { HAIR_STYLES, type HairStyle } from "@/lib/hair-styles";
+import { HAIR_STYLE_CATEGORIES, HAIR_STYLES, type HairStyle } from "@/lib/hair-styles";
 
 type Status = "idle" | "loading" | "result" | "error";
+type CategoryFilter = "All" | (typeof HAIR_STYLE_CATEGORIES)[number];
+
+const CATEGORY_FILTERS: CategoryFilter[] = ["All", ...HAIR_STYLE_CATEGORIES];
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const GENERIC_ERROR = "Something went wrong generating your preview. Please try again.";
@@ -32,6 +35,7 @@ export function HairPreviewStudio() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [resultImageUrl, setResultImageUrl] = useState<string | null>(null);
   const [consentChecked, setConsentChecked] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<CategoryFilter>("All");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Object URLs must be revoked when replaced/unmounted to avoid leaks.
@@ -103,6 +107,11 @@ export function HairPreviewStudio() {
   const canGenerate =
     Boolean(photoFile && selectedStyleId && consentChecked) && status !== "loading";
 
+  const visibleStyles =
+    activeCategory === "All"
+      ? HAIR_STYLES
+      : HAIR_STYLES.filter((style) => style.category === activeCategory);
+
   const handleGenerate = async () => {
     if (!canGenerate || !photoFile || !selectedStyleId) return;
     setStatus("loading");
@@ -133,8 +142,8 @@ export function HairPreviewStudio() {
   };
 
   return (
-    <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
-      <div className="flex flex-col gap-6">
+    <div className="grid gap-8 lg:grid-cols-[340px_1fr] lg:items-start">
+      <div className="flex flex-col gap-6 lg:sticky lg:top-24">
         <UploadArea
           photoUrl={photoUrl}
           isDragging={isDragging}
@@ -149,20 +158,6 @@ export function HairPreviewStudio() {
 
         <PrivacyConsent checked={consentChecked} onChange={setConsentChecked} />
 
-        <div>
-          <SectionLabel>Choose a style</SectionLabel>
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {HAIR_STYLES.map((style) => (
-              <StyleCard
-                key={style.id}
-                style={style}
-                selected={selectedStyleId === style.id}
-                onSelect={() => handleSelectStyle(style.id)}
-              />
-            ))}
-          </div>
-        </div>
-
         <Button
           type="button"
           block
@@ -173,12 +168,47 @@ export function HairPreviewStudio() {
         </Button>
       </div>
 
-      <ResultArea
-        status={status}
-        photoUrl={photoUrl}
-        resultImageUrl={resultImageUrl}
-        error={generateError}
-      />
+      <div className="flex flex-col gap-8">
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <SectionLabel>Choose a system</SectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {CATEGORY_FILTERS.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setActiveCategory(category)}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.06em] transition-colors",
+                    activeCategory === category
+                      ? "border-[color:var(--mh-copper-500)] bg-[color:var(--mh-copper-500)] text-[color:var(--mh-ink-900)]"
+                      : "border-[color:var(--mh-border-strong)] text-[color:var(--mh-ink-600)] hover:border-[color:var(--mh-copper-500)] hover:text-[color:var(--mh-copper-700)]"
+                  )}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            {visibleStyles.map((style) => (
+              <StyleCard
+                key={style.id}
+                style={style}
+                selected={selectedStyleId === style.id}
+                onSelect={() => handleSelectStyle(style.id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <ResultArea
+          status={status}
+          photoUrl={photoUrl}
+          resultImageUrl={resultImageUrl}
+          error={generateError}
+        />
+      </div>
     </div>
   );
 }
@@ -265,7 +295,52 @@ function UploadArea({
       {error ? (
         <p className="mt-2 text-xs text-[color:var(--mh-copper-700)]">{error}</p>
       ) : null}
+      {!photoUrl ? <PhotoTips /> : null}
     </div>
+  );
+}
+
+function PhotoTips() {
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-[color:var(--mh-ink-600)]">
+      <div className="flex items-start gap-2 rounded-[var(--mh-radius-sm)] border border-[color:var(--mh-border-strong)] bg-[color:var(--mh-surface)] p-3">
+        <CheckIcon className="mt-0.5 shrink-0 text-[color:var(--mh-copper-600)]" />
+        <span>Front-facing, well-lit, hair and hairline visible.</span>
+      </div>
+      <div className="flex items-start gap-2 rounded-[var(--mh-radius-sm)] border border-[color:var(--mh-border-strong)] bg-[color:var(--mh-surface)] p-3">
+        <CrossIcon className="mt-0.5 shrink-0 text-[color:var(--mh-ink-400)]" />
+        <span>Avoid side profiles, hats, or dark/blurry photos.</span>
+      </div>
+    </div>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} className={className} aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 12.5 9.5 17 19 7"
+      />
+    </svg>
+  );
+}
+
+function CrossIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={16} height={16} className={className} aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        d="M6 6l12 12M18 6 6 18"
+      />
+    </svg>
   );
 }
 
@@ -309,8 +384,10 @@ function StyleCard({
       accent={selected ? "border" : "none"}
       padding="sm"
       className={cn(
-        "cursor-pointer text-left transition-colors",
-        selected && "border-[color:var(--mh-copper-500)]"
+        "cursor-pointer text-left transition-all",
+        selected
+          ? "border-[color:var(--mh-copper-500)] shadow-[0_0_0_1px_var(--mh-copper-500)]"
+          : "hover:-translate-y-0.5 hover:border-[color:var(--mh-copper-500)]"
       )}
     >
       <button
@@ -319,7 +396,7 @@ function StyleCard({
         aria-pressed={selected}
         className="flex w-full flex-col gap-2 text-left"
       >
-        <div className="relative aspect-square w-full overflow-hidden rounded-[var(--mh-radius-sm)]">
+        <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[var(--mh-radius-sm)]">
           <Image
             src={style.image}
             alt={style.name}
@@ -327,6 +404,11 @@ function StyleCard({
             sizes="(min-width: 1024px) 15vw, 30vw"
             className="object-cover"
           />
+          {selected ? (
+            <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[color:var(--mh-copper-500)] text-[color:var(--mh-ink-900)]">
+              <CheckIcon />
+            </span>
+          ) : null}
         </div>
         <span className="text-sm font-semibold text-[color:var(--mh-ink-900)]">
           {style.name}
