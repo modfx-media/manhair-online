@@ -11,6 +11,7 @@ export default function robots(): MetadataRoute.Robots {
           "/landing-page/",
           "/booking/",
           "/video-call/",
+          "/hair-preview/",
           "/wp-admin/",
           "/wp-login.php",
         ],
