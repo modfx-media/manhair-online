@@ -36,7 +36,8 @@ import { CONTACT, SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
 import { POSTS } from "@/lib/posts";
 import { postCoverSrc } from "@/lib/post-cover";
-import { TESTIMONIALS } from "@/lib/testimonials";
+import { getDisplayedGoogleReviews } from "@/lib/google-reviews";
+import { isFiveStarReview, toTestimonialCard } from "@/lib/reviews";
 import { TestimonialCard } from "@/components/TestimonialCard";
 import { HOME_TRANSFORMATIONS } from "@/lib/before-after";
 import { BookingButton } from "@/components/BookingButton";
@@ -363,7 +364,12 @@ function MetricGlyph({ variant }: { variant: "spark" | "bars" | "ring" | "pins" 
   );
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const google = await getDisplayedGoogleReviews();
+  const fiveStarCards = google.reviews
+    .filter(isFiveStarReview)
+    .map(toTestimonialCard);
+
   const graph = buildPageGraph({
     origin: SITE.origin,
     path: "/",
@@ -405,6 +411,9 @@ export default function HomePage() {
     url: `${SITE.origin}/`,
     logoUrl: `${SITE.origin}${SITE.logo.url}`,
     sameAs: SOCIAL.map((s) => s.href),
+    rating: google.meta.rating,
+    reviewCount: google.meta.reviewCount,
+    reviews: google.reviews.filter(isFiveStarReview),
   });
 
   return (
@@ -477,11 +486,34 @@ export default function HomePage() {
                   </span>
                 </span>
                 <div>
-                  <p className="text-sm tracking-[0.18em]" aria-label="Rated 5.0 out of 5">
+                  <p
+                    className="text-sm tracking-[0.18em]"
+                    aria-label={
+                      google.meta.rating > 0
+                        ? `Rated ${google.meta.rating} out of 5 on Google`
+                        : "Google reviews"
+                    }
+                  >
                     <span className="mh-hero2-stars">★★★★★</span>
+                    {google.meta.rating > 0 ? (
+                      <span className="ml-2 text-[0.7rem] font-semibold tracking-[0.08em] text-[color:var(--mh-ink-800)]">
+                        {google.meta.rating}
+                      </span>
+                    ) : null}
                   </p>
                   <p className="text-[0.62rem] font-semibold uppercase leading-tight tracking-[0.18em] text-[color:var(--mh-ink-700)]">
-                    Trusted by 200+ men across Orange County, CA
+                    {google.meta.reviewCount > 0 ? (
+                      <a
+                        href={google.meta.reviewsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {google.meta.reviewCount} Google reviews
+                      </a>
+                    ) : (
+                      "Trusted by 200+ men across Orange County, CA"
+                    )}
                   </p>
                 </div>
               </div>
@@ -1086,30 +1118,40 @@ export default function HomePage() {
                   what some have to say about Manhair and the service we provide.
                 </p>
               </div>
-              <div className="flex items-center gap-3 rounded-[var(--mh-radius-md)] border border-[color:var(--mh-border)] bg-[color:var(--mh-ink-50)] px-5 py-4">
+              <a
+                href={google.meta.reviewsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-[var(--mh-radius-md)] border border-[color:var(--mh-border)] bg-[color:var(--mh-ink-50)] px-5 py-4"
+              >
                 <GoogleGIcon size={30} />
                 <div>
                   <p className="flex items-center gap-1 font-display text-lg font-bold text-[color:var(--mh-ink-950)]">
-                    4.9 <span className="text-[#F5B400]">★★★★★</span>
+                    {google.meta.rating > 0 ? google.meta.rating : "Google"}{" "}
+                    <span className="text-[#F5B400]">★★★★★</span>
                   </p>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-600)]">
-                    Google Reviews
+                    {google.meta.reviewCount > 0
+                      ? `${google.meta.reviewCount} Google reviews`
+                      : "View all Google reviews"}
                   </p>
                 </div>
-              </div>
+              </a>
             </div>
           </Reveal>
         </div>
 
-        <div className="mt-14">
-          <Marquee speed={34} className="mh-goog-marquee">
-            <div className="mh-goog-track flex">
-              {TESTIMONIALS.map((t, i) => (
-                <TestimonialCard key={t.name} t={t} index={i} />
-              ))}
-            </div>
-          </Marquee>
-        </div>
+        {fiveStarCards.length > 0 ? (
+          <div className="mt-14">
+            <Marquee speed={34} className="mh-goog-marquee">
+              <div className="mh-goog-track flex">
+                {fiveStarCards.map((t, i) => (
+                  <TestimonialCard key={`${t.name}-${i}`} t={t} index={i} />
+                ))}
+              </div>
+            </Marquee>
+          </div>
+        ) : null}
       </section>
 
       {/* ============================================================

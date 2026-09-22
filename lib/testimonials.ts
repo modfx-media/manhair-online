@@ -11,6 +11,7 @@ export type Testimonial = {
   photo: string | null;
   quote: string;
   source: TestimonialSource;
+  when?: string;
 };
 
 export const TESTIMONIALS: readonly Testimonial[] = [
@@ -53,14 +54,14 @@ export const TESTIMONIALS: readonly Testimonial[] = [
     name: "Lawrence",
     photo: null,
     quote:
-      "I was interested but unsure about hair replacement. I visited just about every hair replacement place, and still felt undecided. But after meeting with the staff, I knew I wanted to go forward, and I wanted him to be my stylist. He not only does great work — my hair looks incredible — but he makes me feel like family. I never feel like a product. These guys don't upsell you. It's come-as-you-need-it and pay-per-visit.",
+      "I was interested but unsure about hair replacement. I visited just about every hair replacement place, and still felt undecided. But after meeting with the staff, I knew I wanted to go forward, and I wanted him to be my stylist. He not only does great work, my hair looks incredible, but he makes me feel like family. I never feel like a product. These guys don't upsell you. It's come-as-you-need-it and pay-per-visit.",
     source: "google",
   },
   {
     name: "Bengt",
     photo: null,
     quote:
-      "Look no further than Man Hair for the highest quality hair replacement. I have had two hair transplants elsewhere and the results were disappointing. The team at Man Hair, however, provide industry-leading replacement — the care and attention are second to none. I cannot recommend Man Hair more highly.",
+      "Look no further than Man Hair for the highest quality hair replacement. I have had two hair transplants elsewhere and the results were disappointing. The team at Man Hair, however, provide industry-leading replacement, the care and attention are second to none. I cannot recommend Man Hair more highly.",
     source: "google",
   },
   {

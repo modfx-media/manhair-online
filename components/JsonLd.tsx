@@ -197,6 +197,9 @@ export function buildLocalBusinessSchema(opts: {
   url: string;
   logoUrl: string;
   sameAs: readonly string[];
+  rating?: number;
+  reviewCount?: number;
+  reviews?: ReadonlyArray<{ name: string; quote: string; rating: number }>;
 }) {
   const {
     origin,
@@ -209,7 +212,15 @@ export function buildLocalBusinessSchema(opts: {
     url,
     logoUrl,
     sameAs,
+    rating,
+    reviewCount,
+    reviews,
   } = opts;
+  const fiveStar =
+    reviews?.filter(
+      (review) =>
+        review.rating === 5 && review.quote.trim().length > 0 && review.name.trim().length > 0,
+    ) ?? [];
   return {
     "@context": "https://schema.org",
     "@type": "HairSalon",
@@ -227,6 +238,30 @@ export function buildLocalBusinessSchema(opts: {
       addressCountry: "US",
     },
     sameAs: [...sameAs],
+    ...(rating && reviewCount
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: String(rating),
+            reviewCount: String(reviewCount),
+            bestRating: "5",
+          },
+        }
+      : {}),
+    ...(fiveStar.length
+      ? {
+          review: fiveStar.map((review) => ({
+            "@type": "Review",
+            author: { "@type": "Person", name: review.name },
+            reviewRating: {
+              "@type": "Rating",
+              ratingValue: "5",
+              bestRating: "5",
+            },
+            reviewBody: review.quote,
+          })),
+        }
+      : {}),
   };
 }
 

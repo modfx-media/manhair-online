@@ -9,6 +9,8 @@ import { JsonLd } from "@/components/JsonLd";
 import { BookingModal } from "@/components/BookingModal";
 import { SITE, SOCIAL } from "@/lib/site";
 import { DEFAULT_OG } from "@/lib/seo/meta";
+import { getDisplayedGoogleReviews } from "@/lib/google-reviews";
+import { isFiveStarReview } from "@/lib/reviews";
 
 const sans = Manrope({
   variable: "--font-sans",
@@ -119,11 +121,47 @@ const SITE_GRAPH = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { reviews, meta } = await getDisplayedGoogleReviews();
+  const visible = reviews.filter(isFiveStarReview);
+  const siteGraph = {
+    ...SITE_GRAPH,
+    "@graph": SITE_GRAPH["@graph"].map((node) => {
+      if (node["@type"] !== "Organization") return node;
+      return {
+        ...node,
+        ...(meta.rating > 0 && meta.reviewCount > 0
+          ? {
+              aggregateRating: {
+                "@type": "AggregateRating",
+                ratingValue: String(meta.rating),
+                reviewCount: String(meta.reviewCount),
+                bestRating: "5",
+              },
+            }
+          : {}),
+        ...(visible.length
+          ? {
+              review: visible.map((review) => ({
+                "@type": "Review",
+                author: { "@type": "Person", name: review.name },
+                reviewRating: {
+                  "@type": "Rating",
+                  ratingValue: "5",
+                  bestRating: "5",
+                },
+                reviewBody: review.quote,
+              })),
+            }
+          : {}),
+      };
+    }),
+  };
+
   return (
     <html
       lang="en-US"
@@ -151,7 +189,7 @@ export default function RootLayout({
             })(window, document, "clarity", "script", "yj6lraerbd");
           `}
         </Script>
-        <JsonLd data={SITE_GRAPH} />
+        <JsonLd data={siteGraph} />
         <IntroSplash />
         <Header />
         <main className="flex-1">{children}</main>

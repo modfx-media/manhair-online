@@ -1553,6 +1553,10 @@ body {
 .mh-marquee-track.reverse {
   animation-direction: reverse;
 }
+.mh-marquee:hover .mh-marquee-track,
+.mh-marquee:focus-within .mh-marquee-track {
+  animation-play-state: paused;
+}
 .mh-marquee-group {
   display: flex;
   align-items: center;
@@ -1563,6 +1567,11 @@ body {
 @keyframes mh-marquee-scroll {
   0%   { transform: translate3d(0, 0, 0); }
   100% { transform: translate3d(-50%, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mh-marquee-track {
+    animation: none;
+  }
 }
 
 /* ---------- Before / After showcase card ---------- */
@@ -3817,15 +3826,19 @@ body {
 .mh-index-card:hover .mh-index-num { color: var(--mh-copper-300); }
 
 /* ---------- Google-style review card (testimonial marquee) ---------- */
+.mh-goog-marquee {
+  padding-block: 1.25rem 14rem;
+}
 .mh-goog-track {
   gap: 1.25rem;
   padding-block: 0.5rem;
 }
 .mh-goog-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  width: min(22rem, 82vw);
+  width: min(30rem, 88vw);
   flex: none;
   padding: 1.65rem 1.5rem 1.4rem;
   border: 1px solid var(--mh-border);
@@ -3835,8 +3848,12 @@ body {
   transition: transform var(--mh-dur) var(--mh-ease),
               border-color var(--mh-dur) var(--mh-ease),
               box-shadow var(--mh-dur) var(--mh-ease);
+  outline: none;
 }
-.mh-goog-card:hover {
+.mh-goog-card:hover,
+.mh-goog-card:focus-visible,
+.mh-goog-card:focus-within {
+  z-index: 6;
   transform: translateY(-4px);
   border-color: var(--mh-copper-300);
   box-shadow: 0 1px 2px rgba(20, 16, 8, 0.06), 0 22px 40px -18px rgba(20, 16, 8, 0.28);
@@ -3885,13 +3902,51 @@ body {
 }
 .mh-goog-quote {
   flex: 1;
-  font-size: 0.92rem;
-  line-height: 1.62;
+  font-size: 0.98rem;
+  line-height: 1.7;
   color: var(--mh-ink-800);
   display: -webkit-box;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 12;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.mh-goog-popup {
+  position: absolute;
+  left: -0.65rem;
+  right: -0.65rem;
+  top: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-height: min(34rem, 78vh);
+  padding: 1.65rem 1.6rem 1.45rem;
+  border: 1px solid var(--mh-copper-300);
+  border-radius: var(--mh-radius-md);
+  background: #fff;
+  box-shadow: 0 22px 56px -14px rgba(20, 16, 8, 0.42);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(10px) scale(0.98);
+  transition: opacity 180ms var(--mh-ease),
+              transform 180ms var(--mh-ease),
+              visibility 180ms;
+}
+.mh-goog-card:hover .mh-goog-popup,
+.mh-goog-card:focus-visible .mh-goog-popup,
+.mh-goog-card:focus-within .mh-goog-popup {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+.mh-goog-popup-quote {
+  margin: 0;
+  overflow: auto;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: var(--mh-ink-900);
 }
 .mh-goog-foot {
   display: flex;
@@ -3912,6 +3967,9 @@ body {
   -webkit-line-clamp: unset;
   display: block;
   overflow: visible;
+}
+.mh-goog-card-grid .mh-goog-popup {
+  display: none;
 }
 
 /* ---------- Editorial numbered list (01–04 rows) ---------- */
