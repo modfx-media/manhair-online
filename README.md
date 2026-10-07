@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ManHair Online
 
-## Getting Started
+Next.js App Router marketing site with Payload CMS 3 as the content / SEO / preview data plane. Designed pages stay as the public visual fallback until a document is published **and** has renderable CMS body content.
 
-First, run the development server:
+## Local development
 
 ```bash
+cp .env.example .env.local
+# Fill PAYLOAD_SECRET, PREVIEW_SECRET, DATABASE_URL (Neon pooled *-pooler.*)
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Site: http://localhost:3000
+- Admin: http://localhost:3000/admin
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## CMS scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run cms:export              # rebuild data/content-export.json from inventory
+npm run cms:validate-export     # ensure export covers sitemap paths
+npm run cms:bootstrap           # ping Neon + ensure Payload can boot
+npm run cms:ensure-admin        # create/update local admin user
+CMS_IMPORT_APPLY=1 npm run cms:import -- --apply data/content-export.json
+```
 
-## Learn More
+Import is **draft-only**. There is no `--publish` path. Public URLs keep designed UI until an editor reviews and publishes one URL at a time.
 
-To learn more about Next.js, take a look at the following resources:
+## Architecture (agency contract)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Dual layouts: `app/(site)` public, `app/(payload)` admin + API
+- Overlay: `CMSRoute` — published doc with body/content wins; otherwise designed children
+- Failure: `withCMS` so a down database never 500s the marketing site
+- Postgres via `@payloadcms/db-vercel-postgres` + `forceUseVercelPostgres`
+- Preview requires `PREVIEW_SECRET`; preview URLs never contain `null` segments
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `installation-script.md` for the full install checklist and invariants.
