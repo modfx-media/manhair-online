@@ -1,3 +1,5 @@
+import { getServerURL } from "./url";
+
 /** CMS paths are unique, start with `/`, and never use a trailing slash. */
 
 export function normalizeCmsPath(input: unknown): string | null {
@@ -20,6 +22,10 @@ export function publicPathFromCms(path: string): string {
   return `${path}/`;
 }
 
+/**
+ * Live preview / admin preview URL. Returns null when path or slug is missing
+ * so Payload never opens `/blog/null`.
+ */
 export function previewFromPath(doc: {
   path?: unknown;
   slug?: unknown;
@@ -30,11 +36,14 @@ export function previewFromPath(doc: {
   const fromPath = normalizeCmsPath(doc.path);
   const fromSlug =
     typeof doc.slug === "string" && doc.slug.trim()
-      ? normalizeCmsPath(`/${doc.slug.trim()}`)
+      ? doc.slug.trim() === "home"
+        ? "/"
+        : normalizeCmsPath(`/${doc.slug.trim()}`)
       : null;
   const path = fromPath ?? fromSlug;
   if (!path) return null;
 
   const publicPath = publicPathFromCms(path);
-  return `/next/preview?path=${encodeURIComponent(publicPath)}&previewSecret=${encodeURIComponent(secret)}`;
+  const origin = getServerURL();
+  return `${origin}/next/preview?path=${encodeURIComponent(publicPath)}&previewSecret=${encodeURIComponent(secret)}`;
 }

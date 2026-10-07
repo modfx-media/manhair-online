@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { INDEXABLE, NOINDEX } from "@/lib/seo/meta";
+import { INDEXABLE } from "@/lib/seo/meta";
 import { SITE } from "@/lib/site";
 import { queryRoutedContentByPath } from "./queries";
 import { normalizeCmsPath, publicPathFromCms } from "./path";
@@ -28,7 +28,10 @@ function metaFromDoc(doc: Record<string, unknown>, fallback: Metadata): Metadata
     title,
     description,
     ...(canonical ? { alternates: { ...fallback.alternates, canonical } } : {}),
-    robots: noIndex || noFollow ? NOINDEX : fallback.robots ?? INDEXABLE,
+    robots:
+      noIndex || noFollow
+        ? { index: !noIndex, follow: !noFollow }
+        : fallback.robots ?? INDEXABLE,
   };
 }
 

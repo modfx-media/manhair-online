@@ -1,6 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { emptyToNull } from "@/lib/cms/hooks";
-import { anyone, authenticated } from "./access";
+import { authenticated, authenticatedOrPublished } from "./access";
 import { assignPathFromSlug, uniqueNullableText } from "./fields";
 import { previewAdmin, publicDrafts } from "./versions";
 
@@ -14,7 +14,7 @@ export const Pages: CollectionConfig = {
   access: {
     create: authenticated,
     delete: authenticated,
-    read: anyone,
+    read: authenticatedOrPublished,
     update: authenticated,
   },
   defaultPopulate: {
@@ -84,14 +84,13 @@ export const Pages: CollectionConfig = {
       name: "bodyHtml",
       type: "textarea",
       admin: {
-        description: "Imported HTML. Used for overlay when lexical content is empty.",
+        description:
+          "Optional HTML overlay. Leave empty to keep the designed page after publish (SEO-only). Only fill when ready to replace the designed UI.",
       },
     },
   ],
   hooks: {
-    beforeValidate: [
-      ({ data }) => assignPathFromSlug(data),
-    ],
+    beforeValidate: [({ data }) => assignPathFromSlug(data)],
   },
   versions: publicDrafts,
 };
@@ -106,7 +105,7 @@ export const Posts: CollectionConfig = {
   access: {
     create: authenticated,
     delete: authenticated,
-    read: anyone,
+    read: authenticatedOrPublished,
     update: authenticated,
   },
   fields: [
@@ -156,12 +155,14 @@ export const Posts: CollectionConfig = {
     {
       name: "bodyHtml",
       type: "textarea",
+      admin: {
+        description:
+          "Optional HTML overlay. Leave empty to keep the designed blog post after publish.",
+      },
     },
   ],
   hooks: {
-    beforeValidate: [
-      ({ data }) => assignPathFromSlug(data),
-    ],
+    beforeValidate: [({ data }) => assignPathFromSlug(data)],
   },
   versions: publicDrafts,
 };

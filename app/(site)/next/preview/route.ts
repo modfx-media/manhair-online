@@ -11,6 +11,15 @@ export async function GET(request: NextRequest) {
     return new Response("Invalid preview secret", { status: 401 });
   }
 
+  if (
+    !pathParam ||
+    pathParam.includes("null") ||
+    pathParam.includes("undefined") ||
+    !pathParam.startsWith("/")
+  ) {
+    return new Response("Invalid path", { status: 400 });
+  }
+
   const path = normalizeCmsPath(pathParam);
   if (!path) {
     return new Response("Invalid path", { status: 400 });

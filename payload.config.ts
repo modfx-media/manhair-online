@@ -6,46 +6,33 @@ import { seoPlugin } from "@payloadcms/plugin-seo";
 import { vercelBlobStorage } from "@payloadcms/storage-vercel-blob";
 import { buildConfig } from "payload";
 import sharp from "sharp";
-import { Media, Users } from "./collections/Users";
+import { Media } from "./collections/Media";
+import { Users } from "./collections/Users";
 import { Pages, Posts } from "./collections/Pages";
 import { Footer, Header, SiteSettings } from "./globals/Site";
 import { normalizeCmsPath, publicPathFromCms } from "./lib/cms/path";
+import { getCorsOrigins, getServerURL, requirePayloadSecret } from "./lib/cms/url";
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
-function publicOrigin(): string {
-  const server = process.env.NEXT_PUBLIC_SERVER_URL?.replace(/\/$/, "");
-  if (server && !server.includes("localhost")) return server;
-  const site = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
-  if (site) return site;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3000";
-}
-
-function corsOrigins(): string[] {
-  const origins = new Set<string>([
-    publicOrigin(),
-    "https://www.manhaironline.com",
-    "https://manhaironline.com",
-    "http://localhost:3000",
-  ]);
-  if (process.env.VERCEL_URL) origins.add(`https://${process.env.VERCEL_URL}`);
-  return [...origins];
-}
-
 const isVercel = process.env.VERCEL === "1";
-const isImport = Boolean(process.env.CMS_IMPORT_APPLY);
+const isImport = process.env.CMS_IMPORT_APPLY === "1";
+const disablePush =
+  isVercel || isImport || process.env.PAYLOAD_PUSH === "false";
+const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
 
 export default buildConfig({
   admin: {
     user: Users.slug,
     importMap: {
       baseDir: path.resolve(dirname),
+      importMapFile: path.resolve(dirname, "app/(payload)/admin/importMap.js"),
     },
     livePreview: {
       breakpoints: [
         { label: "Mobile", name: "mobile", width: 375, height: 667 },
+        { label: "Tablet", name: "tablet", width: 768, height: 1024 },
         { label: "Desktop", name: "desktop", width: 1440, height: 900 },
       ],
     },
@@ -53,10 +40,10 @@ export default buildConfig({
   collections: [Users, Media, Pages, Posts],
   globals: [Header, Footer, SiteSettings],
   editor: lexicalEditor(),
-  secret: process.env.PAYLOAD_SECRET || "dev-only-set-PAYLOAD_SECRET-32chars",
-  serverURL: publicOrigin(),
-  csrf: corsOrigins(),
-  cors: corsOrigins(),
+  secret: requirePayloadSecret(),
+  serverURL: getServerURL(),
+  csrf: getCorsOrigins(),
+  cors: getCorsOrigins(),
   typescript: {
     outputFile: path.resolve(dirname, "payload-types.ts"),
   },
@@ -65,7 +52,7 @@ export default buildConfig({
       connectionString: process.env.DATABASE_URL || "",
     },
     forceUseVercelPostgres: true,
-    push: !isVercel && !isImport,
+    push: !disablePush,
   }),
   sharp,
   plugins: [
@@ -81,7 +68,7 @@ export default buildConfig({
       generateURL: ({ doc }) => {
         const pathValue = normalizeCmsPath(doc?.path);
         if (!pathValue) return "";
-        return `${publicOrigin()}${publicPathFromCms(pathValue)}`;
+        return `${getServerURL()}${publicPathFromCms(pathValue)}`;
       },
       fields: ({ defaultFields }) => [
         ...defaultFields,
@@ -107,12 +94,16 @@ export default buildConfig({
         },
       ],
     }),
-    vercelBlobStorage({
-      enabled: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-      collections: {
-        media: true,
-      },
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-    }),
+    ...(blobToken
+      ? [
+          vercelBlobStorage({
+            enabled: true,
+            collections: {
+              media: true,
+            },
+            token: blobToken,
+          }),
+        ]
+      : []),
   ],
 });

@@ -14,7 +14,7 @@ export async function queryRoutedContentByPath(
 ): Promise<RoutedDoc | null> {
   const path = normalizeCmsPath(rawPath);
   if (!path) return null;
-  if (!process.env.DATABASE_URL) return null;
+  if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) return null;
 
   return withCMS(async () => {
     const payload = await getPayload({ config });
@@ -30,11 +30,15 @@ export async function queryRoutedContentByPath(
 
     const pages = await payload.find({ collection: "pages", ...findOpts });
     const page = pages.docs[0];
-    if (page) return { collection: "pages" as const, doc: page as unknown as Record<string, unknown> };
+    if (page) {
+      return { collection: "pages" as const, doc: page as unknown as Record<string, unknown> };
+    }
 
     const posts = await payload.find({ collection: "posts", ...findOpts });
     const post = posts.docs[0];
-    if (post) return { collection: "posts" as const, doc: post as unknown as Record<string, unknown> };
+    if (post) {
+      return { collection: "posts" as const, doc: post as unknown as Record<string, unknown> };
+    }
 
     return null;
   }, null);
@@ -48,7 +52,7 @@ export type CMSSitemapEntry = {
 };
 
 export async function queryCMSSitemapEntries(): Promise<CMSSitemapEntry[]> {
-  if (!process.env.DATABASE_URL) return [];
+  if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) return [];
   return withCMS(async () => {
     const payload = await getPayload({ config });
     const entries: CMSSitemapEntry[] = [];

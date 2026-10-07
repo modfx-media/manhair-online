@@ -14,7 +14,35 @@ type ExportFile = {
   globals?: Record<string, Record<string, unknown>>;
 };
 
-const apply = process.argv.includes("--apply") || process.env.CMS_IMPORT_APPLY === "1";
+function skipRef(value: unknown): unknown {
+  if (value && typeof value === "object") {
+    if ("$ref" in (value as Record<string, unknown>)) return null;
+    if (Array.isArray(value)) {
+      return value.map(skipRef).filter((item) => item !== null);
+    }
+    const next: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      const resolved = skipRef(nested);
+      if (resolved !== null) next[key] = resolved;
+    }
+    return next;
+  }
+  return value;
+}
+
+if (process.argv.includes("--publish")) {
+  console.error("Refusing to bulk-publish. Import is draft-only.");
+  process.exit(1);
+}
+
+const wantsApply = process.argv.includes("--apply");
+const apply = wantsApply && process.env.CMS_IMPORT_APPLY === "1";
+
+if (wantsApply && !apply) {
+  console.error("Set CMS_IMPORT_APPLY=1 with --apply to write drafts.");
+  process.exit(1);
+}
+
 const filePath = path.resolve(
   process.argv.find((arg) => arg.endsWith(".json")) ?? "data/content-export.json",
 );
@@ -23,15 +51,16 @@ const raw = JSON.parse(await readFile(filePath, "utf8")) as ExportFile;
 
 if (!apply) {
   console.log(
-    `Dry run: ${raw.records.length} records in ${filePath}. Pass --apply with DATABASE_URL to write drafts.`,
+    `Dry run: ${raw.records.length} records in ${filePath}. Pass CMS_IMPORT_APPLY=1 -- --apply to write drafts.`,
   );
   process.exit(0);
 }
 
-if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL is required for cms:import --apply");
+if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) {
+  console.error("DATABASE_URL and PAYLOAD_SECRET are required for cms:import --apply");
   process.exit(1);
 }
+
 const payload = await getPayload({ config });
 
 async function findExisting(
@@ -76,56 +105,63 @@ for (const record of raw.records) {
     continue;
   }
 
+  const cleaned = skipRef(record) as Record<string, unknown>;
   const data: Record<string, unknown> = {
-    title: record.title,
-    heading: record.heading ?? undefined,
-    slug: record.slug ?? null,
+    title: cleaned.title,
+    heading: cleaned.heading ?? undefined,
+    slug: cleaned.slug ?? null,
     path: pathValue,
-    legacyId: record.legacyId ?? null,
-    sourceUrl: record.sourceUrl ?? null,
-    sourceUpdatedAt: record.sourceUpdatedAt ?? undefined,
-    excerpt: record.excerpt ?? undefined,
-    bodyHtml: record.bodyHtml ?? undefined,
-    template: record.template ?? undefined,
-    category: record.category ?? undefined,
-    coverImage: record.coverImage ?? undefined,
-    publishedAt: record.publishedAt ?? undefined,
+    legacyId: cleaned.legacyId ?? null,
+    sourceUrl: cleaned.sourceUrl ?? null,
+    sourceUpdatedAt: cleaned.sourceUpdatedAt ?? undefined,
+    excerpt: cleaned.excerpt ?? undefined,
+    bodyHtml: cleaned.bodyHtml ?? undefined,
+    template: cleaned.template ?? undefined,
+    category: cleaned.category ?? undefined,
+    coverImage: cleaned.coverImage ?? undefined,
+    publishedAt: cleaned.publishedAt ?? undefined,
     _status: "draft",
-    meta: record.meta ?? {},
+    meta: cleaned.meta ?? {},
   };
 
-  const existing = await findExisting(
-    collection,
-    typeof record.legacyId === "string" ? record.legacyId : null,
-    typeof record.sourceUrl === "string" ? record.sourceUrl : null,
-  );
+  try {
+    const existing = await findExisting(
+      collection,
+      typeof cleaned.legacyId === "string" ? cleaned.legacyId : null,
+      typeof cleaned.sourceUrl === "string" ? cleaned.sourceUrl : null,
+    );
 
-  if (existing) {
-    await payload.update({
-      collection,
-      id: existing.id,
-      data,
-      draft: true,
-      overrideAccess: true,
-    });
-    updated += 1;
-  } else {
-    await payload.create({
-      collection,
-      data,
-      draft: true,
-      overrideAccess: true,
-    });
-    created += 1;
+    if (existing) {
+      await payload.update({
+        collection,
+        id: existing.id,
+        data,
+        draft: true,
+        overrideAccess: true,
+      });
+      updated += 1;
+    } else {
+      await payload.create({
+        collection,
+        data,
+        draft: true,
+        overrideAccess: true,
+      });
+      created += 1;
+    }
+  } catch (error) {
+    skipped += 1;
+    const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+    console.warn(`[cms:import] skipped ${collection} ${pathValue}: ${message}`);
   }
 }
 
-if (apply && raw.globals) {
+if (raw.globals) {
   for (const [slug, data] of Object.entries(raw.globals)) {
     try {
       await payload.updateGlobal({
         slug: slug as "header" | "footer" | "site-settings",
-        data,
+        data: skipRef(data) as Record<string, unknown>,
         draft: true,
         overrideAccess: true,
       });
@@ -136,5 +172,5 @@ if (apply && raw.globals) {
 }
 
 console.log(
-  `${apply ? "Applied" : "Would apply"} drafts: ${created} create, ${updated} update, ${skipped} skipped`,
+  `Applied drafts: ${created} create, ${updated} update, ${skipped} skipped. Public site stays on designed fallback until publish review.`,
 );

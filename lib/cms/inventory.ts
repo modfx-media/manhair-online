@@ -144,7 +144,7 @@ export function buildContentExport(): {
       title: post.title,
       heading: post.heading,
       excerpt: post.excerpt ?? post.description,
-      bodyHtml: post.bodyHtml,
+      // Keep designed blog UI after publish; editors can paste bodyHtml when ready to overlay.
       category: post.category,
       coverImage: post.coverImage,
       publishedAt: post.datePublished,
@@ -176,7 +176,7 @@ export function buildContentExport(): {
       title: `${service.name} | Orange, CA | ManHair`,
       heading: service.name,
       excerpt: service.metaDescription,
-      bodyHtml: `<p>${service.whatItIs}</p><p>${service.overview[0]}</p><p>${service.overview[1]}</p>`,
+      // No bodyHtml: designed service pages stay until an editor intentionally overlays CMS content.
       template: "service",
       meta: {
         title: `${service.name} | Orange, CA | ManHair`,
@@ -199,7 +199,7 @@ export function buildContentExport(): {
       title: `${condition.name}: Hair Replacement Options | ManHair`,
       heading: condition.name,
       excerpt: condition.whatItIs,
-      bodyHtml: `<p>${condition.whatItIs}</p><p>${condition.howASystemCoversIt}</p>`,
+      // No bodyHtml: designed condition pages stay until an editor intentionally overlays CMS content.
       template: "condition",
       meta: {
         title: `${condition.name}: Hair Replacement Options | ManHair`,
