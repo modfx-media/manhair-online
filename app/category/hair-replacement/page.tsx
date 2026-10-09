@@ -17,6 +17,8 @@ const BY_SLUG = new Map(POSTS.map((p) => [p.slug, p]));
 
 /* Post order captured verbatim from the live Hair Replacement archive. */
 const SLUGS = [
+  "a-guide-to-full-head-hair-replacement-for-men",
+  "active-mens-guide-to-human-hair-systems-in-jacksonville",
   "compare-hair-replacement-vs-transplants-in-atlanta",
   "what-to-expect-from-a-hair-replacement-consultation-in-jacksonville",
   "florida-humidity-tips-for-natural-looking-hair-systems",
