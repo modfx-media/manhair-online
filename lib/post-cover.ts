@@ -9,7 +9,7 @@ const COVER_BY_SLUG: Record<string, string> = {
   "a-guide-to-full-head-hair-replacement-for-men":
     "/images/blogs-images/a-guide-to-full-head-hair-replacement-for-men.jpeg",
   "active-mens-guide-to-human-hair-systems-in-jacksonville":
-    "/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.png",
+    "/images/blogs-images/active-mens-guide-to-human-hair-systems-in-jacksonville.jpg",
   "compare-hair-replacement-vs-transplants-in-atlanta":
     "/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.png",
   "what-to-expect-from-a-hair-replacement-consultation-in-jacksonville":

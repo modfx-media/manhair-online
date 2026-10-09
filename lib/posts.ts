@@ -72,14 +72,14 @@ export const POSTS: Post[] = [
     "og": {
       "title": "Active Men's Guide to Human Hair Systems in Jacksonville",
       "description": "Explore human hair systems in Jacksonville designed for active men, with natural style, secure wear, and personalized solutions for hair loss",
-      "image": "https://www.manhaironline.com/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.png",
+      "image": "https://www.manhaironline.com/images/blogs-images/active-mens-guide-to-human-hair-systems-in-jacksonville.jpg",
       "type": "article",
       "url": "https://www.manhaironline.com/active-mens-guide-to-human-hair-systems-in-jacksonville/",
       "site_name": "ManHair | Hair Restoration Orange County",
       "locale": "en_US"
     },
     "twitterCard": "summary_large_image",
-    "coverImage": "/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.png",
+    "coverImage": "/images/blogs-images/active-mens-guide-to-human-hair-systems-in-jacksonville.jpg",
     "excerpt": "A custom hair system can help you feel more like yourself when thinning areas, bald spots, or a receding hairline have started taking up too much of your attention.",
     "category": "Hair Replacement",
     "datePublished": "2026-10-01T14:00:00+00:00",
