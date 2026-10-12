@@ -1,20 +1,16 @@
 import type { NextConfig } from "next";
+import { withPayload } from "@payloadcms/next/withPayload";
 
-// Live production origin whose assets we mirror during the migration.
-// All references to /wp-content/uploads/* in existing content resolve here
-// so the historical image URLs never 404 on the new deployment.
 const LIVE_ORIGIN = "https://www.manhaironline.com";
 
 const nextConfig: NextConfig = {
-  // Every URL on the live site ends with a trailing slash. Preserve that.
   trailingSlash: true,
-
-  // Image optimization: allow next/image to source from the live origin
-  // (used until we finish migrating assets to first-party storage).
-  //
-  // Local /images/* go through the optimizer. WordPress /wp-content/*
-  // images set `unoptimized` on the <Image> because the optimizer
-  // cannot follow the rewrite fallback below.
+  serverExternalPackages: [
+    "pg",
+    "@payloadcms/db-vercel-postgres",
+    "@neondatabase/serverless",
+    "@vercel/postgres",
+  ],
   images: {
     unoptimized: false,
     remotePatterns: [
@@ -28,12 +24,12 @@ const nextConfig: NextConfig = {
         hostname: "manhaironline.com",
         pathname: "/wp-content/**",
       },
+      {
+        protocol: "https",
+        hostname: "*.public.blob.vercel-storage.com",
+      },
     ],
   },
-
-  // Fallback rewrite: any /wp-content/* request that isn't served locally
-  // is transparently proxied to the live origin so no historical asset URL
-  // breaks during migration.
   async rewrites() {
     return {
       beforeFiles: [],
@@ -46,15 +42,8 @@ const nextConfig: NextConfig = {
       ],
     };
   },
-
-  // 301 redirects for URL restructuring per ModFX SEO spec.
-  // Legacy paths -> consolidated new paths. Preserves incoming links
-  // (backlinks, indexed URLs, bookmarks) and passes PageRank through
-  // a permanent redirect.
   async redirects() {
     return [
-      // Apex and Vercel hosts → www, matching the live site.
-      // Query strings are forwarded automatically.
       {
         source: "/",
         has: [{ type: "host", value: "manhaironline.com" }],
@@ -93,4 +82,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withPayload(nextConfig, { devBundleServerPackages: false });

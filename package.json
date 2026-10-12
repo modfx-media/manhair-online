@@ -2,17 +2,36 @@
   "name": "manhair-online",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "payload": "payload",
+    "generate:types": "payload generate:types",
+    "generate:importmap": "payload generate:importmap",
+    "cms:export": "tsx scripts/cms-export.ts",
+    "cms:import": "tsx scripts/cms-import.ts",
+    "cms:validate-export": "tsx scripts/cms-validate-export.ts",
+    "cms:bootstrap": "tsx scripts/cms-bootstrap.ts",
+    "cms:ensure-admin": "tsx scripts/cms-ensure-admin-user.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
+    "@neondatabase/serverless": "^1.0.2",
+    "@payloadcms/db-vercel-postgres": "^3.90.2",
+    "@payloadcms/live-preview-react": "^3.90.2",
+    "@payloadcms/next": "^3.90.2",
+    "@payloadcms/plugin-seo": "^3.90.2",
+    "@payloadcms/richtext-lexical": "^3.90.2",
+    "@payloadcms/storage-vercel-blob": "^3.90.2",
+    "@payloadcms/ui": "^3.90.2",
     "@upstash/ratelimit": "^2.1.0",
     "@upstash/redis": "^1.39.0",
-    "next": "16.2.10",
+    "graphql": "^16.14.2",
+    "next": "^16.3.8",
+    "payload": "^3.90.2",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -21,11 +40,13 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^18.0.5",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "^16.3.8",
     "jsdom": "^29.1.1",
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
