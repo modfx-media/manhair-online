@@ -13,6 +13,7 @@ import { Footer, Header, SiteSettings } from "./globals/Site";
 import { normalizeCmsPath, publicPathFromCms } from "./lib/cms/path";
 import { getCorsOrigins, getServerURL, requirePayloadSecret } from "./lib/cms/url";
 
+import { scheduledPublishPlugin } from "./scheduled-publish";
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
@@ -56,6 +57,7 @@ export default buildConfig({
   }),
   sharp,
   plugins: [
+    scheduledPublishPlugin(),
     seoPlugin({
       collections: ["pages", "posts"],
       globals: ["site-settings"],
