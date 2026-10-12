@@ -8,6 +8,8 @@ import { TIER1_CITIES, TIER2_CITIES } from "@/lib/seo/cities";
 import { queryCMSSitemapEntries } from "@/lib/cms/queries";
 import { normalizeCmsPath } from "@/lib/cms/path";
 
+
+export const revalidate = 300;
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const items: MetadataRoute.Sitemap = [];

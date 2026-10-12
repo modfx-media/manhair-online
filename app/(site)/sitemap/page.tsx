@@ -12,6 +12,8 @@ import { pageTitle, socialMetadata } from "@/lib/seo/meta";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
 
+
+export const revalidate = 300;
 const PATH = "/sitemap/";
 const TITLE = "Sitemap | Every ManHair Page | Orange, CA";
 const DESCRIPTION =

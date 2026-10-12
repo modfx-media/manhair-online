@@ -11,6 +11,8 @@ import { POSTS } from "@/lib/posts";
 import { postCoverSrc } from "@/lib/post-cover";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
 
+
+export const revalidate = 300;
 const PAGE = getPageMeta("/blog/")!;
 export async function generateMetadata(): Promise<Metadata> {
   return cmsGenerateMetadata(PAGE.path, toMetadata(PAGE));
