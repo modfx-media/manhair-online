@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
+import { draftMode } from "next/headers";
 import { notFound } from "next/navigation";
 import { Display, Italic } from "@/components/ui";
 import { BookingButton } from "@/components/BookingButton";
@@ -12,20 +13,38 @@ import { postCoverSrc } from "@/lib/post-cover";
 import { pageTitle, socialMetadata } from "@/lib/seo/meta";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
+import { LivePreviewListener } from "@/lib/cms/LivePreviewListener";
+import {
+  hasRenderableCMSContent,
+  RenderRoutedContent,
+} from "@/lib/cms/RenderRoutedContent";
+import {
+  queryPublishedPostBySlug,
+  queryPublishedPostSlugs,
+  queryRoutedContentByPath,
+} from "@/lib/cms/queries";
+import { isPublishedAtPublic } from "@/lib/cms/publish-date";
 
 /**
- * Dynamic route for blog posts. Every historical /:slug/ URL that is a
- * blog post is generated statically here. `dynamicParams: false` ensures
- * unknown slugs return the 404 page (not accidentally rendered).
+ * Dynamic route for blog posts. Historical /:slug/ URLs from the designed
+ * inventory are prerendered; CMS-published posts are included when the DB is
+ * available. `dynamicParams: true` lets a post scheduled after the last build
+ * resolve on first request instead of hard-404ing until the next deploy.
  *
  * Static top-level pages (about-us, faq, etc.) live in their own folders
  * and are matched by Next.js before this dynamic segment.
  */
 
-export const dynamicParams = false;
+export const dynamicParams = true;
+export const revalidate = 300;
 
 export async function generateStaticParams() {
-  return POSTS.map((p) => ({ slug: p.slug }));
+  const cmsSlugs = await queryPublishedPostSlugs();
+  const slugs = new Set<string>([
+    ...POSTS.filter((p) => isPublishedAtPublic(p.datePublished)).map((p) => p.slug),
+    ...cmsSlugs,
+  ]);
+  return [...slugs].map((slug) => ({ slug }));
 }
 
 type Params = { slug: string };
@@ -42,30 +61,56 @@ function formatDate(iso: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const post = getPostBySlug(slug);
-  if (!post) return { title: "Not Found" };
-  const preferredTitle =
-    post.title && post.title !== "Man Hair - Hair Replacement Solutions"
-      ? post.title
-      : (post.heading ?? post.title);
-  const description = post.description ?? SITE.brandStatement;
-  const url = post.canonical ?? `${SITE.origin}${post.path}`;
+  if (post) {
+    if (!isPublishedAtPublic(post.datePublished)) return { title: "Not Found" };
+    const preferredTitle =
+      post.title && post.title !== "Man Hair - Hair Replacement Solutions"
+        ? post.title
+        : (post.heading ?? post.title);
+    const description = post.description ?? SITE.brandStatement;
+    const url = post.canonical ?? `${SITE.origin}${post.path}`;
+    const social = socialMetadata({
+      title: preferredTitle,
+      description,
+      url,
+      image: postCoverSrc(post.slug),
+    });
+    return cmsGenerateMetadata(post.path, {
+      metadataBase: new URL(SITE.origin),
+      title: pageTitle(preferredTitle),
+      description,
+      alternates: { canonical: url },
+      robots: post.robots,
+      openGraph: {
+        ...social.openGraph,
+        type: "article",
+        publishedTime: post.datePublished ?? undefined,
+        modifiedTime: post.dateModified ?? undefined,
+      },
+      twitter: social.twitter,
+    });
+  }
+
+  const cmsPost = await queryPublishedPostBySlug(slug);
+  if (!cmsPost) return { title: "Not Found" };
+  const title = cmsPost.heading ?? cmsPost.title;
+  const url = `${SITE.origin}${cmsPost.href}`;
+  const description = cmsPost.excerpt ?? SITE.brandStatement;
   const social = socialMetadata({
-    title: preferredTitle,
+    title,
     description,
     url,
-    image: postCoverSrc(post.slug),
+    image: postCoverSrc(cmsPost.slug),
   });
-  return cmsGenerateMetadata(post.path, {
+  return cmsGenerateMetadata(cmsPost.href, {
     metadataBase: new URL(SITE.origin),
-    title: pageTitle(preferredTitle),
+    title: pageTitle(title),
     description,
     alternates: { canonical: url },
-    robots: post.robots,
     openGraph: {
       ...social.openGraph,
       type: "article",
-      publishedTime: post.datePublished ?? undefined,
-      modifiedTime: post.dateModified ?? undefined,
+      publishedTime: cmsPost.publishedAt ?? undefined,
     },
     twitter: social.twitter,
   });
@@ -74,7 +119,30 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
   const post = getPostBySlug(slug);
-  if (!post) notFound();
+
+  if (!post) {
+    const draft = await draftMode()
+      .then((d) => d.isEnabled)
+      .catch(() => false);
+    const cmsSummary = draft ? null : await queryPublishedPostBySlug(slug);
+    const routed = await queryRoutedContentByPath(
+      cmsSummary?.path ?? `/${slug}`,
+      { draft },
+    );
+
+    if (!routed || routed.collection !== "posts") notFound();
+    if (!draft && !isPublishedAtPublic(routed.doc.publishedAt)) notFound();
+    if (!draft && !hasRenderableCMSContent(routed.doc) && !cmsSummary) notFound();
+
+    return (
+      <>
+        {draft ? <LivePreviewListener /> : null}
+        <RenderRoutedContent doc={routed.doc} collection="posts" />
+      </>
+    );
+  }
+
+  if (!isPublishedAtPublic(post.datePublished)) notFound();
 
   const pageUrl = post.canonical ?? `${SITE.origin}${post.path}`;
   const title = post.heading ?? post.title;

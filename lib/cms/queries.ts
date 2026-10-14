@@ -1,11 +1,25 @@
 import { getPayload } from "payload";
 import config from "@payload-config";
-import { normalizeCmsPath } from "./path";
+import { normalizeCmsPath, publicPathFromCms } from "./path";
+import { isPublishedAtPublic } from "./publish-date";
 import { withCMS } from "./safe";
 
 export type RoutedDoc = {
   collection: "pages" | "posts";
   doc: Record<string, unknown>;
+};
+
+export type CMSPostSummary = {
+  id: string | number;
+  slug: string;
+  path: string;
+  href: string;
+  title: string;
+  heading: string | null;
+  excerpt: string | null;
+  category: string | null;
+  coverImage: string | null;
+  publishedAt: string | null;
 };
 
 export async function queryRoutedContentByPath(
@@ -89,4 +103,89 @@ export async function queryCMSSitemapEntries(): Promise<CMSSitemapEntry[]> {
     }
     return entries;
   }, []);
+}
+
+function toPostSummary(doc: Record<string, unknown>): CMSPostSummary | null {
+  const path = normalizeCmsPath(doc.path);
+  const slug =
+    (typeof doc.slug === "string" && doc.slug.trim()) ||
+    (path && path !== "/" ? path.slice(1) : "");
+  if (!path || !slug) return null;
+  if (!isPublishedAtPublic(doc.publishedAt)) return null;
+
+  const title = typeof doc.title === "string" ? doc.title : slug;
+  return {
+    id: doc.id as string | number,
+    slug,
+    path,
+    href: publicPathFromCms(path),
+    title,
+    heading: typeof doc.heading === "string" ? doc.heading : null,
+    excerpt: typeof doc.excerpt === "string" ? doc.excerpt : null,
+    category: typeof doc.category === "string" ? doc.category : null,
+    coverImage: typeof doc.coverImage === "string" ? doc.coverImage : null,
+    publishedAt: typeof doc.publishedAt === "string" ? doc.publishedAt : null,
+  };
+}
+
+/** Public, non-future posts for blog index / generateStaticParams. */
+export async function queryPublishedPosts(limit = 100): Promise<CMSPostSummary[]> {
+  if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) return [];
+  return withCMS(async () => {
+    const payload = await getPayload({ config });
+    const result = await payload.find({
+      collection: "posts",
+      draft: false,
+      overrideAccess: false,
+      pagination: false,
+      limit,
+      depth: 0,
+      sort: "-publishedAt",
+      where: {
+        _status: { equals: "published" },
+      },
+    });
+    return result.docs
+      .map((doc) => toPostSummary(doc as unknown as Record<string, unknown>))
+      .filter((doc): doc is CMSPostSummary => Boolean(doc));
+  }, []);
+}
+
+export async function queryPublishedPostSlugs(): Promise<string[]> {
+  const posts = await queryPublishedPosts(5000);
+  return posts.map((post) => post.slug);
+}
+
+export async function queryPublishedPostBySlug(
+  slug: string,
+): Promise<CMSPostSummary | null> {
+  const normalized = slug.trim().replace(/^\/+|\/+$/g, "");
+  if (!normalized) return null;
+  if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) return null;
+
+  return withCMS(async () => {
+    const payload = await getPayload({ config });
+    const path = normalizeCmsPath(`/${normalized}`);
+    const result = await payload.find({
+      collection: "posts",
+      draft: false,
+      overrideAccess: false,
+      pagination: false,
+      limit: 1,
+      depth: 0,
+      where: {
+        and: [
+          { _status: { equals: "published" } },
+          {
+            or: [
+              { slug: { equals: normalized } },
+              ...(path ? [{ path: { equals: path } }] : []),
+            ],
+          },
+        ],
+      },
+    });
+    const doc = result.docs[0] as unknown as Record<string, unknown> | undefined;
+    return doc ? toPostSummary(doc) : null;
+  }, null);
 }

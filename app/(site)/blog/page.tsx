@@ -2,15 +2,13 @@ import type { Metadata } from "next";
 import { Display, Italic } from "@/components/ui";
 import { BookingButton } from "@/components/BookingButton";
 import { AuroraBlobs, Reveal } from "@/components/ui/motion";
-import { PostGrid, type PostCard } from "@/components/PostGrid";
+import { PostGrid } from "@/components/PostGrid";
 import { JsonLd, buildPageGraph } from "@/components/JsonLd";
 import { SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
-import { POSTS } from "@/lib/posts";
-import { postCoverSrc } from "@/lib/post-cover";
+import { getBlogPostCards } from "@/lib/cms/blog-posts";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
-
 
 export const revalidate = 300;
 const PAGE = getPageMeta("/blog/")!;
@@ -18,32 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return cmsGenerateMetadata(PAGE.path, toMetadata(PAGE));
 }
 
-function formatCardDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
-const BLOG_POSTS: PostCard[] = [...POSTS]
-  .sort((a, b) => (b.datePublished ?? "").localeCompare(a.datePublished ?? ""))
-  .slice(0, 6)
-  .map((p) => {
-    const title = p.heading ?? p.title;
-    return {
-      href: p.path,
-      category: p.category ?? "Uncategorized",
-      title,
-      excerpt: p.excerpt,
-      image: postCoverSrc(p.slug),
-      imageAlt: title,
-      date: p.datePublished ? formatCardDate(p.datePublished) : undefined,
-    };
-  });
-
-export default function BlogIndex() {
+export default async function BlogIndex() {
+  const blogPosts = await getBlogPostCards(6);
   const graph = buildPageGraph({
     origin: SITE.origin,
     path: "/blog/",
@@ -104,7 +78,7 @@ export default function BlogIndex() {
        * ============================================================ */}
       <section className="border-b border-[color:var(--mh-border)] bg-[color:var(--mh-surface)] py-10 md:py-24">
         <div className="mh-container">
-          <PostGrid posts={BLOG_POSTS} />
+          <PostGrid posts={blogPosts} />
         </div>
       </section>
 
