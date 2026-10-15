@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/payload-jobs/run/",
+      "path": "/api/payload-jobs/run",
       "schedule": "*/10 * * * *"
     }
   ]

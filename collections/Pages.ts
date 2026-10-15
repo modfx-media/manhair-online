@@ -2,6 +2,7 @@ import type { CollectionConfig } from "payload";
 import { emptyToNull } from "@/lib/cms/hooks";
 import { authenticated, authenticatedOrPublished } from "./access";
 import { assignPathFromSlug, uniqueNullableText } from "./fields";
+import { revalidatePost, revalidatePostDelete } from "./revalidate";
 import { previewAdmin, publicDrafts } from "./versions";
 
 export const Pages: CollectionConfig = {
@@ -142,7 +143,22 @@ export const Posts: CollectionConfig = {
     {
       name: "publishedAt",
       type: "date",
-      admin: { date: { pickerAppearance: "dayAndTime" } },
+      admin: {
+        date: { pickerAppearance: "dayAndTime" },
+        description:
+          "Public visibility cutoff (UTC instant). Date-only values are treated as midnight America/Los_Angeles. Scheduled publish also requires CRON_SECRET so Vercel Cron can run /api/payload-jobs/run/.",
+        position: "sidebar",
+      },
+      hooks: {
+        beforeChange: [
+          ({ siblingData, value }) => {
+            if (siblingData?._status === "published" && !value) {
+              return new Date().toISOString();
+            }
+            return value;
+          },
+        ],
+      },
     },
     {
       name: "coverImage",
@@ -163,6 +179,8 @@ export const Posts: CollectionConfig = {
   ],
   hooks: {
     beforeValidate: [({ data }) => assignPathFromSlug(data)],
+    afterChange: [revalidatePost],
+    afterDelete: [revalidatePostDelete],
   },
   versions: publicDrafts,
 };

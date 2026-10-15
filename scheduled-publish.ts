@@ -1,12 +1,18 @@
 import type { CollectionBeforeOperationHook, Config, Field, Plugin, Where } from "payload";
+import { publishCutoffISO } from "@/lib/cms/publish-date";
 
 /**
- * Scheduled publishing guard (added 12 Oct 2026).
+ * Scheduled publishing guard (added 12 Oct 2026; timezone/ISR hardened 14 Oct 2026).
  * 1. Enables Payload's native schedulePublish on posts and lets the jobs queue
  *    run from the Vercel cron (Authorization: Bearer $CRON_SECRET) or a logged-in user.
  * 2. Hides posts whose publish date is still in the future from every read that is
  *    not made by a logged-in user or as a draft/preview read (REST, GraphQL and the
  *    site's own Local API queries), until that date passes.
+ *
+ * Compare against the current UTC instant (not a date-only string). Date-only
+ * admin values are stored by Payload as timestamptz; using toISOString() avoids
+ * false "still future" matches from timezone skew between the Node process and
+ * the Postgres session.
  */
 const DATE_CANDIDATES = ["publishedAt", "publishDate", "publishedOn", "datePublished", "published", "postDate", "date"];
 
@@ -30,8 +36,12 @@ function hideFuturePosts(field: string): CollectionBeforeOperationHook {
     if (operation !== "read" && operation !== "count") return args;
     const a = args as { where?: Where; draft?: boolean; overrideAccess?: boolean };
     if (req?.user || a.draft === true) return args;
+    // Always evaluate "now" inside the hook (request/job time), never at module load.
     const notFuture: Where = {
-      or: [{ [field]: { exists: false } }, { [field]: { less_than_equal: new Date().toISOString() } }],
+      or: [
+        { [field]: { exists: false } },
+        { [field]: { less_than_equal: publishCutoffISO() } },
+      ],
     };
     a.where = a.where ? { and: [a.where, notFuture] } : notFuture;
     return args;
@@ -42,7 +52,8 @@ function cronOrUser({ req }: { req: any }): boolean {
   if (req?.user) return true;
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  return req?.headers?.get?.("authorization") === `Bearer ${secret}`;
+  const authHeader = req?.headers?.get?.("authorization") ?? req?.headers?.get?.("Authorization");
+  return authHeader === `Bearer ${secret}`;
 }
 
 export const scheduledPublishPlugin =
@@ -72,7 +83,9 @@ export const scheduledPublishPlugin =
         ...(config.jobs || {}),
         access: {
           ...(config.jobs?.access || {}),
-          run: existingRun ? async (args: any) => cronOrUser(args) || (await (existingRun as any)(args)) : cronOrUser,
+          run: existingRun
+            ? async (args: any) => cronOrUser(args) || (await (existingRun as any)(args))
+            : cronOrUser,
         },
       },
     };

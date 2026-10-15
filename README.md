@@ -7,6 +7,7 @@ Next.js App Router marketing site with Payload CMS 3 as the content / SEO / prev
 ```bash
 cp .env.example .env.local
 # Fill PAYLOAD_SECRET, PREVIEW_SECRET, DATABASE_URL (Neon pooled *-pooler.*)
+# On Vercel also set CRON_SECRET so /api/payload-jobs/run can publish scheduled posts.
 npm install
 npm run dev
 ```

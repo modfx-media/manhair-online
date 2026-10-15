@@ -15,9 +15,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const items: MetadataRoute.Sitemap = [];
   const cms = await queryCMSSitemapEntries();
   const cmsByPath = new Map(cms.map((entry) => [entry.path, entry]));
+  const seenPaths = new Set<string>();
 
   const push = (publicPath: string, canonical: string, extra: Partial<MetadataRoute.Sitemap[number]>) => {
     const cmsPath = normalizeCmsPath(publicPath);
+    if (cmsPath && seenPaths.has(cmsPath)) return;
+    if (cmsPath) seenPaths.add(cmsPath);
     const cmsEntry = cmsPath ? cmsByPath.get(cmsPath) : undefined;
     if (cmsEntry?.noIndex || cmsEntry?.excludeFromSitemap) return;
     items.push({
@@ -39,6 +42,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const post of POSTS) {
     push(post.path, post.canonical ?? `${SITE.origin}${post.path}`, {
       lastModified: post.dateModified ? new Date(post.dateModified) : now,
+      changeFrequency: "yearly",
+      priority: 0.6,
+    });
+  }
+  for (const entry of cms) {
+    if (seenPaths.has(entry.path)) continue;
+    if (entry.noIndex || entry.excludeFromSitemap) continue;
+    // CMS-only top-level posts (single segment) not present in the static inventory.
+    if (entry.path === "/" || entry.path.slice(1).includes("/")) continue;
+    push(entry.path, `${SITE.origin}${entry.path}/`, {
+      lastModified: entry.lastModified ? new Date(entry.lastModified) : now,
       changeFrequency: "yearly",
       priority: 0.6,
     });
