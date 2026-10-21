@@ -17,7 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function BlogIndex() {
-  const blogPosts = await getBlogPostCards(6);
+  const blogPosts = await getBlogPostCards();
   const graph = buildPageGraph({
     origin: SITE.origin,
     path: "/blog/",

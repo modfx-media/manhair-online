@@ -47,9 +47,9 @@ function cmsToCard(post: CMSPostSummary): PostCard {
  * Merge designed static posts with CMS-published posts.
  * CMS wins on slug collisions. Future-dated entries are excluded.
  */
-export async function getBlogPostCards(limit = 6): Promise<PostCard[]> {
+export async function getBlogPostCards(limit?: number): Promise<PostCard[]> {
   const now = new Date();
-  const cmsPosts = await queryPublishedPosts(100);
+  const cmsPosts = await queryPublishedPosts(5000);
   const rows: { slug: string; iso: string; card: PostCard }[] = [];
   const seen = new Set<string>();
 
@@ -71,8 +71,8 @@ export async function getBlogPostCards(limit = 6): Promise<PostCard[]> {
     });
   }
 
-  return rows
+  const cards = rows
     .sort((a, b) => b.iso.localeCompare(a.iso))
-    .slice(0, limit)
     .map((row) => row.card);
+  return typeof limit === "number" ? cards.slice(0, limit) : cards;
 }
