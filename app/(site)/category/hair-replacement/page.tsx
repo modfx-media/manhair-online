@@ -8,7 +8,7 @@ import { SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { POSTS } from "@/lib/posts";
-import { postCoverSrc } from "@/lib/post-cover";
+import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
 
 const PAGE = getPageMeta("/category/hair-replacement/")!;
@@ -46,8 +46,8 @@ const CARDS: PostCard[] = SLUGS.map((slug) => {
     category: CATEGORY,
     title,
     excerpt: p.excerpt,
-    image: postCoverSrc(p.slug),
-    imageAlt: title,
+    image: postCoverSrc(p.slug, p.coverImage),
+    imageAlt: postCoverAlt(p.slug, title),
   };
 });
 

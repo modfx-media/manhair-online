@@ -1,6 +1,8 @@
+import Image from "next/image";
 import { convertLexicalToHTML } from "@payloadcms/richtext-lexical/html";
 import { BookingButton } from "@/components/BookingButton";
 import { Display, Italic } from "@/components/ui";
+import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 
 function lexicalToHtml(content: unknown): string {
   if (!content || typeof content !== "object") return "";
@@ -32,6 +34,12 @@ export function RenderRoutedContent({
   const html =
     (typeof doc.bodyHtml === "string" && doc.bodyHtml.trim()) ||
     lexicalToHtml(doc.content);
+  const slug =
+    (typeof doc.slug === "string" && doc.slug.trim()) ||
+    (typeof doc.path === "string" ? doc.path.replace(/^\/+|\/+$/g, "") : "");
+  const cmsCover = typeof doc.coverImage === "string" ? doc.coverImage : null;
+  const coverSrc =
+    collection === "posts" && slug ? postCoverSrc(slug, cmsCover) : null;
 
   return (
     <article className="border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)]">
@@ -45,6 +53,20 @@ export function RenderRoutedContent({
           <p className="mt-8 max-w-2xl text-lg leading-relaxed text-[color:var(--mh-ink-800)]">
             {excerpt}
           </p>
+        ) : null}
+        {coverSrc ? (
+          <figure className="mt-8 max-w-3xl overflow-hidden rounded-[var(--mh-radius-md)] bg-[color:var(--mh-ink-50)] p-1.5 ring-1 ring-[color:var(--mh-border)]">
+            <div className="relative aspect-[4/3] overflow-hidden rounded-[calc(var(--mh-radius-md)-4px)]">
+              <Image
+                src={coverSrc}
+                alt={postCoverAlt(slug, title)}
+                fill
+                priority
+                sizes="(max-width: 768px) 100vw, 48rem"
+                className="object-cover"
+              />
+            </div>
+          </figure>
         ) : null}
         {html ? (
           <div

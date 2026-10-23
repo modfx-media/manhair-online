@@ -21,11 +21,13 @@ export function socialMetadata({
   description,
   url,
   image,
+  imageAlt,
 }: {
   title: string;
   description: string;
   url: string;
   image?: string | null;
+  imageAlt?: string | null;
 }): Pick<Metadata, "openGraph" | "twitter"> {
   const imageUrl = image || DEFAULT_OG.url;
   return {
@@ -41,7 +43,7 @@ export function socialMetadata({
           url: imageUrl,
           width: DEFAULT_OG.width,
           height: DEFAULT_OG.height,
-          alt: DEFAULT_OG.alt,
+          alt: imageAlt || DEFAULT_OG.alt,
         },
       ],
     },

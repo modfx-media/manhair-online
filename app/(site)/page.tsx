@@ -36,7 +36,7 @@ import { CONTACT, SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { POSTS } from "@/lib/posts";
-import { postCoverSrc } from "@/lib/post-cover";
+import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 import { getDisplayedGoogleReviews } from "@/lib/google-reviews";
 import { isFiveStarReview, toTestimonialCard } from "@/lib/reviews";
 import { TestimonialCard } from "@/components/TestimonialCard";
@@ -1365,8 +1365,8 @@ export default async function HomePage() {
                 <div className="mh-prog-media">
                   {p.coverImage ? (
                     <Image
-                      src={postCoverSrc(p.slug)}
-                      alt={p.heading || p.title}
+                      src={postCoverSrc(p.slug, p.coverImage)}
+                      alt={postCoverAlt(p.slug, p.heading || p.title)}
                       fill
                       sizes="(max-width: 768px) 100vw, 33vw"
                       className="object-cover"
