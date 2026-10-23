@@ -9,7 +9,13 @@ import { AuroraBlobs, Reveal, RevealGrid } from "@/components/ui/motion";
 import { JsonLd } from "@/components/JsonLd";
 import { SITE, SOCIAL } from "@/lib/site";
 import { POSTS, getPostBySlug } from "@/lib/posts";
-import { postCoverSrc } from "@/lib/post-cover";
+import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
+import {
+  getSupplementalPost,
+  SUPPLEMENTAL_POSTS,
+  cmsDatabaseConfigured,
+  type SupplementalPost,
+} from "@/lib/cms/supplemental-posts";
 import { pageTitle, socialMetadata } from "@/lib/seo/meta";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
@@ -44,6 +50,9 @@ export async function generateStaticParams() {
     ...POSTS.filter((p) => isPublishedAtPublic(p.datePublished)).map((p) => p.slug),
     ...cmsSlugs,
   ]);
+  if (!cmsDatabaseConfigured()) {
+    for (const post of SUPPLEMENTAL_POSTS) slugs.add(post.slug);
+  }
   return [...slugs].map((slug) => ({ slug }));
 }
 
@@ -73,7 +82,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title: preferredTitle,
       description,
       url,
-      image: postCoverSrc(post.slug),
+      image: postCoverSrc(post.slug, post.coverImage),
+      imageAlt: postCoverAlt(post.slug, preferredTitle),
     });
     return cmsGenerateMetadata(post.path, {
       metadataBase: new URL(SITE.origin),
@@ -92,7 +102,32 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const cmsPost = await queryPublishedPostBySlug(slug);
-  if (!cmsPost) return { title: "Not Found" };
+  if (!cmsPost) {
+    const extra = getSupplementalPost(slug);
+    if (!extra) return { title: "Not Found" };
+    const title = extra.title;
+    const url = `${SITE.origin}/${extra.slug}/`;
+    const description = extra.excerpt;
+    const social = socialMetadata({
+      title,
+      description,
+      url,
+      image: postCoverSrc(extra.slug),
+      imageAlt: postCoverAlt(extra.slug, title),
+    });
+    return {
+      metadataBase: new URL(SITE.origin),
+      title: pageTitle(title),
+      description,
+      alternates: { canonical: url },
+      openGraph: {
+        ...social.openGraph,
+        type: "article",
+        publishedTime: extra.publishedAt,
+      },
+      twitter: social.twitter,
+    };
+  }
   const title = cmsPost.heading ?? cmsPost.title;
   const url = `${SITE.origin}${cmsPost.href}`;
   const description = cmsPost.excerpt ?? SITE.brandStatement;
@@ -100,7 +135,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title,
     description,
     url,
-    image: postCoverSrc(cmsPost.slug),
+    image: postCoverSrc(cmsPost.slug, cmsPost.coverImage),
+    imageAlt: postCoverAlt(cmsPost.slug, title),
   });
   return cmsGenerateMetadata(cmsPost.href, {
     metadataBase: new URL(SITE.origin),
@@ -130,9 +166,19 @@ export default async function BlogPostPage({ params }: Props) {
       { draft },
     );
 
-    if (!routed || routed.collection !== "posts") notFound();
-    if (!draft && !isPublishedAtPublic(routed.doc.publishedAt)) notFound();
-    if (!draft && !hasRenderableCMSContent(routed.doc) && !cmsSummary) notFound();
+    const extra = getSupplementalPost(slug);
+    if (!routed || routed.collection !== "posts") {
+      if (extra) return <SupplementalArticle post={extra} />;
+      notFound();
+    }
+    if (!draft && !isPublishedAtPublic(routed.doc.publishedAt)) {
+      if (extra) return <SupplementalArticle post={extra} />;
+      notFound();
+    }
+    if (!draft && !hasRenderableCMSContent(routed.doc) && !cmsSummary) {
+      if (extra) return <SupplementalArticle post={extra} />;
+      notFound();
+    }
 
     return (
       <>
@@ -160,7 +206,7 @@ export default async function BlogPostPage({ params }: Props) {
         publisher: { "@id": `${SITE.origin}/#organization` },
         articleSection: post.category ?? undefined,
         inLanguage: "en-US",
-        image: `${SITE.origin}${postCoverSrc(post.slug)}`,
+        image: `${SITE.origin}${postCoverSrc(post.slug, post.coverImage)}`,
       },
       {
         "@type": "WebPage",
@@ -180,8 +226,8 @@ export default async function BlogPostPage({ params }: Props) {
         "@type": "ImageObject",
         inLanguage: "en-US",
         "@id": `${pageUrl}#primaryimage`,
-        url: `${SITE.origin}${postCoverSrc(post.slug)}`,
-        contentUrl: `${SITE.origin}${postCoverSrc(post.slug)}`,
+        url: `${SITE.origin}${postCoverSrc(post.slug, post.coverImage)}`,
+        contentUrl: `${SITE.origin}${postCoverSrc(post.slug, post.coverImage)}`,
       },
       {
         "@type": "BreadcrumbList",
@@ -262,8 +308,8 @@ export default async function BlogPostPage({ params }: Props) {
               <Reveal className="mt-8" delay={0.06}>
                 <figure className="overflow-hidden rounded-[var(--mh-radius-md)] bg-[color:var(--mh-ink-50)] p-1.5 ring-1 ring-[color:var(--mh-border)]">
                   <Image
-                    src={postCoverSrc(post.slug)}
-                    alt={title}
+                    src={postCoverSrc(post.slug, post.coverImage)}
+                    alt={postCoverAlt(post.slug, title)}
                     width={800}
                     height={520}
                     priority
@@ -317,8 +363,8 @@ export default async function BlogPostPage({ params }: Props) {
                   {p.coverImage ? (
                     <div className="relative aspect-[16/10] overflow-hidden bg-[color:var(--mh-ink-50)]">
                       <Image
-                        src={postCoverSrc(p.slug)}
-                        alt={p.heading ?? p.title}
+                        src={postCoverSrc(p.slug, p.coverImage)}
+                        alt={postCoverAlt(p.slug, p.heading ?? p.title)}
                         fill
                         sizes="(max-width: 768px) 100vw, 33vw"
                         className="object-cover transition duration-500 group-hover:scale-[1.03]"
@@ -351,5 +397,48 @@ export default async function BlogPostPage({ params }: Props) {
       ) : null}
     </div>
   </CMSRoute>
+  );
+}
+
+function SupplementalArticle({ post }: { post: SupplementalPost }) {
+  const title = post.title;
+  const cover = postCoverSrc(post.slug);
+  return (
+    <CMSRoute path={`/${post.slug}`}>
+      <article className="border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)]">
+        <div className="mh-container py-16 md:py-24">
+          <p className="mh-kicker">{post.category ?? "Journal"}</p>
+          <Display as={1} size="hero" className="mt-5 max-w-4xl">
+            {title}
+          </Display>
+          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-600)]">
+            <time dateTime={post.publishedAt}>{formatDate(post.publishedAt)}</time>
+          </div>
+          <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[color:var(--mh-ink-800)]">
+            {post.excerpt}
+          </p>
+          <figure className="mt-8 max-w-3xl overflow-hidden rounded-[var(--mh-radius-md)] bg-[color:var(--mh-ink-50)] p-1.5 ring-1 ring-[color:var(--mh-border)]">
+            <div className="relative aspect-[4/3] overflow-hidden rounded-[calc(var(--mh-radius-md)-4px)]">
+              <Image
+                src={cover}
+                alt={postCoverAlt(post.slug, title)}
+                fill
+                priority
+                sizes="(max-width: 768px) 100vw, 48rem"
+                className="object-cover"
+              />
+            </div>
+          </figure>
+          <div className="mt-14 max-w-3xl rounded-[var(--mh-radius-md)] border border-[color:var(--mh-border)] bg-[color:var(--mh-surface)] px-6 py-8 text-center md:px-10">
+            <Display as={2} size="sm">
+              Ready for a result you can <Italic>see today?</Italic>
+            </Display>
+            <div className="mt-6">
+              <BookingButton size="lg">Book a Private Consultation</BookingButton>
+            </div>
+          </div>
+        </div>
+      </article>
+    </CMSRoute>
   );
 }

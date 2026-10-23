@@ -97,14 +97,14 @@ export const POSTS: Post[] = [
     "og": {
       "title": "Compare Hair Replacement vs. Transplants in Atlanta",
       "description": "Explore non-surgical hair replacement in Atlanta, Georgia and compare its natural look, convenience, and flexibility with surgical transplants today",
-      "image": "https://www.manhaironline.com/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.png",
+      "image": "https://www.manhaironline.com/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.jpg",
       "type": "article",
       "url": "https://www.manhaironline.com/compare-hair-replacement-vs-transplants-in-atlanta/",
       "site_name": "ManHair | Hair Restoration Orange County",
       "locale": "en_US"
     },
     "twitterCard": "summary_large_image",
-    "coverImage": "/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.png",
+    "coverImage": "/images/blogs-images/compare-hair-replacement-vs-transplants-in-atlanta.jpg",
     "excerpt": "Hair loss can affect how you feel at work, during social plans, and in family photos. If you want a fuller-looking head of hair, non-surgical hair replacement and hair transplants are two very different options to consider. The right path depends on your hair loss pattern, timeline, comfort level, lifestyle, and what you want your result to look like.",
     "category": "Hair Replacement",
     "datePublished": "2026-09-24T14:00:00+00:00",
@@ -122,14 +122,14 @@ export const POSTS: Post[] = [
     "og": {
       "title": "Your Guide to a Jacksonville Hair Replacement Visit",
       "description": "Learn how a hair replacement consultation in Jacksonville works, from scalp assessment and system options to fitting, pricing, and personalized care",
-      "image": "https://www.manhaironline.com/images/blogs-images/what-to-expect-from-a-hair-replacement-consultation-in-jacksonville.png",
+      "image": "https://www.manhaironline.com/images/blogs-images/what-to-expect-from-a-hair-replacement-consultation-in-jacksonville.jpg",
       "type": "article",
       "url": "https://www.manhaironline.com/what-to-expect-from-a-hair-replacement-consultation-in-jacksonville/",
       "site_name": "ManHair | Hair Restoration Orange County",
       "locale": "en_US"
     },
     "twitterCard": "summary_large_image",
-    "coverImage": "/images/blogs-images/what-to-expect-from-a-hair-replacement-consultation-in-jacksonville.png",
+    "coverImage": "/images/blogs-images/what-to-expect-from-a-hair-replacement-consultation-in-jacksonville.jpg",
     "excerpt": "A hair replacement consultation in Jacksonville is a private, pressure-free chance to talk through your concerns and see what a fuller-looking style could look like for you. Whether you are noticing early thinning, a receding hairline, or more advanced hair loss, we take the time to understand what you want before discussing options.",
     "category": "Hair Replacement",
     "datePublished": "2026-09-17T14:00:00+00:00",
