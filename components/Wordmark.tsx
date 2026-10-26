@@ -59,7 +59,10 @@ export function Wordmark({
       // Next 16 throws if `preload` and `priority` are both set. `preload`
       // is the head hint; `fetchPriority` puts that hint on the high queue.
       preload={priority || undefined}
-      fetchPriority={priority ? "high" : undefined}
+      // Non-home header marks stay eager but low priority. React 19
+      // otherwise hoists an eager image into a high preload and it
+      // races the cover on blog and posts.
+      fetchPriority={priority ? "high" : eager ? "low" : undefined}
       loading={priority ? undefined : eager ? "eager" : undefined}
       // `h-auto` is intentionally omitted: it would be generated after the
       // `h-*` size classes in Tailwind's compiled CSS and win the cascade,

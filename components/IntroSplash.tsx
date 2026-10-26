@@ -60,7 +60,7 @@ export function IntroSplash() {
     <div
       className={cn("mh-intro", phase === "leaving" && "is-leaving")}
       role="presentation"
-      aria-hidden={phase === "leaving"}
+      aria-hidden="true"
     >
       <div className="mh-intro-inner">
         <Image

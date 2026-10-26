@@ -65,7 +65,7 @@ export function Footer() {
               <li key={n.href}>
                 <Link
                   href={n.href}
-                  className="text-[color:var(--mh-ink-800)] transition-colors hover:text-[color:var(--mh-copper-700)]"
+                  className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-800)] transition-colors hover:text-[color:var(--mh-copper-700)]"
                 >
                   {n.label}
                 </Link>
