@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const SRC = "/videos/4178139-hd_1920_1080_30fps.mp4";
 const POSTER = "/images/homepage-images/unnamed.jpg";
@@ -8,11 +8,13 @@ const POSTER = "/images/homepage-images/unnamed.jpg";
 /**
  * Homepage hero video. The file is ~7MB. A static `preload="auto"` (and
  * `autoPlay`, which overrides `preload="none"`) sat on the same connection
- * as the header logo and pushed mobile LCP out past 9s. The source and
- * poster are attached only after `window` load, once the logo has painted.
+ * as the header logo and pushed mobile LCP out past 9s. The poster is in
+ * the first HTML at low priority so the frame isn't empty; the video file
+ * itself is attached only after `window` load.
  */
 export function HeroVideo() {
   const ref = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     const video = ref.current;
@@ -21,7 +23,6 @@ export function HeroVideo() {
     const start = () => {
       if (video.getAttribute("data-ready") === "true") return;
       video.setAttribute("data-ready", "true");
-      video.poster = POSTER;
       const source = document.createElement("source");
       source.src = SRC;
       source.type = "video/mp4";
@@ -39,13 +40,26 @@ export function HeroVideo() {
   }, []);
 
   return (
-    <video
-      ref={ref}
-      muted
-      loop
-      playsInline
-      preload="none"
-      aria-hidden="true"
-    />
+    <>
+      <video
+        ref={ref}
+        muted
+        loop
+        playsInline
+        preload="none"
+        aria-hidden="true"
+        onPlaying={() => setPlaying(true)}
+      />
+      <img
+        src={POSTER}
+        alt=""
+        width={1920}
+        height={1080}
+        loading="lazy"
+        fetchPriority="low"
+        decoding="async"
+        hidden={playing}
+      />
+    </>
   );
 }

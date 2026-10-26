@@ -121,7 +121,7 @@ export function MobileNav() {
         aria-hidden="true"
         onClick={close}
         className={cn(
-          "fixed inset-0 z-40 bg-[color:var(--mh-ink-950)]/55 backdrop-blur-sm transition-opacity duration-300 lg:hidden",
+          "fixed inset-0 z-[120] bg-[color:var(--mh-ink-950)]/55 backdrop-blur-sm transition-opacity duration-300 lg:hidden",
           open ? "opacity-100" : "pointer-events-none opacity-0"
         )}
       />
@@ -134,7 +134,7 @@ export function MobileNav() {
         aria-modal="true"
         aria-label="Primary navigation"
         className={cn(
-          "mh-mnav fixed inset-y-0 right-0 z-50 flex w-[92vw] max-w-[24rem] flex-col bg-[color:var(--mh-bg)] shadow-[0_30px_80px_-20px_rgba(26,19,14,0.35)] transition-transform duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)] lg:hidden",
+          "mh-mnav fixed inset-y-0 right-0 z-[130] flex w-[92vw] max-w-[24rem] flex-col bg-[color:var(--mh-bg)] shadow-[0_30px_80px_-20px_rgba(26,19,14,0.35)] transition-transform duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)] lg:hidden",
           open ? "translate-x-0" : "pointer-events-none translate-x-full"
         )}
         data-open={open ? "true" : "false"}

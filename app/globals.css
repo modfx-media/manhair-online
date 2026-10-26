@@ -3924,11 +3924,14 @@ body {
 .mh-goog-meta .dot::before { content: "·"; margin: 0 0.15rem; }
 .mh-goog-stars {
   margin-top: 0.35rem;
-  /* #F5B400 on white is 1.84:1. #6B5014 is 7.55:1 and still reads as gold. */
-  color: #6B5014;
+  /* Brightest gold at 3:1 on white (#FFFFFF): #B78F35 is 3.00:1. */
+  color: #B78F35;
   font-size: 0.85rem;
   letter-spacing: 0.1em;
 }
+/* Same gold on white. Paper (#F6F3EE) needs one step deeper: #AD8732 is 3.02:1. */
+.mh-stars { color: #B78F35; }
+.mh-stars-paper { color: #AD8732; }
 .mh-goog-quote {
   flex: 1;
   font-size: 0.98rem;
@@ -4923,12 +4926,26 @@ footer {
   100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 }
 
-/* --- Shimmering gold stars in the trust row --- */
+/* --- Shimmering gold stars in the trust row ---
+   Stars are non-text graphics (3:1). Brightest gold that still clears
+   3:1 on the hero gradient's darkest stop (#FBF8F2) is #B18A33 (3.02:1).
+   Every gradient stop stays at or above that so the sweep can't dip
+   under the ratio. Reduced motion falls back to the solid gold. */
 .mh-hero2-stars {
   display: inline-block;
-  /* Solid antique gold. The old clipped gradient passed through #FDF6E4
-     and #C9A24A (2.17:1 on the paper hero). #6B5014 is 6.82:1 on #F6F3EE. */
-  color: #6B5014;
+  background: linear-gradient(
+    100deg,
+    #8F6B1E 0%,
+    #B18A33 38%,
+    #8F6B1E 62%,
+    #B18A33 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: #B18A33;
+  -webkit-text-fill-color: transparent;
+  animation: mh-shimmer-flow 6s linear infinite;
 }
 
 /* --- Floating "density recovery" motion-graph mini card --- */
@@ -5023,6 +5040,11 @@ footer {
   .mh-hero2-graph-svg .line { stroke-dashoffset: 0; }
   .mh-hero2-graph-svg .area,
   .mh-hero2-graph-svg .dot { opacity: 1; }
+  .mh-hero2-stars {
+    background: none;
+    color: #B18A33;
+    -webkit-text-fill-color: #B18A33;
+  }
 }
 
 /* ------------------------------------------------------------------

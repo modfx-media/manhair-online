@@ -73,7 +73,7 @@ export default async function Page() {
                   <GoogleGIcon size={22} />
                   <span className="text-left">
                     <span className="block font-display text-lg font-bold text-[color:var(--mh-ink-950)]">
-                      {google.meta.rating} <span className="text-[#6B5014]">★★★★★</span>
+                      {google.meta.rating} <span className="mh-stars-paper" aria-hidden="true">★★★★★</span>
                     </span>
                     <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-600)]">
                       {google.meta.reviewCount} Google reviews

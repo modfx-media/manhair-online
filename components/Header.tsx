@@ -48,7 +48,7 @@ const TOPBAR_SOCIAL = SOCIAL.filter((s) => s.visibleInFooter).slice(0, 3);
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-30 bg-[color:var(--mh-bg)]/90 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--mh-bg)]/80 shadow-[0_1px_0_rgba(26,19,14,0.05)]">
+    <header className="sticky top-0 z-[110] bg-[color:var(--mh-bg)]/90 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--mh-bg)]/80 shadow-[0_1px_0_rgba(26,19,14,0.05)]">
       {/* Utility bar */}
       <div className="mh-topbar hidden lg:block">
         <div className="mh-container flex h-9 items-center justify-between gap-6">

@@ -10,6 +10,25 @@ import { normalizeCmsPath } from "@/lib/cms/path";
 
 
 export const revalidate = 300;
+
+/** Must match the Disallow list in app/robots.ts. These stay out of the sitemap. */
+const ROBOTS_DISALLOW = [
+  "/landing-page",
+  "/booking",
+  "/video-call",
+  "/hair-preview",
+  "/admin",
+  "/wp-admin",
+  "/wp-login.php",
+];
+
+function blockedFromSitemap(publicPath: string): boolean {
+  const normalized = publicPath.replace(/\/+$/, "") || "/";
+  return ROBOTS_DISALLOW.some(
+    (blocked) => normalized === blocked || normalized.startsWith(`${blocked}/`),
+  );
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const items: MetadataRoute.Sitemap = [];
@@ -18,6 +37,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const seenPaths = new Set<string>();
 
   const push = (publicPath: string, canonical: string, extra: Partial<MetadataRoute.Sitemap[number]>) => {
+    if (blockedFromSitemap(publicPath)) return;
     const cmsPath = normalizeCmsPath(publicPath);
     if (cmsPath && seenPaths.has(cmsPath)) return;
     if (cmsPath) seenPaths.add(cmsPath);

@@ -495,15 +495,13 @@ export default async function HomePage() {
                   </span>
                 </span>
                 <div>
-                  <p
-                    className="text-sm tracking-[0.18em]"
-                    aria-label={
-                      google.meta.rating > 0
+                  <p className="text-sm tracking-[0.18em]">
+                    <span className="mh-hero2-stars" aria-hidden="true">★★★★★</span>
+                    <span className="sr-only">
+                      {google.meta.rating > 0
                         ? `Rated ${google.meta.rating} out of 5 on Google`
-                        : "Google reviews"
-                    }
-                  >
-                    <span className="mh-hero2-stars">★★★★★</span>
+                        : "Google reviews"}
+                    </span>
                     {google.meta.rating > 0 ? (
                       <span className="ml-2 text-[0.7rem] font-semibold tracking-[0.08em] text-[color:var(--mh-ink-800)]">
                         {google.meta.rating}
@@ -1126,7 +1124,7 @@ export default async function HomePage() {
                 <div>
                   <p className="flex items-center gap-1 font-display text-lg font-bold text-[color:var(--mh-ink-950)]">
                     {google.meta.rating > 0 ? google.meta.rating : "Google"}{" "}
-                    <span className="text-[#6B5014]">★★★★★</span>
+                    <span className="mh-stars" aria-hidden="true">★★★★★</span>
                   </p>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-600)]">
                     {google.meta.reviewCount > 0

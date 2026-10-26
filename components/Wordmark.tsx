@@ -23,14 +23,17 @@ const HEIGHT: Record<Size, string> = {
 };
 
 /**
- * Intrinsic box for the srcset. `sizes` is intentionally omitted: a `sizes`
- * value with no `vw` makes next/image emit every device width, and the `src`
- * fallback becomes the 3840px candidate. Width + 2x stays on the small
- * candidates (the mark renders around 100–170px).
+ * Intrinsic box for the srcset. `sizes` is omitted on purpose: a `sizes`
+ * value makes next/image emit the device-width list, and the `src`
+ * fallback becomes 3840. Width + 2x stays on the small candidates.
+ *
+ * The header mark renders around 108–120px. A 192px box makes the 2x
+ * candidate 384px, which covers 3x of that display size without a 640+
+ * download.
  */
 const BOX: Record<Size, { width: number; height: number }> = {
   sm: { width: 96, height: 32 },
-  md: { width: 120, height: 40 },
+  md: { width: 192, height: 64 },
   lg: { width: 168, height: 56 },
 };
 

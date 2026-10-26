@@ -13,10 +13,12 @@ const nextConfig: NextConfig = {
   ],
   images: {
     unoptimized: false,
-    // WebP only: AVIF encode time on the image optimizer showed up in LCP.
-    // Drop 2048/3840 so the `src` fallback and srcset stay off the LCP path.
-    formats: ["image/webp"],
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    // AVIF first, then WebP. 2048/3840 stay so large section images
+    // are sharp on retina desktops. LCP marks omit `sizes`, so they
+    // only emit 1x/2x and never the 3840 candidate. Qualities are the
+    // only values used (covers pass 60; everything else is the default 75).
+    formats: ["image/avif", "image/webp"],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [64, 96, 128, 256, 384],
     qualities: [60, 75],
     remotePatterns: [
