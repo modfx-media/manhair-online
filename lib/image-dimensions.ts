@@ -45,6 +45,7 @@ export const IMAGE_DIMENSIONS: Record<string, { width: number; height: number }>
   "/images/mens-hair-units/1.jpeg": { width: 2000, height: 2000 },
   "/images/non-surgical-hair-replacement/1.webp": { width: 400, height: 400 },
   "/images/og-default.jpg": { width: 1200, height: 630 },
+  "/images/homepage-images/mens-hair-systems.jpg": { width: 985, height: 1000 },
 };
 
 export function imageDimensions(src: string | null | undefined): { width: number; height: number } | null {

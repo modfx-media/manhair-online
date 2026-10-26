@@ -23,14 +23,15 @@ const HEIGHT: Record<Size, string> = {
 };
 
 /**
- * The file is 2170px wide, but the mark renders around 100–170px.
- * Without `sizes`, next/image preloads the 3840px candidate and that
- * download competes with the page's LCP image.
+ * Intrinsic box for the srcset. `sizes` is intentionally omitted: a `sizes`
+ * value with no `vw` makes next/image emit every device width, and the `src`
+ * fallback becomes the 3840px candidate. Width + 2x stays on the small
+ * candidates (the mark renders around 100–170px).
  */
-const SIZES: Record<Size, string> = {
-  sm: "96px",
-  md: "(min-width: 768px) 120px, 108px",
-  lg: "(min-width: 768px) 168px, 144px",
+const BOX: Record<Size, { width: number; height: number }> = {
+  sm: { width: 96, height: 32 },
+  md: { width: 120, height: 40 },
+  lg: { width: 168, height: 56 },
 };
 
 export function Wordmark({
@@ -38,20 +39,28 @@ export function Wordmark({
   tone: _tone = "dark",
   className,
   priority = false,
+  eager = false,
 }: {
   size?: Size;
   tone?: Tone;
   className?: string;
+  /** Preload. Use only when this mark is the LCP image (the homepage). */
   priority?: boolean;
+  /** Header: load with the document, but do not outrank a cover image. */
+  eager?: boolean;
 }) {
+  const box = BOX[size];
   return (
     <Image
       src={LOGO_SRC}
       alt="ManHair: Hair Restoration Orange County, CA"
-      width={2170}
-      height={725}
-      sizes={SIZES[size]}
-      priority={priority}
+      width={box.width}
+      height={box.height}
+      // Next 16 throws if `preload` and `priority` are both set. `preload`
+      // is the head hint; `fetchPriority` puts that hint on the high queue.
+      preload={priority || undefined}
+      fetchPriority={priority ? "high" : undefined}
+      loading={priority ? undefined : eager ? "eager" : undefined}
       // `h-auto` is intentionally omitted: it would be generated after the
       // `h-*` size classes in Tailwind's compiled CSS and win the cascade,
       // making the logo render at its full natural (800x235) size.

@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 import { CONTACT, HEADER_CTA, PRIMARY_NAV, SOCIAL, type NavItem } from "@/lib/site";
 import { getService } from "@/lib/seo/services";
 import { BookingButton } from "@/components/BookingButton";
-import { Wordmark } from "./Wordmark";
+import { HeaderLogo } from "./HeaderLogo";
 import { MobileNav } from "./MobileNav";
 import { Button } from "@/components/ui";
 import {
@@ -85,13 +85,7 @@ export function Header() {
       {/* Main row — wider than `.mh-container` so logo + nav + CTA
       stay on one line (page content stays at 1200px). */}
       <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-3 px-5 md:h-20 md:gap-4 md:px-8 lg:gap-5">
-        <Link
-          href="/"
-          className="mh-logo-link inline-flex shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--mh-copper-600)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--mh-bg)]"
-          aria-label="ManHair home"
-        >
-          <Wordmark size="md" priority />
-        </Link>
+        <HeaderLogo />
 
         {/* Desktop primary nav */}
         <nav aria-label="Primary" className="hidden min-w-0 lg:flex lg:flex-1 lg:justify-center">

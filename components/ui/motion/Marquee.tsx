@@ -33,7 +33,7 @@ export function Marquee({
     <div className={cn("mh-marquee", className)}>
       <div className={cn("mh-marquee-track", reverse && "reverse")} style={style}>
         <div className="mh-marquee-group">{children}</div>
-        <div className="mh-marquee-group" aria-hidden="true">
+        <div className="mh-marquee-group" aria-hidden="true" inert>
           {children}
         </div>
       </div>

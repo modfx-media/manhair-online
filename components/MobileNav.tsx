@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -27,10 +27,16 @@ import { MailIcon, PhoneIcon, SocialIcon } from "./icons";
  */
 const DRAWER_SOCIAL = SOCIAL.filter((s) => s.visibleInFooter).slice(0, 4);
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), summary, input, textarea, select, [tabindex]:not([tabindex="-1"])';
+
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const returnFocus = useRef(false);
 
   // Portal target only exists after mount (client only).
   useEffect(() => {
@@ -47,14 +53,51 @@ export function MobileNav() {
     };
   }, [open]);
 
-  // Escape to close.
+  // Move focus into the dialog on open, and back to the toggle on close
+  // (Escape, backdrop, or the close button). `inert` on the closed panel
+  // would otherwise drop focus on <body>.
+  useEffect(() => {
+    if (open) {
+      returnFocus.current = true;
+      const panel = panelRef.current;
+      panel?.querySelector<HTMLElement>("button, a[href]")?.focus();
+      return;
+    }
+    if (!returnFocus.current) return;
+    returnFocus.current = false;
+    toggleRef.current?.focus();
+  }, [open]);
+
+  // Escape closes. Tab stays inside the open dialog.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => !el.hasAttribute("disabled")
+      );
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof HTMLElement && panel.contains(active);
+      if (e.shiftKey && (!inside || active === first)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || active === last)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
   // Close on route change.
@@ -85,6 +128,7 @@ export function MobileNav() {
 
       {/* Slide-in panel */}
       <aside
+        ref={panelRef}
         id="mh-mobile-nav"
         role="dialog"
         aria-modal="true"
@@ -205,6 +249,7 @@ export function MobileNav() {
   return (
     <>
       <button
+        ref={toggleRef}
         type="button"
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}

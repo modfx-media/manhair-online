@@ -43,6 +43,7 @@ import { isFiveStarReview, toTestimonialCard } from "@/lib/reviews";
 import { TestimonialCard } from "@/components/TestimonialCard";
 import { HOME_TRANSFORMATIONS } from "@/lib/before-after";
 import { BookingButton } from "@/components/BookingButton";
+import { HeroVideo } from "@/components/HeroVideo";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
 
 const PAGE = getPageMeta("/")!;
@@ -69,7 +70,6 @@ export async function generateMetadata(): Promise<Metadata> {
  * ------------------------------------------------------------------ */
 
 // Local hero + showcase photography.
-const IMG_HERO = "/images/homepage-images/unnamed.jpg";
 const IMG_STYLE_A = "/images/homepage-images/61N7r4BnlfL._AC_UF1000,1000_QL80_.jpg";
 const IMG_GALLERY = "/images/homepage-images/c625fee2bb080f5336760df6c118f9b0.jpg";
 const IMG_CLINIC = "/images/homepage-images/the-london-hair-clinic-17.jpg";
@@ -458,7 +458,7 @@ export default async function HomePage() {
               </p>
             </Reveal>
 
-            <Reveal direction="up" delay={0.14} duration={0.7}>
+            <Reveal direction="up" delay={0.14} duration={0.7} className="mh-lcp">
               <h1 className="mh-hero2-title mt-6">
                 Men&rsquo;s hair replacement in Orange County.
                 <span className="accent">Made just for you.</span>
@@ -532,17 +532,7 @@ export default async function HomePage() {
           {/* Media column — framed video + floating glass stat badges */}
           <Reveal direction="up" delay={0.18} duration={0.8} className="mh-hero2-media">
             <div className="mh-hero2-frame">
-              <video
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-                poster={IMG_HERO}
-                aria-hidden="true"
-              >
-                <source src="/videos/4178139-hd_1920_1080_30fps.mp4" type="video/mp4" />
-              </video>
+              <HeroVideo />
 
               <span className="mh-hero2-badge bl">
                 <span className="fig">
@@ -616,7 +606,7 @@ export default async function HomePage() {
       {/* ============================================================
        * 2. TICKER — scrolling trust signals
        * ============================================================ */}
-      <section aria-hidden="true" className="mh-ticker">
+      <section aria-hidden="true" inert className="mh-ticker">
         <div className="mh-marquee">
           <div className="mh-marquee-track" style={{ ["--mh-marquee-duration" as string]: "34s" } as React.CSSProperties}>
             {[0, 1].map((dup) => (
@@ -701,7 +691,6 @@ export default async function HomePage() {
                     src={IMG_DASHBOARD}
                     alt="ManHair client: real human hair replacement result"
                     fill
-                    priority
                     sizes="(max-width: 768px) 90vw, 40vw"
                     className="mh-image-kenburns object-cover"
                   />
@@ -824,7 +813,7 @@ export default async function HomePage() {
                   src={b.src}
                   alt={b.alt}
                   aspect="square"
-                  priority={i === 0}
+                  priority={false}
                 />
               ))}
             </div>
@@ -1044,7 +1033,7 @@ export default async function HomePage() {
                   </div>
                   <div className="flex-1">
                     <p className="flex items-center gap-3 text-[0.7rem] font-semibold uppercase tracking-[0.24em] text-[color:var(--mh-copper-400)]">
-                      <span className="font-mono text-lg tracking-[0.14em] text-[color:var(--mh-copper-500)]">{`0${i + 1}`}</span>
+                      <span className="font-mono text-lg tracking-[0.14em] text-[color:var(--mh-copper-700)]">{`0${i + 1}`}</span>
                       {p.kicker}
                     </p>
                     <h3 className="mt-4 font-display text-3xl font-bold text-[color:var(--mh-ink-950)] md:text-4xl">
@@ -1137,7 +1126,7 @@ export default async function HomePage() {
                 <div>
                   <p className="flex items-center gap-1 font-display text-lg font-bold text-[color:var(--mh-ink-950)]">
                     {google.meta.rating > 0 ? google.meta.rating : "Google"}{" "}
-                    <span className="text-[#F5B400]">★★★★★</span>
+                    <span className="text-[#6B5014]">★★★★★</span>
                   </p>
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-600)]">
                     {google.meta.reviewCount > 0
@@ -1519,7 +1508,7 @@ export default async function HomePage() {
               <span>Undetectable Fit</span>
               <span className="mh-tape-dot" />
             </div>
-            <div className="mh-tape-group" aria-hidden="true">
+            <div className="mh-tape-group" aria-hidden="true" inert>
               <span>Free Consultation</span>
               <span className="mh-tape-dot" />
               <span>{CONTACT.studio.phone} · Orange County, CA</span>

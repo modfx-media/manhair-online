@@ -330,11 +330,12 @@ export default async function BlogPostPage({ params }: Props) {
                 <Image
                   src={cover}
                   alt={postCoverAlt(post.slug, title)}
-                  width={800}
-                  height={520}
+                  width={imageDimensions(cover)?.width ?? 800}
+                  height={imageDimensions(cover)?.height ?? 800}
                   preload
                   fetchPriority="high"
-                  sizes="(max-width: 768px) 100vw, 42rem"
+                  quality={60}
+                  sizes="(max-width: 768px) 100vw, 40rem"
                   className="h-auto w-full rounded-[calc(var(--mh-radius-md)-4px)]"
                   style={{ width: "100%", height: "auto" }}
                 />
@@ -446,7 +447,8 @@ async function SupplementalArticle({ post }: { post: SupplementalPost }) {
                 fill
                 preload
                 fetchPriority="high"
-                sizes="(max-width: 768px) 100vw, 48rem"
+                quality={60}
+                sizes="(max-width: 768px) 100vw, 40rem"
                 className="object-cover"
               />
             </div>

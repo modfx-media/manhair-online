@@ -18,6 +18,9 @@ const sans = Manrope({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
   display: "swap",
+  // LCP on these pages is an image. A font preload competes with it.
+  preload: false,
+  adjustFontFallback: true,
 });
 
 const display = Outfit({
@@ -25,6 +28,8 @@ const display = Outfit({
   subsets: ["latin"],
   weight: "variable",
   display: "swap",
+  preload: false,
+  adjustFontFallback: true,
 });
 
 export const metadata: Metadata = {

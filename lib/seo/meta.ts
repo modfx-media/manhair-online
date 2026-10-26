@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { imageDimensions } from "@/lib/image-dimensions";
 import { SITE } from "@/lib/site";
 
 export const INDEXABLE =
@@ -35,8 +36,9 @@ export function socialMetadata({
   imageHeight?: number | null;
 }): Pick<Metadata, "openGraph" | "twitter"> {
   const imageUrl = image || DEFAULT_OG.url;
-  const width = imageWidth || DEFAULT_OG.width;
-  const height = imageHeight || DEFAULT_OG.height;
+  const lookedUp = imageDimensions(imageUrl);
+  const width = imageWidth || lookedUp?.width || DEFAULT_OG.width;
+  const height = imageHeight || lookedUp?.height || DEFAULT_OG.height;
   return {
     openGraph: {
       title,

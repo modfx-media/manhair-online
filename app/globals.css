@@ -970,7 +970,8 @@ body {
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--mh-copper-400);
+  /* 0.6rem labels need 4.5:1. #D4B361 on cream is 1.88:1; #6B5014 is 7.06:1. */
+  color: #6B5014;
 }
 .mh-mnav-eyebrow-line {
   display: inline-block;
@@ -988,7 +989,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--mh-copper-400);
+  color: #6B5014;
   margin-left: 0.35rem;
 }
 
@@ -1098,7 +1099,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--mh-copper-400);
+  color: #6B5014;
 }
 @keyframes mh-mnav-sub-in {
   from { opacity: 0; transform: translateY(-4px); }
@@ -1150,7 +1151,8 @@ body {
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--mh-ink-600);
+  /* 0.6rem on cream. #948977 is 3.22:1; #5F5849 is 6.59:1. */
+  color: #5F5849;
 }
 .mh-mnav-contact-value {
   margin-top: 0.15rem;
@@ -1406,14 +1408,6 @@ body {
   opacity: 1;
   transform: translate3d(0, 0, 0);
 }
-/* Above-the-fold LCP: paint in the first HTML, don't wait for hydration. */
-.mh-reveal.mh-lcp,
-.mh-stagger > .mh-lcp {
-  opacity: 1;
-  transform: none;
-  transition: none;
-}
-
 /* Stagger group — each direct child gets its own delay via
    inline style set by RevealStagger. */
 .mh-stagger > * {
@@ -1422,6 +1416,13 @@ body {
   transition-property: opacity, transform;
   transition-duration: 0.7s;
   transition-timing-function: var(--mh-ease);
+}
+/* After the stagger hide rule so the LCP child paints in the first HTML. */
+.mh-reveal.mh-lcp,
+.mh-stagger > .mh-lcp {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 .mh-stagger.is-visible > * {
   opacity: 1;
@@ -3198,7 +3199,12 @@ body {
  * ============================================================ */
 .mh-intro {
   position: fixed;
-  inset: 0;
+  /* Starts below the sticky header so the header logo (homepage LCP)
+     is visible on first paint. The splash still covers the page. */
+  top: 4rem;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 100;
   display: grid;
   place-items: center;
@@ -3222,6 +3228,13 @@ body {
   pointer-events: none;
   opacity: 0.8;
 }
+@media (min-width: 768px) {
+  .mh-intro { top: 5rem; }
+}
+@media (min-width: 1024px) {
+  /* Utility bar (h-9) plus the md header (h-20). */
+  .mh-intro { top: 7.25rem; }
+}
 .mh-intro.is-leaving {
   opacity: 0;
   transform: translateY(-1.5%);
@@ -3242,6 +3255,14 @@ body {
   width: clamp(180px, 34vw, 320px);
   height: auto;
   animation: mh-intro-logo 0.95s var(--mh-ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mh-intro-logo {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 .mh-intro-name {
   font-family: var(--mh-font-sans);
@@ -3903,7 +3924,8 @@ body {
 .mh-goog-meta .dot::before { content: "·"; margin: 0 0.15rem; }
 .mh-goog-stars {
   margin-top: 0.35rem;
-  color: #F5B400;
+  /* #F5B400 on white is 1.84:1. #6B5014 is 7.55:1 and still reads as gold. */
+  color: #6B5014;
   font-size: 0.85rem;
   letter-spacing: 0.1em;
 }
@@ -4452,6 +4474,10 @@ footer {
   line-height: 1;
   color: var(--mh-red-500);
 }
+/* The chip sits on #111010. Brand red #B00400 is 2.59:1; #E37D73 is 6.74:1. */
+.mh-light .mh-numbers-years-n {
+  color: #E37D73;
+}
 .mh-numbers-years-k {
   font-family: ui-monospace, "SF Mono", monospace;
   font-size: 0.68rem;
@@ -4900,23 +4926,9 @@ footer {
 /* --- Shimmering gold stars in the trust row --- */
 .mh-hero2-stars {
   display: inline-block;
-  background: linear-gradient(
-    90deg,
-    var(--mh-copper-500) 0%,
-    var(--mh-copper-300) 45%,
-    #FDF6E4 50%,
-    var(--mh-copper-300) 55%,
-    var(--mh-copper-500) 100%
-  );
-  background-size: 260% 100%;
-  -webkit-background-clip: text;
-          background-clip: text;
-  color: transparent;
-  animation: mh-hero2-shimmer 5.5s ease-in-out infinite;
-}
-@keyframes mh-hero2-shimmer {
-  0%, 100% { background-position: 100% 50%; }
-  50%      { background-position: 0% 50%; }
+  /* Solid antique gold. The old clipped gradient passed through #FDF6E4
+     and #C9A24A (2.17:1 on the paper hero). #6B5014 is 6.82:1 on #F6F3EE. */
+  color: #6B5014;
 }
 
 /* --- Floating "density recovery" motion-graph mini card --- */

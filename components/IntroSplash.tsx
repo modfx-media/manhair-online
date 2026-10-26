@@ -68,7 +68,8 @@ export function IntroSplash() {
           alt="ManHair hair restoration, Orange County, CA"
           width={300}
           height={76}
-          priority
+          loading="lazy"
+          fetchPriority="low"
           className="mh-intro-logo"
         />
         <p className="mh-intro-name">Hair Restoration &middot; Orange County, CA</p>

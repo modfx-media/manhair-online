@@ -69,7 +69,8 @@ export async function RenderRoutedContent({
                 fill
                 preload
                 fetchPriority="high"
-                sizes="(max-width: 768px) 100vw, 48rem"
+                quality={60}
+                sizes="(max-width: 768px) 100vw, 40rem"
                 className="object-cover"
               />
             </div>
