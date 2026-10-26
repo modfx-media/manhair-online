@@ -2,6 +2,8 @@ import Image from "next/image";
 import { convertLexicalToHTML } from "@payloadcms/richtext-lexical/html";
 import { BookingButton } from "@/components/BookingButton";
 import { Display, Italic } from "@/components/ui";
+import { getCoverMap } from "@/lib/cms/blog-posts";
+import { repairLegacyInlineImages } from "@/lib/legacy-inline-images";
 import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 
 function lexicalToHtml(content: unknown): string {
@@ -19,7 +21,7 @@ export function hasRenderableCMSContent(doc: Record<string, unknown>): boolean {
   return Boolean(lexicalToHtml(doc.content).trim());
 }
 
-export function RenderRoutedContent({
+export async function RenderRoutedContent({
   doc,
   collection,
 }: {
@@ -31,18 +33,22 @@ export function RenderRoutedContent({
     (typeof doc.title === "string" && doc.title) ||
     "ManHair";
   const excerpt = typeof doc.excerpt === "string" ? doc.excerpt : "";
-  const html =
+  const html = repairLegacyInlineImages(
     (typeof doc.bodyHtml === "string" && doc.bodyHtml.trim()) ||
-    lexicalToHtml(doc.content);
+      lexicalToHtml(doc.content),
+  );
   const slug =
     (typeof doc.slug === "string" && doc.slug.trim()) ||
     (typeof doc.path === "string" ? doc.path.replace(/^\/+|\/+$/g, "") : "");
   const cmsCover = typeof doc.coverImage === "string" ? doc.coverImage : null;
+  const covers = collection === "posts" && slug ? await getCoverMap() : null;
   const coverSrc =
-    collection === "posts" && slug ? postCoverSrc(slug, cmsCover) : null;
+    collection === "posts" && slug
+      ? (covers?.get(slug) ?? postCoverSrc(slug, cmsCover))
+      : null;
 
   return (
-    <article className="border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)]">
+    <article className="mh-light border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)]">
       <div className="mh-container py-20 md:py-28">
         <p className="mh-eyebrow">{collection === "posts" ? "Journal" : "ManHair"}</p>
         <Display as={1} size="hero" className="mt-6 max-w-4xl">
@@ -61,7 +67,8 @@ export function RenderRoutedContent({
                 src={coverSrc}
                 alt={postCoverAlt(slug, title)}
                 fill
-                priority
+                preload
+                fetchPriority="high"
                 sizes="(max-width: 768px) 100vw, 48rem"
                 className="object-cover"
               />

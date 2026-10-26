@@ -22,6 +22,17 @@ const HEIGHT: Record<Size, string> = {
   lg: "h-12 md:h-14",
 };
 
+/**
+ * The file is 2170px wide, but the mark renders around 100–170px.
+ * Without `sizes`, next/image preloads the 3840px candidate and that
+ * download competes with the page's LCP image.
+ */
+const SIZES: Record<Size, string> = {
+  sm: "96px",
+  md: "(min-width: 768px) 120px, 108px",
+  lg: "(min-width: 768px) 168px, 144px",
+};
+
 export function Wordmark({
   size = "md",
   tone: _tone = "dark",
@@ -39,6 +50,7 @@ export function Wordmark({
       alt="ManHair: Hair Restoration Orange County, CA"
       width={2170}
       height={725}
+      sizes={SIZES[size]}
       priority={priority}
       // `h-auto` is intentionally omitted: it would be generated after the
       // `h-*` size classes in Tailwind's compiled CSS and win the cascade,

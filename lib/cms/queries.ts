@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { getPayload } from "payload";
 import config from "@payload-config";
 import { normalizeCmsPath, publicPathFromCms } from "./path";
@@ -129,7 +130,9 @@ function toPostSummary(doc: Record<string, unknown>): CMSPostSummary | null {
 }
 
 /** Public, non-future posts for blog index / generateStaticParams. */
-export async function queryPublishedPosts(limit = 100): Promise<CMSPostSummary[]> {
+export const queryPublishedPosts = cache(async (
+  limit = 100,
+): Promise<CMSPostSummary[]> => {
   if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) return [];
   return withCMS(async () => {
     const payload = await getPayload({ config });
@@ -149,7 +152,7 @@ export async function queryPublishedPosts(limit = 100): Promise<CMSPostSummary[]
       .map((doc) => toPostSummary(doc as unknown as Record<string, unknown>))
       .filter((doc): doc is CMSPostSummary => Boolean(doc));
   }, []);
-}
+});
 
 export async function queryPublishedPostSlugs(): Promise<string[]> {
   const posts = await queryPublishedPosts(5000);

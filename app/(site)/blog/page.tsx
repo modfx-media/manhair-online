@@ -54,7 +54,7 @@ export default async function BlogIndex() {
       <section className="relative isolate overflow-hidden border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)] pb-16 pt-16 md:pb-24 md:pt-40">
         <AuroraBlobs className="opacity-30" />
         <div className="mh-container relative z-10">
-          <Reveal>
+          <Reveal className="mh-lcp">
             <p className="mh-kicker">The ManHair Blog</p>
             <Display as={1} size="hero" className="mt-5 max-w-4xl">
               the <Italic>man hair</Italic> blog

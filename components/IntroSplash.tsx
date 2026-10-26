@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 
 /**
@@ -18,8 +19,11 @@ type Phase = "showing" | "leaving" | "done";
 
 export function IntroSplash() {
   const [phase, setPhase] = useState<Phase>("showing");
+  const pathname = usePathname();
+  const show = pathname === "/";
 
   useEffect(() => {
+    if (!show) return;
     if (typeof window === "undefined") return;
 
     const seen = window.sessionStorage.getItem("mh-intro-seen");
@@ -48,9 +52,9 @@ export function IntroSplash() {
       window.clearTimeout(t2);
       root.style.overflow = "";
     };
-  }, []);
+  }, [show]);
 
-  if (phase === "done") return null;
+  if (!show || phase === "done") return null;
 
   return (
     <div

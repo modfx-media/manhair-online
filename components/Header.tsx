@@ -52,7 +52,7 @@ export function Header() {
       {/* Utility bar */}
       <div className="mh-topbar hidden lg:block">
         <div className="mh-container flex h-9 items-center justify-between gap-6">
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-600)]">
+          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[color:var(--mh-ink-700)]">
             Free Virtual Consultation &middot; Orange, CA Studio
           </p>
           <div className="flex items-center gap-5">

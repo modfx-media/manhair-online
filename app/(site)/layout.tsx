@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { IntroSplash } from "@/components/IntroSplash";
 import { JsonLd } from "@/components/JsonLd";
 import { BookingModal } from "@/components/BookingModal";
+import { DeferredWidgets } from "@/components/DeferredWidgets";
 import { SITE, SOCIAL } from "@/lib/site";
 import { DEFAULT_OG } from "@/lib/seo/meta";
 import { getDisplayedGoogleReviews } from "@/lib/google-reviews";
@@ -64,10 +65,7 @@ export const metadata: Metadata = {
     "max-video-preview": -1,
   } as Metadata["robots"],
   icons: {
-    icon: [
-      { url: "/favicon-32x32.png?v=3", sizes: "32x32", type: "image/png" },
-      { url: "/favicon.png?v=3", type: "image/png" },
-    ],
+    icon: [{ url: "/favicon-32x32.png?v=3", sizes: "32x32", type: "image/png" }],
     apple: [{ url: "/apple-icon.png?v=3", sizes: "180x180", type: "image/png" }],
   },
   verification: {
@@ -157,9 +155,9 @@ export default async function SiteLayout({
       <body className="min-h-full flex flex-col bg-[color:var(--mh-bg)] text-[color:var(--mh-fg)] selection:bg-[color:var(--mh-copper-200)]">
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-NTLDFH6CYS"
-          strategy="beforeInteractive"
+          strategy="lazyOnload"
         />
-        <Script id="google-analytics" strategy="beforeInteractive">
+        <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
@@ -167,7 +165,7 @@ export default async function SiteLayout({
             gtag('config', 'G-NTLDFH6CYS');
           `}
         </Script>
-        <Script id="microsoft-clarity" strategy="afterInteractive">
+        <Script id="microsoft-clarity" strategy="lazyOnload">
           {`
             (function(c,l,a,r,i,t,y){
                 c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
@@ -182,16 +180,7 @@ export default async function SiteLayout({
         <main className="flex-1">{children}</main>
         <Footer />
         <BookingModal />
-        <Script
-          src="https://link.manhaironline.com/js/form_embed.js"
-          strategy="lazyOnload"
-        />
-        <Script
-          src="https://widgets.leadconnectorhq.com/loader.js"
-          data-resources-url="https://widgets.leadconnectorhq.com/chat-widget/loader.js"
-          data-widget-id="6a95e182e48bae5398803e54"
-          strategy="lazyOnload"
-        />
+        <DeferredWidgets />
       </body>
     </html>
   );
