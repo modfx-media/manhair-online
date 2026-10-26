@@ -13,6 +13,8 @@ export type SupplementalPost = {
   excerpt: string;
   category: string | null;
   publishedAt: string;
+  /** Local or remote cover. Omitted posts use the shared cover map. */
+  coverImage?: string | null;
 };
 
 export const SUPPLEMENTAL_POSTS: SupplementalPost[] = [

@@ -95,6 +95,7 @@ export function MobileNav() {
         )}
         data-open={open ? "true" : "false"}
         aria-hidden={!open}
+        inert={!open}
       >
         {/* Top hairline gold accent */}
         <span aria-hidden="true" className="mh-mnav-accent" />

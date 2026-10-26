@@ -1406,6 +1406,13 @@ body {
   opacity: 1;
   transform: translate3d(0, 0, 0);
 }
+/* Above-the-fold LCP: paint in the first HTML, don't wait for hydration. */
+.mh-reveal.mh-lcp,
+.mh-stagger > .mh-lcp {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
 
 /* Stagger group — each direct child gets its own delay via
    inline style set by RevealStagger. */
@@ -4266,8 +4273,11 @@ body {
   /* Warm antique-gold accent, tuned for contrast on white.
      300 (values/figures) and 400 (labels/kickers) are deepened
      from the cream-theme champagne so they read on paper white. */
-  --mh-copper-300: #B8892A;   /* antique gold — values, figures, checks */
-  --mh-copper-400: #977016;   /* deeper gold — kickers, labels (AA on white) */
+  /* Small labels (11px kickers, 11px "Read more") need 4.5:1 on #F6F3EE.
+     The previous golds were 2.85:1 and 4.08:1. */
+  --mh-copper-300: #7A5C16;   /* antique gold — values, figures, checks */
+  --mh-copper-400: #6B5014;   /* deeper gold — kickers, labels */
+  --mh-copper-700: #5F4810;   /* bronze labels and inline links */
 
   --mh-bg: var(--mh-ink-50);
   --mh-surface: var(--mh-ink-100);
@@ -4306,6 +4316,15 @@ body {
 
 /* Big stat numerals: antique gold reads as premium on white */
 .mh-light .mh-stat-num { color: var(--mh-copper-400); }
+
+/* Footer sits on cream #F5EFE3, outside .mh-light. The spec muted gray
+   (#948977, 3.0:1) and eyebrow gold (#8B6E29, 4.2:1) fail WCAG AA for
+   the small footer text. Darken only inside the footer. */
+footer {
+  --mh-ink-500: #5A5146;
+  --mh-ink-600: #5A5146;
+  --mh-copper-700: #6E5420;
+}
 
 /* ---------- DARK sub-context within the light page ----------
  * The cinema pull-quote panel keeps a light ink ladder +

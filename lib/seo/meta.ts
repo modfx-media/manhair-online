@@ -22,14 +22,21 @@ export function socialMetadata({
   url,
   image,
   imageAlt,
+  imageWidth,
+  imageHeight,
 }: {
   title: string;
   description: string;
   url: string;
   image?: string | null;
   imageAlt?: string | null;
+  /** Real pixel size of `image`. Omit only for the default 1200×630 card. */
+  imageWidth?: number | null;
+  imageHeight?: number | null;
 }): Pick<Metadata, "openGraph" | "twitter"> {
   const imageUrl = image || DEFAULT_OG.url;
+  const width = imageWidth || DEFAULT_OG.width;
+  const height = imageHeight || DEFAULT_OG.height;
   return {
     openGraph: {
       title,
@@ -41,8 +48,8 @@ export function socialMetadata({
       images: [
         {
           url: imageUrl,
-          width: DEFAULT_OG.width,
-          height: DEFAULT_OG.height,
+          width,
+          height,
           alt: imageAlt || DEFAULT_OG.alt,
         },
       ],

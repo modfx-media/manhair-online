@@ -157,9 +157,9 @@ export default async function SiteLayout({
       <body className="min-h-full flex flex-col bg-[color:var(--mh-bg)] text-[color:var(--mh-fg)] selection:bg-[color:var(--mh-copper-200)]">
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-NTLDFH6CYS"
-          strategy="beforeInteractive"
+          strategy="lazyOnload"
         />
-        <Script id="google-analytics" strategy="beforeInteractive">
+        <Script id="google-analytics" strategy="lazyOnload">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}

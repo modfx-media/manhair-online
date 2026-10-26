@@ -9,6 +9,9 @@ import { AuroraBlobs, Reveal, RevealGrid } from "@/components/ui/motion";
 import { JsonLd } from "@/components/JsonLd";
 import { SITE, SOCIAL } from "@/lib/site";
 import { POSTS, getPostBySlug } from "@/lib/posts";
+import { getCoverMap } from "@/lib/cms/blog-posts";
+import { imageDimensions } from "@/lib/image-dimensions";
+import { repairLegacyInlineImages } from "@/lib/legacy-inline-images";
 import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 import {
   getSupplementalPost,
@@ -78,12 +81,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         : (post.heading ?? post.title);
     const description = post.description ?? SITE.brandStatement;
     const url = post.canonical ?? `${SITE.origin}${post.path}`;
+    const covers = await getCoverMap();
+    const image = covers.get(post.slug) ?? postCoverSrc(post.slug, post.coverImage);
+    const dim = imageDimensions(image);
     const social = socialMetadata({
       title: preferredTitle,
       description,
       url,
-      image: postCoverSrc(post.slug, post.coverImage),
+      image,
       imageAlt: postCoverAlt(post.slug, preferredTitle),
+      imageWidth: dim?.width,
+      imageHeight: dim?.height,
     });
     return cmsGenerateMetadata(post.path, {
       metadataBase: new URL(SITE.origin),
@@ -108,12 +116,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const title = extra.title;
     const url = `${SITE.origin}/${extra.slug}/`;
     const description = extra.excerpt;
+    const covers = await getCoverMap();
+    const image = covers.get(extra.slug) ?? postCoverSrc(extra.slug, extra.coverImage);
+    const dim = imageDimensions(image);
     const social = socialMetadata({
       title,
       description,
       url,
-      image: postCoverSrc(extra.slug),
+      image,
       imageAlt: postCoverAlt(extra.slug, title),
+      imageWidth: dim?.width,
+      imageHeight: dim?.height,
     });
     return {
       metadataBase: new URL(SITE.origin),
@@ -131,12 +144,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = cmsPost.heading ?? cmsPost.title;
   const url = `${SITE.origin}${cmsPost.href}`;
   const description = cmsPost.excerpt ?? SITE.brandStatement;
+  const covers = await getCoverMap();
+  const image = covers.get(cmsPost.slug) ?? postCoverSrc(cmsPost.slug, cmsPost.coverImage);
+  const dim = imageDimensions(image);
   const social = socialMetadata({
     title,
     description,
     url,
-    image: postCoverSrc(cmsPost.slug, cmsPost.coverImage),
+    image,
     imageAlt: postCoverAlt(cmsPost.slug, title),
+    imageWidth: dim?.width,
+    imageHeight: dim?.height,
   });
   return cmsGenerateMetadata(cmsPost.href, {
     metadataBase: new URL(SITE.origin),
@@ -192,6 +210,9 @@ export default async function BlogPostPage({ params }: Props) {
 
   const pageUrl = post.canonical ?? `${SITE.origin}${post.path}`;
   const title = post.heading ?? post.title;
+  const covers = await getCoverMap();
+  const cover = covers.get(post.slug) ?? postCoverSrc(post.slug, post.coverImage);
+  const coverUrl = `${SITE.origin}${cover}`;
   const graph = {
     "@context": "https://schema.org",
     "@graph": [
@@ -206,7 +227,7 @@ export default async function BlogPostPage({ params }: Props) {
         publisher: { "@id": `${SITE.origin}/#organization` },
         articleSection: post.category ?? undefined,
         inLanguage: "en-US",
-        image: `${SITE.origin}${postCoverSrc(post.slug, post.coverImage)}`,
+        image: coverUrl,
       },
       {
         "@type": "WebPage",
@@ -226,8 +247,8 @@ export default async function BlogPostPage({ params }: Props) {
         "@type": "ImageObject",
         inLanguage: "en-US",
         "@id": `${pageUrl}#primaryimage`,
-        url: `${SITE.origin}${postCoverSrc(post.slug, post.coverImage)}`,
-        contentUrl: `${SITE.origin}${postCoverSrc(post.slug, post.coverImage)}`,
+        url: coverUrl,
+        contentUrl: coverUrl,
       },
       {
         "@type": "BreadcrumbList",
@@ -278,7 +299,7 @@ export default async function BlogPostPage({ params }: Props) {
         <AuroraBlobs className="opacity-20" />
         <div className="mh-container relative z-10 pb-16 md:pb-24">
           <div className="mx-auto max-w-2xl">
-            <Reveal>
+            <Reveal className="mh-lcp">
               <Link href="/blog/" className="mh-kicker">
                 The ManHair Blog
               </Link>
@@ -304,27 +325,26 @@ export default async function BlogPostPage({ params }: Props) {
               ) : null}
             </Reveal>
 
-            {post.coverImage ? (
-              <Reveal className="mt-8" delay={0.06}>
-                <figure className="overflow-hidden rounded-[var(--mh-radius-md)] bg-[color:var(--mh-ink-50)] p-1.5 ring-1 ring-[color:var(--mh-border)]">
-                  <Image
-                    src={postCoverSrc(post.slug, post.coverImage)}
-                    alt={postCoverAlt(post.slug, title)}
-                    width={800}
-                    height={520}
-                    priority
-                    sizes="(max-width: 768px) 100vw, 42rem"
-                    className="h-auto w-full rounded-[calc(var(--mh-radius-md)-4px)]"
-                    style={{ width: "100%", height: "auto" }}
-                  />
-                </figure>
-              </Reveal>
+            {cover ? (
+              <figure className="mt-8 overflow-hidden rounded-[var(--mh-radius-md)] bg-[color:var(--mh-ink-50)] p-1.5 ring-1 ring-[color:var(--mh-border)]">
+                <Image
+                  src={cover}
+                  alt={postCoverAlt(post.slug, title)}
+                  width={800}
+                  height={520}
+                  preload
+                  fetchPriority="high"
+                  sizes="(max-width: 768px) 100vw, 42rem"
+                  className="h-auto w-full rounded-[calc(var(--mh-radius-md)-4px)]"
+                  style={{ width: "100%", height: "auto" }}
+                />
+              </figure>
             ) : null}
 
             <div
               className="mh-prose mt-10"
               // eslint-disable-next-line react/no-danger
-              dangerouslySetInnerHTML={{ __html: post.bodyHtml ?? "" }}
+              dangerouslySetInnerHTML={{ __html: repairLegacyInlineImages(post.bodyHtml ?? "") }}
             />
 
             <div className="mt-14 rounded-[var(--mh-radius-md)] border border-[color:var(--mh-border)] bg-[color:var(--mh-surface)] px-6 py-8 text-center md:px-10">
@@ -363,7 +383,7 @@ export default async function BlogPostPage({ params }: Props) {
                   {p.coverImage ? (
                     <div className="relative aspect-[16/10] overflow-hidden bg-[color:var(--mh-ink-50)]">
                       <Image
-                        src={postCoverSrc(p.slug, p.coverImage)}
+                        src={covers.get(p.slug) ?? postCoverSrc(p.slug, p.coverImage)}
                         alt={postCoverAlt(p.slug, p.heading ?? p.title)}
                         fill
                         sizes="(max-width: 768px) 100vw, 33vw"
@@ -400,12 +420,13 @@ export default async function BlogPostPage({ params }: Props) {
   );
 }
 
-function SupplementalArticle({ post }: { post: SupplementalPost }) {
+async function SupplementalArticle({ post }: { post: SupplementalPost }) {
   const title = post.title;
-  const cover = postCoverSrc(post.slug);
+  const covers = await getCoverMap();
+  const cover = covers.get(post.slug) ?? postCoverSrc(post.slug, post.coverImage);
   return (
     <CMSRoute path={`/${post.slug}`}>
-      <article className="border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)]">
+      <article className="mh-light border-b border-[color:var(--mh-border)] bg-[color:var(--mh-bg)]">
         <div className="mh-container py-16 md:py-24">
           <p className="mh-kicker">{post.category ?? "Journal"}</p>
           <Display as={1} size="hero" className="mt-5 max-w-4xl">
@@ -423,7 +444,8 @@ function SupplementalArticle({ post }: { post: SupplementalPost }) {
                 src={cover}
                 alt={postCoverAlt(post.slug, title)}
                 fill
-                priority
+                preload
+                fetchPriority="high"
                 sizes="(max-width: 768px) 100vw, 48rem"
                 className="object-cover"
               />

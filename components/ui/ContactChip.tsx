@@ -63,13 +63,13 @@ export function ContactChip({
 
   if (href) {
     return (
-      <a href={href} className={base} aria-label={ariaLabel ?? `${label}: ${value}`}>
+      <a href={href} className={base} aria-label={ariaLabel}>
         {inner}
       </a>
     );
   }
   return (
-    <span className={base} aria-label={ariaLabel ?? `${label}: ${value}`}>
+    <span className={base} aria-label={ariaLabel}>
       {inner}
     </span>
   );

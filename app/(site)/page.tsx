@@ -36,6 +36,7 @@ import { CONTACT, SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { POSTS } from "@/lib/posts";
+import { getCoverMap } from "@/lib/cms/blog-posts";
 import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 import { getDisplayedGoogleReviews } from "@/lib/google-reviews";
 import { isFiveStarReview, toTestimonialCard } from "@/lib/reviews";
@@ -369,7 +370,10 @@ function MetricGlyph({ variant }: { variant: "spark" | "bars" | "ring" | "pins" 
 }
 
 export default async function HomePage() {
-  const google = await getDisplayedGoogleReviews();
+  const [google, covers] = await Promise.all([
+    getDisplayedGoogleReviews(),
+    getCoverMap(),
+  ]);
   const fiveStarCards = google.reviews
     .filter(isFiveStarReview)
     .map(toTestimonialCard);
@@ -1365,7 +1369,7 @@ export default async function HomePage() {
                 <div className="mh-prog-media">
                   {p.coverImage ? (
                     <Image
-                      src={postCoverSrc(p.slug, p.coverImage)}
+                      src={covers.get(p.slug) ?? postCoverSrc(p.slug, p.coverImage)}
                       alt={postCoverAlt(p.slug, p.heading || p.title)}
                       fill
                       sizes="(max-width: 768px) 100vw, 33vw"

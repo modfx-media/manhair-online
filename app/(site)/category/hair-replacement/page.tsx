@@ -8,6 +8,7 @@ import { SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
 import { cmsGenerateMetadata } from "@/lib/cms/metadata";
 import { POSTS } from "@/lib/posts";
+import { getCoverMap } from "@/lib/cms/blog-posts";
 import { postCoverAlt, postCoverSrc } from "@/lib/post-cover";
 import { CMSRoute } from "@/lib/cms/CMSRoute";
 
@@ -38,20 +39,24 @@ const SLUGS = [
   "does-warmer-weather-affect-hair-loss",
 ];
 
-const CARDS: PostCard[] = SLUGS.map((slug) => {
-  const p = BY_SLUG.get(slug)!;
-  const title = p.heading ?? p.title;
-  return {
-    href: p.path,
-    category: CATEGORY,
-    title,
-    excerpt: p.excerpt,
-    image: postCoverSrc(p.slug, p.coverImage),
-    imageAlt: postCoverAlt(p.slug, title),
-  };
-});
+async function buildCards(): Promise<PostCard[]> {
+  const covers = await getCoverMap();
+  return SLUGS.map((slug) => {
+    const p = BY_SLUG.get(slug)!;
+    const title = p.heading ?? p.title;
+    return {
+      href: p.path,
+      category: CATEGORY,
+      title,
+      excerpt: p.excerpt,
+      image: covers.get(slug) ?? postCoverSrc(p.slug, p.coverImage),
+      imageAlt: postCoverAlt(p.slug, title),
+    };
+  });
+}
 
-export default function Page() {
+export default async function Page() {
+  const CARDS = await buildCards();
   const graph = buildPageGraph({
     origin: SITE.origin,
     path: PAGE.path,

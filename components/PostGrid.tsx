@@ -26,8 +26,10 @@ export function PostGrid({ posts }: { posts: PostCard[] }) {
       className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
       gap={0.06}
     >
-      {posts.map((p) => (
-        <article key={p.href} className="mh-prog-card">
+      {posts.map((p, index) => {
+        const lcp = index === 0;
+        return (
+        <article key={p.href} className={lcp ? "mh-prog-card mh-lcp" : "mh-prog-card"}>
           <Link href={p.href} className="mh-prog-media block" aria-label={p.title}>
             {p.image ? (
               <Image
@@ -36,6 +38,8 @@ export function PostGrid({ posts }: { posts: PostCard[] }) {
                 fill
                 sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                 className="object-cover"
+                preload={lcp}
+                fetchPriority={lcp ? "high" : "auto"}
               />
             ) : null}
           </Link>
@@ -69,7 +73,8 @@ export function PostGrid({ posts }: { posts: PostCard[] }) {
             </Link>
           </div>
         </article>
-      ))}
+        );
+      })}
     </RevealGrid>
   );
 }

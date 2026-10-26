@@ -122,14 +122,12 @@ export function Footer() {
               label="Orange County"
               value={CONTACT.studio.phone}
               href={CONTACT.studio.phoneHref}
-              ariaLabel={`Call our Orange County office at ${CONTACT.studio.phone}`}
             />
             <ContactChip
               icon={<MailIcon size={18} />}
               label="Email"
               value={CONTACT.email}
               href={CONTACT.emailHref}
-              ariaLabel={`Email ${CONTACT.email}`}
             />
           </div>
         </div>

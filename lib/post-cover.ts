@@ -22,11 +22,11 @@ type Cover = {
 export const POST_COVERS: Record<string, Cover> = {
   "common-custom-hair-replacement-mistakes": {
     src: "/images/the-london-hair-clinic-27.jpg",
-    alt: "Man seated in a salon chair during a professional hair system fitting",
+    alt: "Collage of men in a hair studio during fittings, with salon chairs, close-up hairlines, and styled portraits",
   },
   "professional-hair-systems-diy-vs-studio-costs": {
     src: "/images/the-london-hair-clinic-36.jpg",
-    alt: "Stylist fitting a men's hair system in a studio",
+    alt: "Collage of a men's hair system studio, showing fitting chairs, hair color rings, and client portraits",
   },
   "a-guide-to-full-head-hair-replacement-for-men": {
     src: "/images/blogs-images/a-guide-to-full-head-hair-replacement-for-men.jpeg",
@@ -214,4 +214,35 @@ export function distinctCover(
     if (!used.has(candidate)) return candidate;
   }
   return preferred;
+}
+
+export type CoverInput = {
+  slug: string;
+  cmsCover?: string | null;
+};
+
+/**
+ * One assignment for every published post. Cards, heroes, and Open Graph
+ * tags all read this map, so a collision can't change the card without
+ * changing the article and the social image too.
+ *
+ * Explicit assignments are applied first (they never share a file today).
+ * Remaining slugs are ordered by name so the result does not depend on
+ * which page asked.
+ */
+export function assignDistinctCovers(posts: readonly CoverInput[]): Map<string, string> {
+  const sorted = [...posts].sort((a, b) => {
+    const ae = POST_COVERS[a.slug] ? 0 : 1;
+    const be = POST_COVERS[b.slug] ? 0 : 1;
+    if (ae !== be) return ae - be;
+    return a.slug.localeCompare(b.slug);
+  });
+  const used = new Set<string>();
+  const assigned = new Map<string, string>();
+  for (const post of sorted) {
+    const src = distinctCover(post.slug, used, post.cmsCover);
+    assigned.set(post.slug, src);
+    used.add(src);
+  }
+  return assigned;
 }
