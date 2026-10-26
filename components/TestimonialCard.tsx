@@ -41,8 +41,9 @@ export function TestimonialCard({
         </div>
         {fromGoogle ? <GoogleGIcon size={22} /> : null}
       </div>
-      <p className="mh-goog-stars" aria-label="5 out of 5 stars">
-        ★★★★★
+      <p className="mh-goog-stars">
+        <span aria-hidden="true">★★★★★</span>
+        <span className="sr-only text-[color:var(--mh-ink-950)]">5 out of 5 stars</span>
       </p>
       <p className="mh-goog-quote">&ldquo;{t.quote}&rdquo;</p>
       <div className="mh-goog-foot">

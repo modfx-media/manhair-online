@@ -65,7 +65,7 @@ export function Footer() {
               <li key={n.href}>
                 <Link
                   href={n.href}
-                  className="text-[color:var(--mh-ink-800)] transition-colors hover:text-[color:var(--mh-copper-700)]"
+                  className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-800)] transition-colors hover:text-[color:var(--mh-copper-700)]"
                 >
                   {n.label}
                 </Link>
@@ -186,11 +186,11 @@ export function Footer() {
               {FOOTER_LEGAL.poweredBy}
             </span>
           </p>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 text-[0.7rem] uppercase tracking-[0.14em]">
+          <ul className="flex flex-wrap gap-x-6 gap-y-1 text-[0.7rem] uppercase tracking-[0.14em]">
             <li>
               <Link
                 href="/privacy-policy/"
-                className="text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
+                className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Privacy Policy
               </Link>
@@ -198,7 +198,7 @@ export function Footer() {
             <li>
               <Link
                 href="/terms-of-service/"
-                className="text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
+                className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Terms of Service
               </Link>
@@ -206,7 +206,7 @@ export function Footer() {
             <li>
               <Link
                 href="/refund-policy/"
-                className="text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
+                className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Refund Policy
               </Link>

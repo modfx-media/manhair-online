@@ -35,21 +35,55 @@ export function IntroSplash() {
     }
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const hold = reduce ? 350 : 2000;
-
     const root = document.documentElement;
     root.style.overflow = "hidden";
 
-    const t1 = window.setTimeout(() => setPhase("leaving"), hold);
-    const t2 = window.setTimeout(() => {
-      setPhase("done");
-      window.sessionStorage.setItem("mh-intro-seen", "1");
-      root.style.overflow = "";
-    }, hold + 850);
+    let leaveTimer = 0;
+    let doneTimer = 0;
+    const finish = (delay: number) => {
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(doneTimer);
+      leaveTimer = window.setTimeout(() => setPhase("leaving"), delay);
+      doneTimer = window.setTimeout(() => {
+        setPhase("done");
+        window.sessionStorage.setItem("mh-intro-seen", "1");
+        root.style.overflow = "";
+      }, delay + 850);
+    };
+
+    finish(reduce ? 350 : 2000);
+
+    // An open desktop dropdown or the mobile drawer must not sit under
+    // the splash. Header nav hover/focus and any header click dismiss it.
+    // The header and the drawer also paint above the splash (z-index).
+    const dismiss = () => finish(0);
+    const onInteract = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const inHeader = target.closest("header");
+      const inMenu = target.closest("#mh-mobile-nav, button[aria-controls='mh-mobile-nav']");
+      const inDesktopNav = target.closest("header nav");
+      if (inMenu) {
+        dismiss();
+        return;
+      }
+      if (!inHeader) return;
+      if (event.type === "mouseover") {
+        if (inDesktopNav) dismiss();
+        return;
+      }
+      dismiss();
+    };
+    document.addEventListener("pointerdown", onInteract, true);
+    document.addEventListener("focusin", onInteract, true);
+    document.addEventListener("mouseover", onInteract, true);
 
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(doneTimer);
+      document.removeEventListener("pointerdown", onInteract, true);
+      document.removeEventListener("focusin", onInteract, true);
+      document.removeEventListener("mouseover", onInteract, true);
       root.style.overflow = "";
     };
   }, [show]);
@@ -60,7 +94,7 @@ export function IntroSplash() {
     <div
       className={cn("mh-intro", phase === "leaving" && "is-leaving")}
       role="presentation"
-      aria-hidden={phase === "leaving"}
+      aria-hidden="true"
     >
       <div className="mh-intro-inner">
         <Image
@@ -68,7 +102,8 @@ export function IntroSplash() {
           alt="ManHair hair restoration, Orange County, CA"
           width={300}
           height={76}
-          priority
+          loading="lazy"
+          fetchPriority="low"
           className="mh-intro-logo"
         />
         <p className="mh-intro-name">Hair Restoration &middot; Orange County, CA</p>

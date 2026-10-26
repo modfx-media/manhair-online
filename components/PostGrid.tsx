@@ -36,10 +36,12 @@ export function PostGrid({ posts }: { posts: PostCard[] }) {
                 src={p.image}
                 alt={p.imageAlt}
                 fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 24rem"
                 className="object-cover"
-                preload={lcp}
-                fetchPriority={lcp ? "high" : "auto"}
+                quality={60}
+                preload={lcp || undefined}
+                fetchPriority={lcp ? "high" : "low"}
+                loading={lcp ? undefined : "lazy"}
               />
             ) : null}
           </Link>
