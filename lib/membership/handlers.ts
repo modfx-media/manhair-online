@@ -3,6 +3,7 @@ import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches, safeAppOrigin, type PriceSnapshot } from "./checkout";
 import { syncHash, syncLead, ghlMode } from "./ghl";
+import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import {
   allowance,
   planCancel,
@@ -27,13 +28,12 @@ import {
   databaseReady,
   foundingConfig,
   paymentBlockers,
-  portalBlockers,
   sessionSecret,
   setupCentsFor,
   type AppEnv,
 } from "./readiness";
 import { mapStripeEvent, type StripeEventShape } from "./stripe-map";
-import { newId, normalizeEmail, signToken, validEmail, verifyToken } from "./tokens";
+import { hashSecret, newId, newSecret, normalizeEmail, signToken, validEmail, verifyToken } from "./tokens";
 import type { DealRecord, DealStage, MemberRecord, MembershipStore } from "./types";
 import { DEAL_STAGES } from "./types";
 
@@ -49,6 +49,9 @@ export type StripeLike = {
     };
   };
   billingPortal: {
+    configurations: {
+      create(params: Record<string, unknown>): Promise<{ id: string }>;
+    };
     sessions: {
       create(params: { customer: string; return_url: string; configuration: string }): Promise<{ url: string }>;
     };
@@ -66,6 +69,8 @@ export type Deps = {
   fetchImpl?: typeof fetch;
   constructEvent?: (payload: string, header: string, secret: string) => StripeEventShape;
   staffEmail?: string | null;
+  deliverRecovery?: (input: { to: string; url: string }) => Promise<{ sent: boolean; reason?: string }>;
+  verifyGhl?: (rawBody: string, signature: string | null) => boolean;
 };
 
 const OPEN_STATUSES = new Set(["trialing", "active", "past_due", "paused", "cancel_scheduled"]);
@@ -134,7 +139,8 @@ export async function handleReadiness(deps: Deps): Promise<Response> {
   return json({
     payments: paymentBlockers(deps.env).length === 0 ? "blocked_until_account_lookup" : "blocked",
     paymentBlockers: paymentBlockers(deps.env).map((blocker) => blocker.operatorMessage),
-    portal: portalBlockers(deps.env).some((blocker) => blocker.code.includes("PORTAL")) ? "not_configured" : "configured",
+    portal: paymentBlockers(deps.env).length === 0 ? "billing_only_when_customer_exists" : "not_configured",
+    recoveryEmail: recoveryEmailReady(deps.env) ? "enabled" : "not_configured",
     founding: founding.enabled ? { enabled: true, cap: founding.cap } : { enabled: false, reason: founding.reason },
     ghl: ghlMode(deps.env),
     scheduling: SCHEDULING.status,
@@ -305,8 +311,10 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     await deps.store.createSession({
       id: sessionId,
       memberId: member.id,
+      tokenHash: "",
       expiresAt: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
       active: false,
+      returnUsed: false,
     });
     const dealId = newId();
     const deal: DealRecord = {
@@ -323,6 +331,8 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
       syncStatus: "not_connected",
       syncHash: syncHash({ stage: "checkout", assignee: "", followUp: "" }),
       locationId: null,
+      remoteUpdatedAt: null,
+      staffEditedAt: null,
     };
     const ghl = await syncLead(
       deps.env,
@@ -367,25 +377,31 @@ export async function handleReturn(request: Request, deps: Deps): Promise<Respon
     return json({ ok: false, error: "return_token_rejected" }, 400);
   }
   const session = await deps.store.findSession(payload.sid);
-  if (!session || session.memberId !== payload.mid || new Date(session.expiresAt).getTime() <= deps.now().getTime()) {
+  if (!session || session.memberId !== payload.mid || session.returnUsed || new Date(session.expiresAt).getTime() <= deps.now().getTime()) {
     return json({ ok: false, error: "return_expired" }, 400);
   }
-  await deps.store.activateSession(session.id);
+  const raw = newSecret();
+  const expiresAt = new Date(deps.now().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const tokenHash = hashSecret(raw);
+  await deps.store.activateSession(session.id, tokenHash, expiresAt);
+  const activated = await deps.store.findSession(session.id);
+  if (activated?.tokenHash !== tokenHash) return json({ ok: false, error: "return_replay" }, 400);
+  await deps.store.addAuthAudit({ id: newId(), memberId: session.memberId, action: "checkout_return", createdAt: deps.now().toISOString() });
   const secure = safeAppOrigin(request, deps.env).startsWith("https://");
   return new Response(null, {
     status: 302,
     headers: {
       location: "/account/",
-      "set-cookie": cookieHeader(session.id, secure),
+      "set-cookie": cookieHeader(raw, secure),
       "cache-control": "no-store",
     },
   });
 }
 
 async function currentMember(request: Request, deps: Deps): Promise<MemberRecord | null> {
-  const sessionId = readSessionId(request);
-  if (!sessionId) return null;
-  const session = await deps.store.findSession(sessionId);
+  const raw = readSessionId(request);
+  if (!raw) return null;
+  const session = await deps.store.findSessionByHash(hashSecret(raw));
   if (!session?.active || new Date(session.expiresAt).getTime() <= deps.now().getTime()) return null;
   return deps.store.findMemberById(session.memberId);
 }
@@ -438,21 +454,11 @@ export async function handleAccountPost(request: Request, deps: Deps): Promise<R
   if (!isSameOrigin(request, origin)) return json({ ok: false, error: "origin_rejected" }, 403);
   const url = new URL(request.url);
   const action = url.searchParams.get("action");
-  if (action === "login") {
-    return json({
-      ok: false,
-      error: "email_not_sent",
-      message: "Membership email sign-in is not sent. No customer email is configured for this app.",
-    }, 501);
-  }
+  const body = (await readJson(request)) ?? {};
+  if (action === "recover") return recoverMember(body, request, deps);
+  if (action === "logout") return logoutMember(request, deps);
   const member = await currentMember(request, deps);
   if (!member) return json({ ok: false, error: "signed_out" }, 401);
-  const body = (await readJson(request)) ?? {};
-  if (action === "logout") {
-    const sessionId = readSessionId(request);
-    if (sessionId) await deps.store.deleteSession(sessionId);
-    return json({ ok: true }, 200, { "set-cookie": "mh_member_session=; HttpOnly; Path=/; Max-Age=0" });
-  }
   if (action === "cancel") return cancelMember(member, deps);
   if (action === "pause") return requestPause(member, body, deps);
   if (action === "tier") return changeTier(member, body, deps);
@@ -583,20 +589,126 @@ async function changeTier(member: MemberRecord, body: Record<string, unknown>, d
   });
 }
 
+export const BILLING_PORTAL_FEATURES = {
+  invoice_history: { enabled: true },
+  payment_method_update: { enabled: true },
+  subscription_cancel: { enabled: false },
+  subscription_update: { enabled: false },
+  customer_update: { enabled: false },
+} as const;
+
 async function openPortal(member: MemberRecord, deps: Deps, origin: string): Promise<Response> {
-  const blockers = portalBlockers(deps.env);
-  if (blockers.length || !deps.stripe || !member.stripeCustomerId) {
-    return json({ ok: false, error: "portal_not_configured", message: blockers.at(-1)?.publicMessage ?? "Portal is not available." }, 503);
+  if (!member.stripeCustomerId || !deps.stripe || paymentBlockers(deps.env).length) {
+    return json({
+      ok: false,
+      error: "portal_not_configured",
+      message: member.stripeCustomerId
+        ? "Payment method update is not available until the confirmed payment account is connected."
+        : "The processor has not confirmed a customer for this membership yet.",
+    }, 503);
   }
-  const configuration = deps.env.STRIPE_PORTAL_CONFIGURATION_ID!.trim();
+  const configuration = await deps.stripe.billingPortal.configurations.create({ features: BILLING_PORTAL_FEATURES });
   const session = await deps.stripe.billingPortal.sessions.create({
     customer: member.stripeCustomerId,
     return_url: `${origin}/account/`,
-    configuration,
+    configuration: configuration.id,
   });
   const returned = new URL(session.url);
   if (returned.protocol !== "https:") return json({ ok: false, error: "portal_url_rejected" }, 502);
   return json({ ok: true, url: session.url });
+}
+
+export function recoveryEmailReady(env: AppEnv): boolean {
+  return Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM?.trim() && env.MEMBERSHIP_RECOVERY_SEND === "true");
+}
+
+export async function defaultRecoveryDelivery(
+  env: AppEnv,
+  message: { to: string; url: string },
+  fetchImpl: typeof fetch,
+): Promise<{ sent: boolean; reason?: string }> {
+  if (!recoveryEmailReady(env)) {
+    return {
+      sent: false,
+      reason: "Account recovery email is not enabled. No message was sent. The membership stays on file and does not need another payment.",
+    };
+  }
+  const response = await fetchImpl("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: env.RESEND_FROM,
+      to: message.to,
+      subject: "Your ManHair membership sign-in link",
+      text: `This link signs you in to the membership you already have. It does not start a new payment. ${message.url}`,
+    }),
+  });
+  if (!response.ok) return { sent: false, reason: "The email provider did not accept the sign-in link. No session was opened." };
+  return { sent: true };
+}
+
+async function recoverMember(body: Record<string, unknown>, request: Request, deps: Deps): Promise<Response> {
+  const origin = safeAppOrigin(request, deps.env);
+  const sender = deps.deliverRecovery ?? ((input: { to: string; url: string }) => defaultRecoveryDelivery(deps.env, input, deps.fetchImpl ?? fetch));
+  if (!deps.deliverRecovery && !recoveryEmailReady(deps.env)) {
+    const blocked = await defaultRecoveryDelivery(deps.env, { to: "", url: "" }, async () => {
+      throw new Error("recovery email must not be attempted");
+    });
+    return json({ ok: false, error: "email_not_sent", billingRequired: false, message: blocked.reason }, 501);
+  }
+  const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+  const holders = email && validEmail(email) ? await deps.store.listMembersByEmail(email) : [];
+  const eligible = holders.filter((holder) => holder.status !== "checkout_open" && holder.status !== "checkout_failed");
+  if (eligible.length === 1) {
+    const secret = newSecret();
+    const expiresAt = new Date(deps.now().getTime() + 30 * 60 * 1000).toISOString();
+    await deps.store.saveRecovery({ tokenHash: hashSecret(secret), memberId: eligible[0]!.id, expiresAt, used: false });
+    const sent = await sender({ to: email, url: `${origin}/api/membership/recover/?token=${encodeURIComponent(secret)}` });
+    if (!sent.sent) {
+      await deps.store.consumeRecovery(hashSecret(secret), deps.now());
+      return json({ ok: false, error: "email_not_sent", billingRequired: false, message: sent.reason ?? "No message was sent." }, 502);
+    }
+    await deps.store.addAuthAudit({ id: newId(), memberId: eligible[0]!.id, action: "recovery_issued", createdAt: deps.now().toISOString() });
+  }
+  return json({
+    ok: true,
+    billingRequired: false,
+    message: "If an account exists, a sign-in link was sent. Entering an email does not sign you in.",
+  });
+}
+
+export async function handleRecover(request: Request, deps: Deps): Promise<Response> {
+  const token = new URL(request.url).searchParams.get("token") ?? "";
+  const memberId = token ? await deps.store.consumeRecovery(hashSecret(token), deps.now()) : null;
+  if (!memberId) return json({ ok: false, error: "recovery_rejected" }, 400);
+  const raw = newSecret();
+  const expiresAt = new Date(deps.now().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await deps.store.createSession({
+    id: newId(),
+    memberId,
+    tokenHash: hashSecret(raw),
+    expiresAt,
+    active: true,
+    returnUsed: true,
+  });
+  await deps.store.addAuthAudit({ id: newId(), memberId, action: "recovery_redeemed", createdAt: deps.now().toISOString() });
+  const secure = safeAppOrigin(request, deps.env).startsWith("https://");
+  return new Response(null, {
+    status: 302,
+    headers: { location: "/account/", "set-cookie": cookieHeader(raw, secure), "cache-control": "no-store" },
+  });
+}
+
+async function logoutMember(request: Request, deps: Deps): Promise<Response> {
+  const raw = readSessionId(request);
+  if (raw) {
+    const session = await deps.store.findSessionByHash(hashSecret(raw));
+    await deps.store.deleteSessionByHash(hashSecret(raw));
+    if (session) {
+      await deps.store.addAuthAudit({ id: newId(), memberId: session.memberId, action: "logout", createdAt: deps.now().toISOString() });
+    }
+  }
+  return json({ ok: true }, 200, { "set-cookie": "mh_member_session=; HttpOnly; Path=/; Max-Age=0" });
 }
 
 export async function handleWebhook(request: Request, deps: Deps): Promise<Response> {
@@ -676,6 +788,7 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   if (action === "usage") return usageAction(body, deps);
   if (action === "pause") return staffPause(body, deps);
   if (action === "draft") return saveDraftAction(body, deps);
+  if (action === "ghl-pull") return json(await pullGhl(deps));
   if (action === "send") return json({ ok: false, error: "messaging_disabled", message: "No customer email or SMS is sent from this hub." }, 403);
   return json({ ok: false, error: "unknown_action" }, 404);
 }
@@ -704,7 +817,103 @@ async function hubSnapshot(deps: Deps) {
     stageCounts: stage,
     revenue: revenueReport(invoices, members),
     deals,
+    ghlSync: await deps.store.getSyncState(),
+    freshness: ghlFreshness(await deps.store.getSyncState(), ghlMode(deps.env)),
   };
+}
+
+export async function handleGhlWebhook(request: Request, deps: Deps): Promise<Response> {
+  if (ghlMode(deps.env) === "off" || deps.store.kind === "unavailable") {
+    return json({ ok: false, error: "not_connected" }, 503);
+  }
+  const raw = await request.text();
+  const signatureOk = (deps.verifyGhl ?? verifyGhlSignature)(raw, request.headers.get("x-ghl-signature"));
+  if (!signatureOk) {
+    return json({ ok: false, error: "bad_signature" }, 401);
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return json({ ok: false, error: "invalid_json" }, 400);
+  }
+  const inbound = parseInbound(body);
+  if (!inbound || !webhookTimestampFresh(inbound.timestamp, deps.now())) {
+    return json({ ok: false, error: "stale_or_incomplete" }, 401);
+  }
+  if (inbound.locationId !== deps.env.GHL_LOCATION_ID?.trim()) return json({ ok: false, error: "location_rejected" }, 403);
+  const claim = await deps.store.claimEvent(inbound.webhookId, inbound.type);
+  if (claim === "duplicate") return json({ ok: true, duplicate: true });
+  const applied = await applyInbound(deps, inbound);
+  await deps.store.finishEvent(inbound.webhookId, "processed");
+  return json({ ok: true, applied });
+}
+
+async function pullGhl(deps: Deps): Promise<Record<string, unknown>> {
+  const mode = ghlMode(deps.env);
+  if (mode === "off" || deps.store.kind === "unavailable") {
+    return { ok: false, status: "not_connected", freshness: ghlFreshness(null, mode) };
+  }
+  const state = await deps.store.getSyncState();
+  try {
+    const page = await pullHighLevel({
+      env: deps.env,
+      fetchImpl: deps.fetchImpl ?? fetch,
+      contactCursor: state?.contactCursor ?? null,
+      opportunityPage: state?.opportunityPage || 1,
+    });
+    if (!page.ok) return { ok: false, status: "not_connected", freshness: ghlFreshness(state, mode) };
+    let imported = 0;
+    let conflicts = 0;
+    for (const lead of [...page.contacts, ...page.opportunities]) {
+      const result = await applyInbound(deps, lead);
+      if (result === "import") imported += 1;
+      if (result === "conflict") conflicts += 1;
+    }
+    const next = {
+      locationId: deps.env.GHL_LOCATION_ID!.trim(),
+      contactCursor: page.nextContactCursor,
+      opportunityPage: page.nextOpportunityPage ?? (state?.opportunityPage || 1),
+      pulledAt: deps.now().toISOString(),
+      status: page.nextContactCursor || page.nextOpportunityPage ? "partial" : "caught_up",
+      error: null,
+    };
+    await deps.store.saveSyncState(next);
+    return { ok: true, imported, conflicts, status: next.status, freshness: ghlFreshness(next, mode) };
+  } catch {
+    const failed = {
+      locationId: deps.env.GHL_LOCATION_ID!.trim(),
+      contactCursor: state?.contactCursor ?? null,
+      opportunityPage: state?.opportunityPage || 1,
+      pulledAt: state?.pulledAt ?? null,
+      status: "pull_failed",
+      error: "HighLevel pull failed. Local leads were not deleted.",
+    };
+    await deps.store.saveSyncState(failed);
+    return { ok: false, status: "pull_failed", freshness: ghlFreshness(failed, mode) };
+  }
+}
+
+async function applyInbound(deps: Deps, inbound: ReturnType<typeof parseInbound>): Promise<string> {
+  if (!inbound) return "skipped";
+  const deals = await deps.store.listDeals();
+  const merged = mergeInboundLead({
+    configuredLocation: deps.env.GHL_LOCATION_ID?.trim() ?? "",
+    remote: inbound,
+    deals,
+    now: deps.now(),
+  });
+  if (merged.action === "import" || merged.action === "update" || merged.action === "conflict") {
+    await deps.store.saveDeal(merged.deal);
+    await deps.store.addActivity({
+      id: newId(),
+      dealId: merged.deal.id,
+      actor: "ghl",
+      action: merged.activity,
+      createdAt: deps.now().toISOString(),
+    });
+  }
+  return merged.action;
 }
 
 async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promise<Response> {
@@ -728,6 +937,8 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
     syncStatus: ghlMode(deps.env) === "off" ? "not_connected" : existing?.syncStatus ?? "local_only",
     syncHash: syncHash({ stage, assignee, followUp: followUp ?? "" }),
     locationId: ghlMode(deps.env) === "off" ? null : deps.env.GHL_LOCATION_ID?.trim() ?? null,
+    remoteUpdatedAt: existing?.remoteUpdatedAt ?? null,
+    staffEditedAt: deps.now().toISOString(),
   };
   if (!deal.name || !validEmail(deal.email)) return json({ ok: false, error: "invalid_deal" }, 400);
   const decision = existing ? "push" : "push";

@@ -34,11 +34,10 @@ Payments, all required before checkout will open:
 - `STRIPE_PRICE_SIGNATURE` — $559 USD monthly
 - `STRIPE_PRICE_ELITE` — $669 USD monthly
 - `STRIPE_PRICE_SETUP` — $495 USD one time
-- `STRIPE_PORTAL_CONFIGURATION_ID`
 
 One product per tier. Do not put the three tiers on one product. Do not turn on `automatic_tax` until a tax registration exists. This app does not enable it.
 
-Portal configuration must allow invoice history and payment-method updates only. Disable subscription cancel and plan changes in that configuration. The app will not open the default portal.
+The app creates a Customer Portal session for the signed-in member's own Stripe customer id. The session configuration turns on invoice history and payment-method update, and turns off subscription cancel, subscription update, and customer update. `STRIPE_PORTAL_CONFIGURATION_ID` is no longer required. A missing processor customer id fails closed.
 
 Founding, leave off:
 
@@ -64,13 +63,17 @@ HighLevel, leave empty until the owner confirms the location:
 - `GHL_LOCATION_ID`
 - `GHL_PIPELINE_ID`
 - `GHL_PIPELINE_STAGE_ID` — required before an opportunity is created
-- `GHL_WEBHOOK_SECRET` — reserved; inbound webhook route is not enabled in this build
+- `GHL_WEBHOOK_SECRET` is not used. Inbound events must carry HighLevel's Ed25519 `X-GHL-Signature`. The public key is the one published in HighLevel's webhook guide. Do not put a shared secret in the URL.
 
 Pause:
 
 - `MEMBERSHIP_PAUSE_SELF_SERVE` — leave unset. Members can file a request. Billing changes only when staff apply it and Stripe accepts it.
 
-Do not set `RESEND_API_KEY` for this feature. The account page reports that email sign-in is not sent.
+Account recovery email stays off unless all three are set. This build does not send mail unless they are set, and they are not set here.
+
+- `RESEND_API_KEY`
+- `RESEND_FROM`
+- `MEMBERSHIP_RECOVERY_SEND` — must be `true`
 
 ## Database
 
@@ -119,7 +122,11 @@ Webhook endpoint: `https://www.manhaironline.com/api/membership/webhook/`
 
 Unit tests cover pricing, the 30-day then calendar-month timeline, account confirmation, email not signing a member in, cancellation scheduled through the minimum term, pause requests leaving billing unchanged, webhook staleness and duplicates, entitlement-year boundaries, HighLevel location mismatch, bounded search retry, and local lead create/delete. They do not call Stripe. No Stripe test-clock or sandbox checkout has been run. `CHECKOUT_TIMELINE_SANDBOX_CONFIRMED` remains false.
 
-The HighLevel adapter is real code: when location, token, pipeline, and stage are set it searches contacts in that location, refuses a location mismatch, does not merge ambiguous emails, retries a failed search up to three times, and skips a second opportunity when one is already stored. With any of those values missing it returns not connected and does not call HighLevel. The hub can create, update, read, and delete local leads. Delete does not delete a HighLevel contact.
+HighLevel code is present and disabled until `GHL_LOCATION_ID` and `GHL_API_TOKEN` are set. Signed inbound events use `POST /api/membership/ghl/`. The verifier checks `X-GHL-Signature` with HighLevel's published Ed25519 public key over the raw body, rejects a missing or bad signature, rejects a stale `timestamp`, and rejects any other location. A pull from the hub reads contacts with a cursor and opportunities by page, retries failed reads, dedupes by contact id, and keeps staff stage, assignee, and follow-up when both sides changed. The hub says the last pull time. It is not a live socket. No verified location is configured, so runtime calls do not leave this app.
+
+Member sessions are stored as a hash of the cookie secret. Checkout return links work once. Logout deletes the session and writes an audit row. A later visit asks for a one-time email link. That link is sent only when `RESEND_API_KEY`, `RESEND_FROM`, and `MEMBERSHIP_RECOVERY_SEND=true` are all set. They are not set here, and the request fails closed without sending mail or opening a session. Typing an email never signs someone in. A member does not pay again to recover an existing membership.
+
+The Customer Portal session uses the signed-in member's Stripe customer id. Its configuration allows invoice history and payment-method updates and disallows cancel, plan changes, and customer edits.
 
 Screenshots in the pull request are rendered pages on a local production server with payments, founding, database, and staff sign-in unconfigured. They show the public offer, the blocked checkout form, the signed-out account gate, and the hub denial. They are not a successful payment or a populated lead board.
 

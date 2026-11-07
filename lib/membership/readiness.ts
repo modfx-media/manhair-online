@@ -100,16 +100,7 @@ export function paymentBlockers(
 }
 
 export function portalBlockers(env: AppEnv): Blocker[] {
-  const blockers = paymentBlockers(env);
-  if (!env.STRIPE_PORTAL_CONFIGURATION_ID?.trim()) {
-    blockers.push({
-      code: "missing_STRIPE_PORTAL_CONFIGURATION_ID",
-      publicMessage: "Payment-method update is not available yet.",
-      operatorMessage:
-        "STRIPE_PORTAL_CONFIGURATION_ID is not set. The default Customer Portal is not opened, because it can cancel or change plans outside these rules.",
-    });
-  }
-  return blockers;
+  return paymentBlockers(env);
 }
 
 export type FoundingConfig =

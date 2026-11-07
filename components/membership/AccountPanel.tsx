@@ -55,17 +55,21 @@ export function AccountPanel({
         className="grid max-w-md gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          const result = await post("login", {});
+          const result = await post("recover", { email: String(new FormData(event.currentTarget).get("email") ?? "") });
           setMessage(result.message ?? "Sign-in email was not sent.");
         }}
       >
         <h1 className="mh-display text-4xl">Your membership</h1>
         <p className="text-sm leading-6 text-ink-700">
-          There is no signed-in member on this browser. Email sign-in is not turned on, so this form does not send a
-          message.
+          There is no signed-in member on this browser. A later visit uses a one-time link sent to the membership email.
+          Entering the email does not open the account and does not start another payment.
         </p>
+        <label className="grid gap-1 text-sm font-semibold">
+          Email
+          <input name="email" type="email" required className="mh-input" />
+        </label>
         <button className="mh-btn mh-btn-ghost" type="submit">
-          Check email sign-in
+          Email a sign-in link
         </button>
         {message ? (
           <p role="status" className="text-sm text-ink-800">
@@ -185,6 +189,9 @@ export function AccountPanel({
         }}
       >
         Update payment method
+      </button>
+      <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={async () => setMessage((await post("logout", {})).ok ? "Signed out." : "Still signed in.")}>
+        Sign out
       </button>
       {message ? (
         <p role="status" className="text-sm leading-6 text-ink-800">

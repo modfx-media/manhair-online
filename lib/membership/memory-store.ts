@@ -1,4 +1,5 @@
 import { normalizeEmail } from "./tokens";
+import type { AuthAuditRecord, RecoveryRecord, SyncState } from "./types";
 import type {
   ActivityRecord,
   CheckoutRecord,
@@ -31,6 +32,9 @@ export function createMemoryStore(): MembershipStore {
   const activity: ActivityRecord[] = [];
   const pauses: PauseRequestRecord[] = [];
   const drafts: DraftRecord[] = [];
+  const recoveries = new Map<string, RecoveryRecord>();
+  const audits: AuthAuditRecord[] = [];
+  let syncState: SyncState | null = null;
   const ledger: Ledger[] = [];
   const rates = new Map<string, { hits: number; started: number }>();
   const consents: ConsentRecord[] = [];
@@ -135,12 +139,38 @@ export function createMemoryStore(): MembershipStore {
     async findSession(id) {
       return sessions.get(id) ?? null;
     },
-    async activateSession(id) {
-      const row = sessions.get(id);
-      if (row) row.active = true;
+    async findSessionByHash(tokenHash) {
+      if (!tokenHash) return null;
+      return [...sessions.values()].find((row) => row.tokenHash === tokenHash && row.active) ?? null;
     },
-    async deleteSession(id) {
-      sessions.delete(id);
+    async activateSession(id, tokenHash, expiresAt) {
+      const row = sessions.get(id);
+      if (!row || row.returnUsed) return;
+      row.tokenHash = tokenHash;
+      row.expiresAt = expiresAt;
+      row.active = true;
+      row.returnUsed = true;
+    },
+    async deleteSessionByHash(tokenHash) {
+      for (const [id, row] of sessions) if (row.tokenHash === tokenHash) sessions.delete(id);
+    },
+    async saveRecovery(row) {
+      recoveries.set(row.tokenHash, row);
+    },
+    async consumeRecovery(tokenHash, now) {
+      const row = recoveries.get(tokenHash);
+      if (!row || row.used || new Date(row.expiresAt).getTime() <= now.getTime()) return null;
+      row.used = true;
+      return row.memberId;
+    },
+    async getSyncState() {
+      return syncState;
+    },
+    async saveSyncState(row) {
+      syncState = row;
+    },
+    async addAuthAudit(row) {
+      audits.push(row);
     },
     async listDeals() {
       return [...deals.values()];

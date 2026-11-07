@@ -62,7 +62,7 @@ GoHighLevel is the canonical contact and opportunity store only when a location,
 
 Staff hub access is an email allowlist: `MEMBERSHIP_OWNER_EMAILS` and `MEMBERSHIP_COORDINATOR_EMAILS`. Empty lists mean nobody, including a logged-in CMS user. A hidden URL is not a control.
 
-Card numbers are collected only by Stripe Checkout. Portal sessions require `STRIPE_PORTAL_CONFIGURATION_ID` so the default portal cannot cancel or change plans outside these rules. Invoices shown in `/account` come from webhook rows.
+Card numbers are collected only by Stripe Checkout. Portal sessions are created for the signed-in member's own Stripe customer, with invoice history and payment-method update on and subscription cancel, plan changes, and customer edits off. Invoices shown in `/account` also come from webhook rows.
 
 Payments fail closed. Live secret keys require `MEMBERSHIP_PAYMENTS_LIVE=true` and a non-denylisted account id that matches `accounts.retrieve()`. Price ids are read from the environment and checked against the published cents before a session is created. The browser cannot submit an amount.
 

@@ -12,6 +12,7 @@ type Snapshot = {
   ghl: string;
   scheduling: { summary: string };
   messaging: string;
+  freshness?: string;
   assignees: string[];
   stages: DealStage[];
   stageCounts: Record<string, number>;
@@ -34,7 +35,7 @@ async function post(action: string, body: Record<string, unknown>) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  return response.json() as Promise<{ ok?: boolean; message?: string; error?: string }>;
+  return response.json() as Promise<{ ok?: boolean; message?: string; error?: string; freshness?: string }>;
 }
 
 export function HubConsole({ initial }: { initial: Snapshot }) {
@@ -75,7 +76,18 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
   return (
     <div className="grid gap-8">
       <section className="grid gap-2 rounded-md border border-ink-300 bg-ink-100 p-4 text-sm leading-6">
-        <p>GoHighLevel: {data.ghl === "off" ? "not connected. Deals stay in this app and are not sent to a CRM." : data.ghl}.</p>
+        <p>{data.freshness}</p>
+        <button
+          className="mh-btn mh-btn-ghost w-fit"
+          type="button"
+          onClick={async () => {
+            const result = await post("ghl-pull", {});
+            setNotice(typeof result.freshness === "string" ? result.freshness : "Pull did not run.");
+            await refresh();
+          }}
+        >
+          Pull HighLevel now
+        </button>
         <p>{SCHEDULING.summary}</p>
         <p>Messaging is {data.messaging}. Drafts can be saved. Nothing is sent.</p>
         <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={() => void refresh()}>

@@ -4,6 +4,7 @@ import { handleAccountGet, handleAccountPost, handleCheckout, handleHub, handleW
 import { createMemoryStore } from "../../lib/membership/memory-store";
 import type { MemberRecord } from "../../lib/membership/types";
 import { billingTimeline } from "../../lib/membership/dates";
+import { hashSecret } from "../../lib/membership/tokens";
 import type { AppEnv } from "../../lib/membership/readiness";
 
 const NOW = new Date("2026-11-07T19:00:00.000Z");
@@ -51,7 +52,10 @@ function fakeStripe(accountId = "acct_manhair_confirmed", mismatch = false): Str
         },
       },
     },
-    billingPortal: { sessions: { async create() { return { url: "https://billing.stripe.com/p/session_test" }; } } },
+    billingPortal: {
+      configurations: { async create(params) { creates.push({ portal: params }); return { id: "bpc_created" }; } },
+      sessions: { async create(params) { creates.push({ portalSession: params }); return { url: "https://billing.stripe.com/p/session_test" }; } },
+    },
     subscriptions: {
       async update(id, params) {
         updates.push({ id, params });
@@ -208,9 +212,9 @@ test("member session cannot see another member invoice", async () => {
   await context.store.saveMember(await seedMember(context.store, { id: "mem_2", email: "b@example.com", stripeCustomerId: "cus_2" }));
   await context.store.upsertInvoice({ id: "in_a", memberId: "mem_1", kind: "setup", status: "paid", amountPaid: 49500, amountRefunded: 0 });
   await context.store.upsertInvoice({ id: "in_b", memberId: "mem_2", kind: "setup", status: "paid", amountPaid: 49500, amountRefunded: 0 });
-  await context.store.createSession({ id: "sess_a", memberId: "mem_1", expiresAt: "2026-12-01T00:00:00.000Z", active: true });
+  await context.store.createSession({ id: "sess_a", memberId: "mem_1", tokenHash: hashSecret("cookie-a"), expiresAt: "2026-12-01T00:00:00.000Z", active: true, returnUsed: true });
   const response = await handleAccountGet(new Request("https://www.manhaironline.com/account/", {
-    headers: { cookie: "mh_member_session=sess_a", host: "www.manhaironline.com" },
+    headers: { cookie: "mh_member_session=cookie-a", host: "www.manhaironline.com" },
   }), context);
   const body = await response.json();
   assert.equal(body.member.id, "mem_1");
@@ -221,17 +225,17 @@ test("member session cannot see another member invoice", async () => {
 test("cancellation and pause do not claim a processor change when blocked", async () => {
   const context = deps({ env: baseEnv({ STRIPE_SECRET_KEY: "" }) });
   await context.store.saveMember(await seedMember(context.store));
-  await context.store.createSession({ id: "sess_a", memberId: "mem_1", expiresAt: "2026-12-01T00:00:00.000Z", active: true });
+  await context.store.createSession({ id: "sess_a", memberId: "mem_1", tokenHash: hashSecret("cookie-a"), expiresAt: "2026-12-01T00:00:00.000Z", active: true, returnUsed: true });
   const request = () => new Request("https://www.manhaironline.com/api/membership/account/?action=cancel", {
     method: "POST",
-    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=sess_a", "content-type": "application/json" },
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=cookie-a", "content-type": "application/json" },
     body: "{}",
   });
   const cancel = await handleAccountPost(request(), { ...context, stripe: null });
   assert.equal(cancel.status, 503);
   const pause = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=pause", {
     method: "POST",
-    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=sess_a", "content-type": "application/json" },
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=cookie-a", "content-type": "application/json" },
     body: JSON.stringify({ days: 10 }),
   }), context);
   const pauseBody = await pause.json();
@@ -318,10 +322,10 @@ test("older webhook does not roll back a newer subscription status", async () =>
 test("minimum-term cancellation is scheduled and a local lead can be removed without CRM", async () => {
   const context = deps({ staffEmail: "owner@manhaironline.com" });
   await context.store.saveMember(await seedMember(context.store));
-  await context.store.createSession({ id: "sess_a", memberId: "mem_1", expiresAt: "2026-12-01T00:00:00.000Z", active: true });
+  await context.store.createSession({ id: "sess_a", memberId: "mem_1", tokenHash: hashSecret("cookie-a"), expiresAt: "2026-12-01T00:00:00.000Z", active: true, returnUsed: true });
   const cancel = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=cancel", {
     method: "POST",
-    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=sess_a", "content-type": "application/json" },
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=cookie-a", "content-type": "application/json" },
     body: "{}",
   }), context);
   assert.equal(cancel.status, 200);

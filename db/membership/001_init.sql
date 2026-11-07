@@ -103,7 +103,9 @@ CREATE TABLE IF NOT EXISTS membership_deals (
   ghl_opportunity_id text,
   sync_status text NOT NULL,
   sync_hash text NOT NULL DEFAULT '',
-  location_id text
+  location_id text,
+  remote_updated_at timestamptz,
+  staff_edited_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS membership_notes (
@@ -134,8 +136,33 @@ CREATE TABLE IF NOT EXISTS membership_pause_requests (
 CREATE TABLE IF NOT EXISTS membership_sessions (
   id text PRIMARY KEY,
   member_id text NOT NULL,
+  token_hash text NOT NULL DEFAULT '',
   expires_at timestamptz NOT NULL,
-  active boolean NOT NULL DEFAULT false
+  active boolean NOT NULL DEFAULT false,
+  return_used boolean NOT NULL DEFAULT false
+);
+
+CREATE TABLE IF NOT EXISTS membership_recovery_tokens (
+  token_hash text PRIMARY KEY,
+  member_id text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  used boolean NOT NULL DEFAULT false
+);
+
+CREATE TABLE IF NOT EXISTS membership_sync_state (
+  location_id text PRIMARY KEY,
+  contact_cursor text,
+  opportunity_page integer NOT NULL DEFAULT 1,
+  pulled_at timestamptz,
+  status text NOT NULL,
+  error text
+);
+
+CREATE TABLE IF NOT EXISTS membership_auth_audit (
+  id text PRIMARY KEY,
+  member_id text,
+  action text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS membership_drafts (

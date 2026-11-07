@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 type TokenPayload = Record<string, string | number>;
 
@@ -27,6 +27,14 @@ export function verifyToken(token: string, secret: string, now: Date): TokenPayl
   } catch {
     return null;
   }
+}
+
+export function hashSecret(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function newSecret(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 export function newId(): string {

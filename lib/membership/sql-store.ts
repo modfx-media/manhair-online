@@ -12,6 +12,7 @@ import type {
   MemberRecord,
   MembershipStore,
   PauseRequestRecord,
+  SessionRecord,
   UsageResult,
 } from "./types";
 
@@ -330,27 +331,76 @@ export function createSqlStore(connectionString: string): MembershipStore {
     },
     async createSession(row) {
       await sql`
-        INSERT INTO membership_sessions (id, member_id, expires_at, active)
-        VALUES (${row.id}, ${row.memberId}, ${row.expiresAt}, ${row.active})
+        INSERT INTO membership_sessions (id, member_id, token_hash, expires_at, active, return_used)
+        VALUES (${row.id}, ${row.memberId}, ${row.tokenHash}, ${row.expiresAt}, ${row.active}, ${row.returnUsed})
         ON CONFLICT (id) DO NOTHING
       `;
     },
     async findSession(id) {
       const rows = await sql`SELECT * FROM membership_sessions WHERE id = ${id} LIMIT 1`;
+      return rows[0] ? mapSession(rows[0] as Row) : null;
+    },
+    async findSessionByHash(tokenHash) {
+      if (!tokenHash) return null;
+      const rows = await sql`SELECT * FROM membership_sessions WHERE token_hash = ${tokenHash} AND active = true LIMIT 1`;
+      return rows[0] ? mapSession(rows[0] as Row) : null;
+    },
+    async activateSession(id, tokenHash, expiresAt) {
+      await sql`
+        UPDATE membership_sessions
+        SET token_hash = ${tokenHash}, expires_at = ${expiresAt}, active = true, return_used = true
+        WHERE id = ${id} AND return_used = false
+      `;
+    },
+    async deleteSessionByHash(tokenHash) {
+      await sql`DELETE FROM membership_sessions WHERE token_hash = ${tokenHash}`;
+    },
+    async saveRecovery(row) {
+      await sql`
+        INSERT INTO membership_recovery_tokens (token_hash, member_id, expires_at, used)
+        VALUES (${row.tokenHash}, ${row.memberId}, ${row.expiresAt}, ${row.used})
+        ON CONFLICT (token_hash) DO NOTHING
+      `;
+    },
+    async consumeRecovery(tokenHash, now) {
+      const rows = await sql`
+        UPDATE membership_recovery_tokens
+        SET used = true
+        WHERE token_hash = ${tokenHash} AND used = false AND expires_at > ${now.toISOString()}::timestamptz
+        RETURNING member_id
+      `;
+      return text((rows[0] as Row | undefined)?.member_id);
+    },
+    async getSyncState() {
+      const rows = await sql`SELECT * FROM membership_sync_state ORDER BY pulled_at DESC NULLS LAST LIMIT 1`;
       const row = rows[0] as Row | undefined;
       if (!row) return null;
       return {
-        id: requiredText(row.id),
-        memberId: requiredText(row.member_id),
-        expiresAt: requiredText(row.expires_at),
-        active: bool(row.active),
+        locationId: requiredText(row.location_id),
+        contactCursor: text(row.contact_cursor),
+        opportunityPage: num(row.opportunity_page),
+        pulledAt: text(row.pulled_at),
+        status: requiredText(row.status),
+        error: text(row.error),
       };
     },
-    async activateSession(id) {
-      await sql`UPDATE membership_sessions SET active = true WHERE id = ${id}`;
+    async saveSyncState(row) {
+      await sql`
+        INSERT INTO membership_sync_state (location_id, contact_cursor, opportunity_page, pulled_at, status, error)
+        VALUES (${row.locationId}, ${row.contactCursor}, ${row.opportunityPage}, ${row.pulledAt}, ${row.status}, ${row.error})
+        ON CONFLICT (location_id) DO UPDATE SET
+          contact_cursor = EXCLUDED.contact_cursor,
+          opportunity_page = EXCLUDED.opportunity_page,
+          pulled_at = EXCLUDED.pulled_at,
+          status = EXCLUDED.status,
+          error = EXCLUDED.error
+      `;
     },
-    async deleteSession(id) {
-      await sql`DELETE FROM membership_sessions WHERE id = ${id}`;
+    async addAuthAudit(row) {
+      await sql`
+        INSERT INTO membership_auth_audit (id, member_id, action, created_at)
+        VALUES (${row.id}, ${row.memberId}, ${row.action}, ${row.createdAt})
+      `;
     },
     async listDeals() {
       const rows = await sql`SELECT * FROM membership_deals ORDER BY name`;
@@ -368,11 +418,12 @@ export function createSqlStore(connectionString: string): MembershipStore {
       await sql`
         INSERT INTO membership_deals (
           id, member_id, name, email, phone, stage, assignee, next_follow_up,
-          ghl_contact_id, ghl_opportunity_id, sync_status, sync_hash, location_id
+          ghl_contact_id, ghl_opportunity_id, sync_status, sync_hash, location_id,
+          remote_updated_at, staff_edited_at
         ) VALUES (
           ${row.id}, ${row.memberId}, ${row.name}, ${row.email}, ${row.phone}, ${row.stage},
           ${row.assignee}, ${row.nextFollowUp}, ${row.ghlContactId}, ${row.ghlOpportunityId},
-          ${row.syncStatus}, ${row.syncHash}, ${row.locationId}
+          ${row.syncStatus}, ${row.syncHash}, ${row.locationId}, ${row.remoteUpdatedAt}, ${row.staffEditedAt}
         )
         ON CONFLICT (id) DO UPDATE SET
           stage = EXCLUDED.stage,
@@ -383,6 +434,8 @@ export function createSqlStore(connectionString: string): MembershipStore {
           sync_status = EXCLUDED.sync_status,
           sync_hash = EXCLUDED.sync_hash,
           location_id = EXCLUDED.location_id,
+          remote_updated_at = EXCLUDED.remote_updated_at,
+          staff_edited_at = EXCLUDED.staff_edited_at,
           name = EXCLUDED.name,
           phone = EXCLUDED.phone
       `;
@@ -484,6 +537,17 @@ export function createSqlStore(connectionString: string): MembershipStore {
   };
 }
 
+function mapSession(row: Row): SessionRecord {
+  return {
+    id: requiredText(row.id),
+    memberId: requiredText(row.member_id),
+    tokenHash: requiredText(row.token_hash),
+    expiresAt: requiredText(row.expires_at),
+    active: bool(row.active),
+    returnUsed: bool(row.return_used),
+  };
+}
+
 function mapDeal(row: Row): DealRecord {
   return {
     id: requiredText(row.id),
@@ -499,6 +563,8 @@ function mapDeal(row: Row): DealRecord {
     syncStatus: requiredText(row.sync_status),
     syncHash: requiredText(row.sync_hash),
     locationId: text(row.location_id),
+    remoteUpdatedAt: text(row.remote_updated_at),
+    staffEditedAt: text(row.staff_edited_at),
   };
 }
 
@@ -535,8 +601,14 @@ export function unavailableStore(): MembershipStore {
     consumeRate: async () => false,
     createSession: fail,
     findSession: async () => null,
+    findSessionByHash: async () => null,
     activateSession: fail,
-    deleteSession: fail,
+    deleteSessionByHash: fail,
+    saveRecovery: fail,
+    consumeRecovery: async () => null,
+    getSyncState: async () => null,
+    saveSyncState: fail,
+    addAuthAudit: fail,
     listDeals: async () => [],
     saveDeal: fail,
     addNote: fail,

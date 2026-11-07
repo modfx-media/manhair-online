@@ -86,6 +86,8 @@ export type DealRecord = {
   syncStatus: string;
   syncHash: string;
   locationId: string | null;
+  remoteUpdatedAt: string | null;
+  staffEditedAt: string | null;
 };
 
 export type NoteRecord = { id: string; dealId: string; author: string; body: string; createdAt: string };
@@ -98,7 +100,32 @@ export type PauseRequestRecord = {
   policyVersion: string;
   createdAt: string;
 };
-export type SessionRecord = { id: string; memberId: string; expiresAt: string; active: boolean };
+export type SessionRecord = {
+  id: string;
+  memberId: string;
+  tokenHash: string;
+  expiresAt: string;
+  active: boolean;
+  returnUsed: boolean;
+};
+
+export type RecoveryRecord = {
+  tokenHash: string;
+  memberId: string;
+  expiresAt: string;
+  used: boolean;
+};
+
+export type SyncState = {
+  locationId: string;
+  contactCursor: string | null;
+  opportunityPage: number;
+  pulledAt: string | null;
+  status: string;
+  error: string | null;
+};
+
+export type AuthAuditRecord = { id: string; memberId: string | null; action: string; createdAt: string };
 export type DraftRecord = { id: string; dealId: string; body: string; updatedAt: string };
 export type ConsentRecord = {
   id: string;
@@ -136,8 +163,14 @@ export interface MembershipStore {
   consumeRate(bucket: string, now: Date, limit: number, windowMs: number): Promise<boolean>;
   createSession(row: SessionRecord): Promise<void>;
   findSession(id: string): Promise<SessionRecord | null>;
-  activateSession(id: string): Promise<void>;
-  deleteSession(id: string): Promise<void>;
+  findSessionByHash(tokenHash: string): Promise<SessionRecord | null>;
+  activateSession(id: string, tokenHash: string, expiresAt: string): Promise<void>;
+  deleteSessionByHash(tokenHash: string): Promise<void>;
+  saveRecovery(row: RecoveryRecord): Promise<void>;
+  consumeRecovery(tokenHash: string, now: Date): Promise<string | null>;
+  getSyncState(): Promise<SyncState | null>;
+  saveSyncState(row: SyncState): Promise<void>;
+  addAuthAudit(row: AuthAuditRecord): Promise<void>;
   listDeals(): Promise<DealRecord[]>;
   saveDeal(row: DealRecord): Promise<void>;
   addNote(row: NoteRecord): Promise<void>;
