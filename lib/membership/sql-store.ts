@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import type { AlertRecord } from "./alerts";
 import type { Attention, InvoiceKind, MemberStatus } from "./billing";
 import type { TierId } from "./offer";
 import type { AppEnv } from "./readiness";
@@ -402,6 +403,47 @@ export function createSqlStore(connectionString: string): MembershipStore {
         VALUES (${row.id}, ${row.memberId}, ${row.action}, ${row.createdAt})
       `;
     },
+    async enqueueAlert(row) {
+      const inserted = await sql`
+        INSERT INTO membership_alert_outbox (
+          id, dedupe_key, source_event_id, kind, audience, member_id, amount_cents, status, attempts, next_attempt_at, last_error, created_at
+        ) VALUES (
+          ${row.id}, ${row.dedupeKey}, ${row.sourceEventId}, ${row.kind}, ${row.audience}, ${row.memberId},
+          ${row.amountCents}, ${row.status}, ${row.attempts}, ${row.nextAttemptAt}, ${row.lastError}, ${row.createdAt}
+        )
+        ON CONFLICT (dedupe_key) DO NOTHING
+        RETURNING id
+      `;
+      return inserted.length === 1 ? "created" : "duplicate";
+    },
+    async listAlerts() {
+      const rows = await sql`SELECT * FROM membership_alert_outbox ORDER BY created_at DESC`;
+      return rows.map((row) => mapAlert(row as Row));
+    },
+    async claimDueAlerts(now, limit) {
+      const rows = await sql`
+        UPDATE membership_alert_outbox
+        SET status = 'sending', attempts = attempts + 1
+        WHERE id IN (
+          SELECT id FROM membership_alert_outbox
+          WHERE status = 'pending' AND next_attempt_at <= ${now.toISOString()}::timestamptz
+          ORDER BY created_at
+          LIMIT ${limit}
+        )
+        RETURNING *
+      `;
+      return rows.map((row) => mapAlert(row as Row));
+    },
+    async updateAlert(id, patch) {
+      await sql`
+        UPDATE membership_alert_outbox
+        SET status = COALESCE(${patch.status ?? null}, status),
+            attempts = COALESCE(${patch.attempts ?? null}, attempts),
+            next_attempt_at = COALESCE(${patch.nextAttemptAt ?? null}, next_attempt_at),
+            last_error = COALESCE(${patch.lastError ?? null}, last_error)
+        WHERE id = ${id}
+      `;
+    },
     async listDeals() {
       const rows = await sql`SELECT * FROM membership_deals ORDER BY name`;
       return rows.map((row) => mapDeal(row as Row));
@@ -537,6 +579,23 @@ export function createSqlStore(connectionString: string): MembershipStore {
   };
 }
 
+function mapAlert(row: Row): AlertRecord {
+  return {
+    id: requiredText(row.id),
+    dedupeKey: requiredText(row.dedupe_key),
+    sourceEventId: requiredText(row.source_event_id),
+    kind: requiredText(row.kind) as AlertRecord["kind"],
+    audience: requiredText(row.audience) as AlertRecord["audience"],
+    memberId: text(row.member_id),
+    amountCents: num(row.amount_cents),
+    status: requiredText(row.status) as AlertRecord["status"],
+    nextAttemptAt: text(row.next_attempt_at),
+    attempts: num(row.attempts),
+    lastError: text(row.last_error),
+    createdAt: requiredText(row.created_at),
+  };
+}
+
 function mapSession(row: Row): SessionRecord {
   return {
     id: requiredText(row.id),
@@ -609,6 +668,10 @@ export function unavailableStore(): MembershipStore {
     getSyncState: async () => null,
     saveSyncState: fail,
     addAuthAudit: fail,
+    enqueueAlert: fail,
+    listAlerts: async () => [],
+    claimDueAlerts: async () => [],
+    updateAlert: fail,
     listDeals: async () => [],
     saveDeal: fail,
     addNote: fail,

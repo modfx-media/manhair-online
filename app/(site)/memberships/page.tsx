@@ -5,6 +5,7 @@ import { BookingButton } from "@/components/BookingButton";
 import { billingTimeline, formatStudio } from "@/lib/membership/dates";
 import {
   ADDON_POLICY,
+  MERCHANT,
   FIRST_SYSTEM_LEAD,
   REFUND_POLICY,
   SCHEDULING,
@@ -51,7 +52,8 @@ export default function MembershipsPage() {
           <p className="mt-3">
             The price of the tier you join is locked for 24 months. The minimum term is 3 months, then month to month.
             Online cancellation adds no fee. During the minimum, cancellation is scheduled for the end of the minimum.
-            This application does not issue refunds. A refund rule has not been approved.
+            This application does not issue refunds. A refund rule has not been approved. {MERCHANT.disclosure} Sales
+            tax is not added here.
           </p>
         </div>
       </section>

@@ -1,6 +1,6 @@
 # Membership production handoff
 
-This build is not taking live payments. Do not merge it, and do not set `MEMBERSHIP_PAYMENTS_LIVE=true` or `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true` until the owner names the merchant account.
+The owner confirmed that ManHair charges go through the connected Stripe account `acct_1DhNFjGiafo5ImyE`. Charges and payouts are enabled, card payments are active, and there are no due requirements. The statement descriptor is `MODFXMEDIA, LLC`. Do not change that shared business profile. This pull request does not set `STRIPE_ACCOUNT_ID`, `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED`, or `MEMBERSHIP_PAYMENTS_LIVE` in any environment, and it does not create products, prices, portal configurations, or webhook endpoints. No sandbox context is available yet. Sales tax must be answered by the owner before any product is created. This checkout does not enable `automatic_tax`.
 
 ## What is in the branch
 
@@ -17,7 +17,8 @@ The marketing site, Payload admin, Cherry page, and consult modal are unchanged 
 ## Verified gaps from the connector audit
 
 - HighLevel searches for ManHair, Man, and Hair returned no locations. No location id is stored in this repo.
-- The only accessible Stripe merchant during the audit was ModFXMedia, live account `acct_1DhNFjGiafo5ImyE`. The owner has not confirmed it. The app does not hard-code a refusal. Checkout stays closed until the owner sets the expected account id and `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true`. That same gate is what would allow ModFXMedia later, only after the owner confirms it.
+- The owner has now confirmed merchant `acct_1DhNFjGiafo5ImyE` (statement descriptor `MODFXMEDIA, LLC`). Checkout still stays closed until the integration operator sets `STRIPE_ACCOUNT_ID` to that id and `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true`, and the key's account matches. Live mode also needs `MEMBERSHIP_PAYMENTS_LIVE=true`. Those variables are not set by this code.
+- The confirmed account has no ManHair products, prices, portal configurations, or webhook endpoints. Do not create products until the owner says whether sales tax is collected.
 - Vercel project `prj_KYNMITbRpNx4np9hRPZQzZuNG3fd` on team `team_FQDxgNtaJYX8DHFa0X5V7jiN` was not readable (`get_project` 404, `list_deployments` 403). There is no preview URL from this run. A GitHub preview deployment can appear only if that project’s integration builds the branch. Production builds still redirect `*.vercel.app` to `https://www.manhaironline.com`. Preview builds omit that redirect and send `X-Robots-Tag: noindex`.
 
 ## Variable names
@@ -28,8 +29,8 @@ Payments, all required before checkout will open:
 
 - `STRIPE_SECRET_KEY` — restricted key on the confirmed ManHair account. Test key until the sandbox check below passes.
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_ACCOUNT_ID` — the owner-confirmed account. Must match the account that owns the key. Not hard-coded.
-- `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED` — must be `true` before checkout opens. Leave unset until the owner confirms the merchant.
+- `STRIPE_ACCOUNT_ID` — set this to `acct_1DhNFjGiafo5ImyE` only in the ManHair environment, after the scoped key is installed. The code does not embed it as an automatic allow.
+- `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED` — set to `true` in that same environment when the key is installed. This pull request does not mark it set.
 - `STRIPE_PRICE_ESSENTIAL` — $449 USD monthly
 - `STRIPE_PRICE_SIGNATURE` — $559 USD monthly
 - `STRIPE_PRICE_ELITE` — $669 USD monthly
@@ -74,6 +75,30 @@ Account recovery email stays off unless all three are set. This build does not s
 - `RESEND_API_KEY`
 - `RESEND_FROM`
 - `MEMBERSHIP_RECOVERY_SEND` — must be `true`
+
+Payment alerts use the same Resend sender and stay off until the owner names a recipient. No production send has been tested. Held rows are not released automatically.
+
+- `MEMBERSHIP_OWNER_ALERTS_SEND` — `true` only after the recipient is approved
+- `MEMBERSHIP_ALERT_TO` — one owner inbox. Do not guess it.
+- `MEMBERSHIP_CUSTOMER_ALERTS_SEND` — leave unset. This does not email existing clients. Stripe's own receipts, if wanted, are configured in the Stripe dashboard for `acct_1DhNFjGiafo5ImyE`, not by this app.
+
+Webhook endpoint to create later: `https://www.manhaironline.com/api/membership/webhook/`
+
+Events to subscribe:
+
+- `checkout.session.completed`
+- `checkout.session.async_payment_succeeded`
+- `checkout.session.expired`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.paid`
+- `invoice.payment_failed`
+- `charge.refunded`
+- `charge.dispute.created`
+- `radar.early_fraud_warning.created`
+
+Alert drain cron: `POST /api/membership/alerts/run` with `Authorization: Bearer $CRON_SECRET`. It does not send held alerts.
 
 ## Database
 

@@ -13,6 +13,7 @@ type Snapshot = {
   scheduling: { summary: string };
   messaging: string;
   freshness?: string;
+  alerts?: Array<{ id: string; kind: string; audience: string; status: string; attempts: number; amountCents: number; memberId: string | null }>;
   assignees: string[];
   stages: DealStage[];
   stageCounts: Record<string, number>;
@@ -24,6 +25,8 @@ type Snapshot = {
     netCashCents: number;
     activeMonthlyRateCents: number;
     trialingMonthlyRateCents: number;
+    trialingUnpaidMonthlyCents: number;
+    projectedMrrCents: number;
     note: string;
   };
   deals: DealCard[];
@@ -106,14 +109,29 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
             <dd className="mt-1 text-2xl">{formatUsd(data.revenue.recurringCollectedCents)}</dd>
           </div>
           <div className="rounded-md border border-ink-300 p-3">
-            <dt className="text-xs uppercase tracking-[0.14em] text-ink-600">Active monthly rate</dt>
-            <dd className="mt-1 text-2xl">{formatUsd(data.revenue.activeMonthlyRateCents)}</dd>
+            <dt className="text-xs uppercase tracking-[0.14em] text-ink-600">Projected MRR</dt>
+            <dd className="mt-1 text-2xl">{formatUsd(data.revenue.projectedMrrCents)}</dd>
           </div>
         </dl>
         <p className="mt-2 text-sm text-ink-700">
-          Setup collected {formatUsd(data.revenue.setupCollectedCents)}. Refunds recorded {formatUsd(data.revenue.refundedCents)}.
-          Trialing monthly rate not yet charged {formatUsd(data.revenue.trialingMonthlyRateCents)}. {data.revenue.note}
+          Setup collected {formatUsd(data.revenue.setupCollectedCents)}. Recurring collected {formatUsd(data.revenue.recurringCollectedCents)}.
+          Unpaid trial monthly rate {formatUsd(data.revenue.trialingUnpaidMonthlyCents)}. {data.revenue.note}
         </p>
+      </section>
+      <section>
+        <h2 className="font-display text-2xl">Payment alerts</h2>
+        <p className="mt-2 text-sm text-ink-700">
+          Held alerts are recorded and not sent. Sending stays off until the owner recipient and sender are configured.
+        </p>
+        {(data.alerts ?? []).length === 0 ? <p className="mt-2 text-sm">No payment alerts recorded.</p> : null}
+        <ul className="mt-3 divide-y divide-ink-300 text-sm">
+          {(data.alerts ?? []).map((alert) => (
+            <li key={alert.id} className="flex flex-wrap justify-between gap-2 py-2">
+              <span>{alert.kind} · {alert.audience} · {alert.status} · tries {alert.attempts}</span>
+              <span>{formatUsd(alert.amountCents)} · {alert.memberId ?? "unmapped"}</span>
+            </li>
+          ))}
+        </ul>
       </section>
       <section className="flex flex-wrap gap-3 text-sm">
         <label>

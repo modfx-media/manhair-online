@@ -136,6 +136,9 @@ export type RevenueReport = {
   netCashCents: number;
   activeMonthlyRateCents: number;
   trialingMonthlyRateCents: number;
+  trialingUnpaidMonthlyCents: number;
+  pastDueMonthlyCents: number;
+  projectedMrrCents: number;
   note: string;
 };
 
@@ -149,11 +152,14 @@ export function revenueReport(invoices: RevenueInvoice[], members: RevenueMember
     .filter((invoice) => invoice.kind === "recurring")
     .reduce((sum, invoice) => sum + invoice.amountPaid, 0);
   const refundedCents = invoices.reduce((sum, invoice) => sum + invoice.amountRefunded, 0);
-  const activeMonthlyRateCents = members
-    .filter((member) => ["active", "past_due", "cancel_scheduled"].includes(member.status))
+  const projectedMrrCents = members
+    .filter((member) => member.status === "active")
     .reduce((sum, member) => sum + member.monthlyCents, 0);
-  const trialingMonthlyRateCents = members
+  const trialingUnpaidMonthlyCents = members
     .filter((member) => member.status === "trialing")
+    .reduce((sum, member) => sum + member.monthlyCents, 0);
+  const pastDueMonthlyCents = members
+    .filter((member) => member.status === "past_due")
     .reduce((sum, member) => sum + member.monthlyCents, 0);
   return {
     cashCollectedCents,
@@ -161,8 +167,11 @@ export function revenueReport(invoices: RevenueInvoice[], members: RevenueMember
     recurringCollectedCents,
     refundedCents,
     netCashCents: cashCollectedCents - refundedCents,
-    activeMonthlyRateCents,
-    trialingMonthlyRateCents,
-    note: "Recorded payments and current monthly rates. Not a forecast.",
+    activeMonthlyRateCents: projectedMrrCents,
+    trialingMonthlyRateCents: trialingUnpaidMonthlyCents,
+    trialingUnpaidMonthlyCents,
+    pastDueMonthlyCents,
+    projectedMrrCents,
+    note: "Setup and recurring figures are cash collected. Projected MRR is only the monthly rate of active paid subscriptions. It is not cash collected, and trialing subscriptions are excluded.",
   };
 }

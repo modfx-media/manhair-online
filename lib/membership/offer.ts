@@ -36,6 +36,13 @@ export const SCHEDULING = {
 
 export const FIRST_SYSTEM_LEAD = "8–12 weeks";
 
+/** Owner-confirmed processor identity. The app discloses it and does not change the shared Stripe profile. */
+export const MERCHANT = {
+  statementDescriptor: "MODFXMEDIA, LLC",
+  disclosure:
+    "Card charges are processed by Stripe and will show on your statement as MODFXMEDIA, LLC. This checkout does not change that shared Stripe business profile.",
+} as const;
+
 export type TierId = "essential" | "signature" | "elite";
 
 export type TierOffer = {

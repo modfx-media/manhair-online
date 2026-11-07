@@ -178,10 +178,11 @@ test("usage, pause, cancel, and revenue guards", () => {
     ],
   );
   assert.equal(report.netCashCents, 49500 + 55900 - 1000);
-  assert.equal(report.activeMonthlyRateCents, 55900);
-  assert.equal(report.trialingMonthlyRateCents, 66900);
+  assert.equal(report.projectedMrrCents, 55900);
+  assert.equal(report.trialingUnpaidMonthlyCents, 66900);
+  assert.equal(report.setupCollectedCents, 49500);
   assert.equal("projectedAnnualCents" in report, false);
-  assert.match(report.note, /Not a forecast/);
+  assert.match(report.note, /Projected MRR is not cash collected|not cash collected/);
 });
 
 test("staff deny by default and member isolation", () => {

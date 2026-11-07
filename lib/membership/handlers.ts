@@ -1,3 +1,4 @@
+import { alertAfterFailure, alertLogFields, alertsForPayment, customerAlertsReady, ownerAlertText, ownerAlertsReady, type AlertRecord } from "./alerts";
 import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
@@ -727,6 +728,7 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
   if (claim === "duplicate") return json({ ok: true, duplicate: true });
   const internal = mapStripeEvent(event);
   const member = await memberFromEvent(deps.store, internal);
+  const previousStatus = member?.status ?? null;
   const seen = new Set<string>();
   if (await deps.store.seenEvent(event.id)) seen.add(event.id);
   const effect = reduceBillingEvent(member ? toBilling(member) : null, internal, seen);
@@ -765,11 +767,104 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     if (effect.founding === "convert" && "reservationId" in internal && internal.reservationId) {
       await deps.store.setFoundingStatus(internal.reservationId, "converted");
     }
+    await recordPaymentAlerts(deps, {
+      eventId: event.id,
+      previousStatus,
+      invoice: effect.invoice,
+      webhookFailed: false,
+      memberId: member?.id ?? effect.invoice?.memberId ?? null,
+    });
     await deps.store.finishEvent(event.id, "processed");
     return json({ ok: true, unmapped: effect.unmapped, stale: effect.staleStatus });
   } catch {
     await deps.store.finishEvent(event.id, "failed");
+    await recordPaymentAlerts(deps, {
+      eventId: event.id,
+      previousStatus,
+      invoice: null,
+      webhookFailed: true,
+      memberId: member?.id ?? null,
+    });
     return json({ ok: false, error: "webhook_failed" }, 500);
+  }
+}
+
+async function recordPaymentAlerts(
+  deps: Deps,
+  input: {
+    eventId: string;
+    previousStatus: MemberRecord["status"] | null;
+    invoice: { kind: string; status: "paid" | "failed"; amountPaid: number; memberId: string | null } | null;
+    webhookFailed: boolean;
+    memberId: string | null;
+  },
+): Promise<void> {
+  try {
+    const drafts = alertsForPayment({ ...input, now: deps.now(), env: deps.env });
+    for (const draft of drafts) {
+      await deps.store.enqueueAlert({
+        ...draft,
+        id: newId(),
+        attempts: 0,
+        lastError: null,
+        createdAt: deps.now().toISOString(),
+      });
+    }
+    await drainAlerts(deps);
+  } catch {
+    console.info(JSON.stringify({ scope: "membership", event: "alert_enqueue_failed", sourceEventId: input.eventId }));
+  }
+}
+
+export async function drainAlerts(deps: Deps): Promise<{ delivered: number; failed: number; held: number }> {
+  const due = await deps.store.claimDueAlerts(deps.now(), 20);
+  let delivered = 0;
+  let failed = 0;
+  for (const alert of due) {
+    const outcome = await deliverAlert(deps, alert);
+    if (outcome === "held") continue;
+    if (outcome === "delivered") delivered += 1;
+    else failed += 1;
+  }
+  const held = (await deps.store.listAlerts()).filter((alert) => alert.status === "held").length;
+  return { delivered, failed, held };
+}
+
+async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered" | "failed" | "held"> {
+  const ready = alert.audience === "owner" ? ownerAlertsReady(deps.env) : customerAlertsReady(deps.env);
+  if (!ready) {
+    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "alerts_not_configured" });
+    return "held";
+  }
+  let to = deps.env.MEMBERSHIP_ALERT_TO?.trim() ?? "";
+  if (alert.audience === "customer") {
+    const member = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
+    to = member?.email ?? "";
+    if (!to) {
+      await deps.store.updateAlert(alert.id, { status: "failed", nextAttemptAt: null, lastError: "member_email_missing" });
+      return "failed";
+    }
+  }
+  try {
+    const response = await (deps.fetchImpl ?? fetch)("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${deps.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: deps.env.RESEND_FROM,
+        to,
+        subject: `ManHair ${alert.kind.replaceAll("_", " ")}`,
+        text: ownerAlertText(alert),
+      }),
+    });
+    if (!response.ok) throw new Error("provider_rejected");
+    await deps.store.updateAlert(alert.id, { status: "delivered", lastError: null });
+    console.info(JSON.stringify({ scope: "membership", event: "alert_delivered", ...alertLogFields(alert) }));
+    return "delivered";
+  } catch {
+    const next = alertAfterFailure(alert.attempts, deps.now());
+    await deps.store.updateAlert(alert.id, { ...next, lastError: "delivery_failed" });
+    console.info(JSON.stringify({ scope: "membership", event: "alert_delivery_failed", ...alertLogFields({ ...alert, status: next.status }) }));
+    return "failed";
   }
 }
 
@@ -789,6 +884,7 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   if (action === "pause") return staffPause(body, deps);
   if (action === "draft") return saveDraftAction(body, deps);
   if (action === "ghl-pull") return json(await pullGhl(deps));
+  if (action === "alerts-drain") return json({ ok: true, ...(await drainAlerts(deps)) });
   if (action === "send") return json({ ok: false, error: "messaging_disabled", message: "No customer email or SMS is sent from this hub." }, 403);
   return json({ ok: false, error: "unknown_action" }, 404);
 }
@@ -816,6 +912,7 @@ async function hubSnapshot(deps: Deps) {
     stages: DEAL_STAGES,
     stageCounts: stage,
     revenue: revenueReport(invoices, members),
+    alerts: await deps.store.listAlerts(),
     deals,
     ghlSync: await deps.store.getSyncState(),
     freshness: ghlFreshness(await deps.store.getSyncState(), ghlMode(deps.env)),

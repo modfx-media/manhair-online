@@ -1,4 +1,5 @@
 import { normalizeEmail } from "./tokens";
+import type { AlertRecord } from "./alerts";
 import type { AuthAuditRecord, RecoveryRecord, SyncState } from "./types";
 import type {
   ActivityRecord,
@@ -34,6 +35,7 @@ export function createMemoryStore(): MembershipStore {
   const drafts: DraftRecord[] = [];
   const recoveries = new Map<string, RecoveryRecord>();
   const audits: AuthAuditRecord[] = [];
+  const alerts = new Map<string, AlertRecord>();
   let syncState: SyncState | null = null;
   const ledger: Ledger[] = [];
   const rates = new Map<string, { hits: number; started: number }>();
@@ -171,6 +173,28 @@ export function createMemoryStore(): MembershipStore {
     },
     async addAuthAudit(row) {
       audits.push(row);
+    },
+    async enqueueAlert(row) {
+      if ([...alerts.values()].some((item) => item.dedupeKey === row.dedupeKey)) return "duplicate";
+      alerts.set(row.id, row);
+      return "created";
+    },
+    async listAlerts() {
+      return [...alerts.values()];
+    },
+    async claimDueAlerts(now, limit) {
+      const due = [...alerts.values()]
+        .filter((item) => item.status === "pending" && item.nextAttemptAt && new Date(item.nextAttemptAt).getTime() <= now.getTime())
+        .slice(0, limit);
+      for (const item of due) {
+        item.status = "sending";
+        item.attempts += 1;
+      }
+      return due.map((item) => ({ ...item }));
+    },
+    async updateAlert(id, patch) {
+      const current = alerts.get(id);
+      if (current) Object.assign(current, patch);
     },
     async listDeals() {
       return [...deals.values()];

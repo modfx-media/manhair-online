@@ -1,4 +1,4 @@
-import { MIN_TERM_MONTHS, RATE_LOCK_MONTHS, TRIAL_DAYS } from "./offer";
+import { MERCHANT, MIN_TERM_MONTHS, RATE_LOCK_MONTHS, TRIAL_DAYS } from "./offer";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -71,5 +71,7 @@ export function billingDisclosure(start: Date, monthlyCents: number, setupCents:
     `The rate of the tier you join is locked until ${formatStudio(timeline.rateLockEndsAt)}.`,
     `The minimum term runs until ${formatStudio(timeline.minimumTermEndsAt)}. After that the plan is month to month. Cancellation online adds no fee. During the minimum, cancellation is scheduled for the end of the minimum rather than today.`,
     "This application does not issue refunds. A refund rule has not been approved.",
+    MERCHANT.disclosure,
+    "Sales tax is not added by this checkout. Whether tax will be collected has not been decided.",
   ].join(" ");
 }

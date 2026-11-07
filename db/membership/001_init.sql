@@ -158,6 +158,21 @@ CREATE TABLE IF NOT EXISTS membership_sync_state (
   error text
 );
 
+CREATE TABLE IF NOT EXISTS membership_alert_outbox (
+  id text PRIMARY KEY,
+  dedupe_key text NOT NULL UNIQUE,
+  source_event_id text NOT NULL,
+  kind text NOT NULL,
+  audience text NOT NULL,
+  member_id text,
+  amount_cents integer NOT NULL DEFAULT 0,
+  status text NOT NULL,
+  attempts integer NOT NULL DEFAULT 0,
+  next_attempt_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS membership_auth_audit (
   id text PRIMARY KEY,
   member_id text,

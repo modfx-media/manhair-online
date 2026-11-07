@@ -1,3 +1,4 @@
+import type { AlertRecord } from "./alerts";
 import type { Attention, InvoiceKind, MemberStatus } from "./billing";
 import type { TierId } from "./offer";
 
@@ -171,6 +172,10 @@ export interface MembershipStore {
   getSyncState(): Promise<SyncState | null>;
   saveSyncState(row: SyncState): Promise<void>;
   addAuthAudit(row: AuthAuditRecord): Promise<void>;
+  enqueueAlert(row: AlertRecord): Promise<"created" | "duplicate">;
+  listAlerts(): Promise<AlertRecord[]>;
+  claimDueAlerts(now: Date, limit: number): Promise<AlertRecord[]>;
+  updateAlert(id: string, patch: Partial<Pick<AlertRecord, "status" | "attempts" | "nextAttemptAt" | "lastError">>): Promise<void>;
   listDeals(): Promise<DealRecord[]>;
   saveDeal(row: DealRecord): Promise<void>;
   addNote(row: NoteRecord): Promise<void>;

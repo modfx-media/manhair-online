@@ -17,7 +17,9 @@
     "cms:bootstrap": "tsx scripts/cms-bootstrap.ts",
     "cms:ensure-admin": "tsx scripts/cms-ensure-admin-user.ts",
     "test": "tsx --test tests/membership/*.test.ts",
-    "membership:migrate": "tsx scripts/membership-migrate.ts"
+    "membership:migrate": "tsx scripts/membership-migrate.ts",
+    "membership:check-migration": "tsx scripts/membership-migration-check.ts",
+    "membership:smoke": "tsx scripts/membership-smoke.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
