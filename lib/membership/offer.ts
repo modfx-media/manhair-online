@@ -88,6 +88,8 @@ export const TIERS: Record<TierId, TierOffer> = {
 
 export const TIER_IDS = Object.keys(TIERS) as TierId[];
 
+/** No merchant account is hard-coded as allowed or refused. The owner confirms one with configuration. */
+
 export function isTierId(value: unknown): value is TierId {
   return typeof value === "string" && value in TIERS;
 }
@@ -100,10 +102,3 @@ export function formatUsd(cents: number): string {
   }).format(cents / 100);
 }
 
-/** Account identified in the 2026-11-07 audit as ModFXMedia, not confirmed for ManHair. */
-export const DENIED_STRIPE_ACCOUNT_IDS = ["acct_1DhNFjGiafo5ImyE"] as const;
-
-export function isDeniedStripeAccount(accountId: string | null | undefined): boolean {
-  if (!accountId) return false;
-  return (DENIED_STRIPE_ACCOUNT_IDS as readonly string[]).includes(accountId);
-}

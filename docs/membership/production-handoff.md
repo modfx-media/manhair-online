@@ -1,6 +1,6 @@
 # Membership production handoff
 
-This build is not taking live payments. Do not merge it, do not set `MEMBERSHIP_PAYMENTS_LIVE=true`, and do not point it at the ModFXMedia Stripe account `acct_1DhNFjGiafo5ImyE`.
+This build is not taking live payments. Do not merge it, and do not set `MEMBERSHIP_PAYMENTS_LIVE=true` or `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true` until the owner names the merchant account.
 
 ## What is in the branch
 
@@ -17,7 +17,7 @@ The marketing site, Payload admin, Cherry page, and consult modal are unchanged 
 ## Verified gaps from the connector audit
 
 - HighLevel searches for ManHair, Man, and Hair returned no locations. No location id is stored in this repo.
-- The only accessible Stripe merchant is ModFXMedia, live account `acct_1DhNFjGiafo5ImyE`. Checkout refuses that id.
+- The only accessible Stripe merchant during the audit was ModFXMedia, live account `acct_1DhNFjGiafo5ImyE`. The owner has not confirmed it. The app does not hard-code a refusal. Checkout stays closed until the owner sets the expected account id and `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true`. That same gate is what would allow ModFXMedia later, only after the owner confirms it.
 - Vercel project `prj_KYNMITbRpNx4np9hRPZQzZuNG3fd` on team `team_FQDxgNtaJYX8DHFa0X5V7jiN` was not readable (`get_project` 404, `list_deployments` 403). There is no preview URL from this run. A GitHub preview deployment can appear only if that project’s integration builds the branch. Production builds still redirect `*.vercel.app` to `https://www.manhaironline.com`. Preview builds omit that redirect and send `X-Robots-Tag: noindex`.
 
 ## Variable names
@@ -28,7 +28,8 @@ Payments, all required before checkout will open:
 
 - `STRIPE_SECRET_KEY` — restricted key on the confirmed ManHair account. Test key until the sandbox check below passes.
 - `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_ACCOUNT_ID` — must match the account that owns the key, and must not be `acct_1DhNFjGiafo5ImyE`
+- `STRIPE_ACCOUNT_ID` — the owner-confirmed account. Must match the account that owns the key. Not hard-coded.
+- `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED` — must be `true` before checkout opens. Leave unset until the owner confirms the merchant.
 - `STRIPE_PRICE_ESSENTIAL` — $449 USD monthly
 - `STRIPE_PRICE_SIGNATURE` — $559 USD monthly
 - `STRIPE_PRICE_ELITE` — $669 USD monthly
@@ -113,6 +114,14 @@ Webhook endpoint: `https://www.manhaironline.com/api/membership/webhook/`
 - Customer email and SMS. Drafts save. Send returns an error.
 - Legal review. The terms page says compliance is not guaranteed.
 - Vercel production access for this agent. Deployment stays with the coordinator.
+
+## What this review verified
+
+Unit tests cover pricing, the 30-day then calendar-month timeline, account confirmation, email not signing a member in, cancellation scheduled through the minimum term, pause requests leaving billing unchanged, webhook staleness and duplicates, entitlement-year boundaries, HighLevel location mismatch, bounded search retry, and local lead create/delete. They do not call Stripe. No Stripe test-clock or sandbox checkout has been run. `CHECKOUT_TIMELINE_SANDBOX_CONFIRMED` remains false.
+
+The HighLevel adapter is real code: when location, token, pipeline, and stage are set it searches contacts in that location, refuses a location mismatch, does not merge ambiguous emails, retries a failed search up to three times, and skips a second opportunity when one is already stored. With any of those values missing it returns not connected and does not call HighLevel. The hub can create, update, read, and delete local leads. Delete does not delete a HighLevel contact.
+
+Screenshots in the pull request are rendered pages on a local production server with payments, founding, database, and staff sign-in unconfigured. They show the public offer, the blocked checkout form, the signed-out account gate, and the hub denial. They are not a successful payment or a populated lead board.
 
 ## Readiness
 

@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS membership_members (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS membership_members_email_idx
+-- Email is a contact field, not an account key. Drop any earlier unique index.
+DROP INDEX IF EXISTS membership_members_email_idx;
+CREATE INDEX IF NOT EXISTS membership_members_email_lookup_idx
   ON membership_members (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS membership_members_customer_idx
   ON membership_members (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;

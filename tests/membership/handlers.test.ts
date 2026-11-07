@@ -20,6 +20,7 @@ function baseEnv(extra: AppEnv = {}): AppEnv {
     STRIPE_PRICE_SETUP_FOUNDING: "price_founding",
     STRIPE_PORTAL_CONFIGURATION_ID: "bpc_123",
     MEMBERSHIP_SESSION_SECRET: "test-secret",
+    MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED: "true",
     MEMBERSHIP_OWNER_EMAILS: "owner@manhaironline.com",
     NEXT_PUBLIC_SITE_URL: "https://www.manhaironline.com",
     ...extra,
@@ -96,7 +97,10 @@ function checkoutRequest(body: unknown, origin = "https://www.manhaironline.com"
 }
 
 test("duplicate checkout creates one processor session", async () => {
-  const context = deps({ env: baseEnv({ MEMBERSHIP_FOUNDING_ENABLED: "true", MEMBERSHIP_FOUNDING_CAP: "1" }) });
+  const context = deps({
+    env: baseEnv({ MEMBERSHIP_FOUNDING_ENABLED: "true", MEMBERSHIP_FOUNDING_CAP: "1" }),
+    now: () => new Date(),
+  });
   const first = await handleCheckout(checkoutRequest({ ...checkoutBody(), founding: true }), context);
   const second = await handleCheckout(checkoutRequest({ ...checkoutBody(), founding: true }), context);
   assert.equal(first.status, 200);
@@ -108,11 +112,15 @@ test("duplicate checkout creates one processor session", async () => {
   assert.equal(other.status, 409);
 });
 
-test("denylisted Stripe account and price mismatch do not open checkout", async () => {
-  const denied = deps({ stripe: fakeStripe("acct_1DhNFjGiafo5ImyE") });
-  const deniedResponse = await handleCheckout(checkoutRequest(checkoutBody()), denied);
-  assert.equal(deniedResponse.status, 503);
-  assert.equal(denied.stripe.creates.length, 0);
+test("unconfirmed and mismatched Stripe accounts do not open checkout", async () => {
+  const unconfirmed = deps({ env: baseEnv({ MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED: "false" }) });
+  const unconfirmedResponse = await handleCheckout(checkoutRequest(checkoutBody()), unconfirmed);
+  assert.equal(unconfirmedResponse.status, 503);
+  assert.equal(unconfirmed.stripe.creates.length, 0);
+  const mismatched = deps({ stripe: fakeStripe("acct_1DhNFjGiafo5ImyE") });
+  const mismatchedResponse = await handleCheckout(checkoutRequest(checkoutBody()), mismatched);
+  assert.equal(mismatchedResponse.status, 503);
+  assert.equal(mismatched.stripe.creates.length, 0);
   const mismatch = deps({ stripe: fakeStripe("acct_manhair_confirmed", true) });
   const mismatchResponse = await handleCheckout(checkoutRequest(checkoutBody()), mismatch);
   assert.equal(mismatchResponse.status, 503);
@@ -228,7 +236,12 @@ test("cancellation and pause do not claim a processor change when blocked", asyn
   }), context);
   const pauseBody = await pause.json();
   assert.equal(pauseBody.applied, false);
+  assert.equal(pauseBody.billingChanged, false);
+  assert.match(pauseBody.message, /not paused/);
   assert.equal(context.stripe.updates.length, 0);
+  const unchanged = await context.store.findMemberById("mem_1");
+  assert.equal(unchanged?.status, "trialing");
+  assert.equal(unchanged?.pauseCollection, false);
 });
 
 test("hub is denied without an allowlisted staff email and usage cannot go negative", async () => {
@@ -258,6 +271,79 @@ test("hub is denied without an allowlisted staff email and usage cannot go negat
   assert.equal((await again.json()).result, "replay");
   const saved = await context.store.findMemberById("mem_1");
   assert.equal(saved?.systemsUsed, 1);
+});
+
+test("email alone does not grant member account ownership", async () => {
+  const context = deps();
+  await context.store.saveMember(await seedMember(context.store, { id: "mem_paid", firstName: "Owner", status: "active" }));
+  const response = await handleCheckout(checkoutRequest(checkoutBody()), context);
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.id, undefined);
+  assert.equal(body.memberId, undefined);
+  assert.equal(context.stripe.creates.length, 0);
+  const saved = await context.store.findMemberById("mem_paid");
+  assert.equal(saved?.firstName, "Owner");
+  assert.equal(saved?.status, "active");
+  const account = await handleAccountGet(new Request("https://www.manhaironline.com/account/?email=member@example.com", {
+    headers: { host: "www.manhaironline.com" },
+  }), context);
+  assert.equal(account.status, 401);
+  const forged = await handleCheckout(checkoutRequest(checkoutBody(), "https://evil.example"), context);
+  assert.equal(forged.status, 403);
+});
+
+test("older webhook does not roll back a newer subscription status", async () => {
+  const context = deps({
+    constructEvent: (payload) => JSON.parse(payload),
+  });
+  await context.store.saveMember(await seedMember(context.store, { status: "active", lastStatusEventCreated: 500 }));
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "t=1" },
+    body: JSON.stringify({
+      id: "evt_old_sub",
+      type: "customer.subscription.updated",
+      created: 100,
+      data: { object: { id: "sub_1", customer: "cus_1", status: "canceled", metadata: { member_id: "mem_1" } } },
+    }),
+  }), context);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.stale, true);
+  const saved = await context.store.findMemberById("mem_1");
+  assert.equal(saved?.status, "active");
+});
+
+test("minimum-term cancellation is scheduled and a local lead can be removed without CRM", async () => {
+  const context = deps({ staffEmail: "owner@manhaironline.com" });
+  await context.store.saveMember(await seedMember(context.store));
+  await context.store.createSession({ id: "sess_a", memberId: "mem_1", expiresAt: "2026-12-01T00:00:00.000Z", active: true });
+  const cancel = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=cancel", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=sess_a", "content-type": "application/json" },
+    body: "{}",
+  }), context);
+  assert.equal(cancel.status, 200);
+  const params = context.stripe.updates[0]?.params as { cancel_at?: number; cancel_at_period_end?: boolean };
+  assert.equal(params.cancel_at_period_end, undefined);
+  assert.equal(params.cancel_at, Math.floor(new Date("2027-02-07T19:00:00.000Z").getTime() / 1000));
+  const saved = await context.store.findMemberById("mem_1");
+  assert.equal(saved?.status, "cancel_scheduled");
+  const created = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=deal", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ name: "New Lead", email: "lead@example.com", stage: "new" }),
+  }), context);
+  const deal = (await created.json()).deal;
+  const removed = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=delete-deal", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ id: deal.id }),
+  }), context);
+  const removedBody = await removed.json();
+  assert.equal(removedBody.crmChanged, false);
+  assert.equal((await context.store.listDeals()).some((item) => item.id === deal.id), false);
 });
 
 test("messaging send is refused", async () => {

@@ -132,6 +132,9 @@ export function AccountPanel({
       </section>
       <section className="grid gap-3">
         <h2 className="font-display text-2xl">Pause request</h2>
+        <p className="text-sm leading-6 text-ink-700">
+          Sending this form only records a request. It does not pause billing, collection, or studio access.
+        </p>
         <form
           className="flex flex-wrap items-end gap-3"
           onSubmit={async (event) => {
@@ -145,14 +148,14 @@ export function AccountPanel({
             <input name="days" type="number" min={1} max={60} defaultValue={14} className="mh-input w-28" />
           </label>
           <button className="mh-btn mh-btn-ghost" type="submit">
-            Request pause
+            Record pause request
           </button>
         </form>
         {pauses.length === 0 ? <p className="text-sm text-ink-700">No pause requests.</p> : null}
         <ul className="text-sm">
           {pauses.map((pause) => (
             <li key={pause.id}>
-              {pause.days} days · {pause.status}
+              {pause.days} days · {pause.status === "requested" ? "requested, billing unchanged" : pause.status}
             </li>
           ))}
         </ul>

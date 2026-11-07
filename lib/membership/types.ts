@@ -114,6 +114,8 @@ export type EventClaim = "claimed" | "duplicate" | "retry";
 export interface MembershipStore {
   kind: "memory" | "sql" | "unavailable";
   findMemberByEmail(email: string): Promise<MemberRecord | null>;
+  listMembersByEmail(email: string): Promise<MemberRecord[]>;
+  deleteDeal(id: string): Promise<void>;
   findMemberById(id: string): Promise<MemberRecord | null>;
   findMemberByCustomer(customerId: string): Promise<MemberRecord | null>;
   findMemberBySubscription(subscriptionId: string): Promise<MemberRecord | null>;

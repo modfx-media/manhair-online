@@ -65,7 +65,7 @@ export function billingDisclosure(start: Date, monthlyCents: number, setupCents:
   const setup = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(setupCents / 100);
   return [
     `${setup} Custom Design & First Fitting is charged today and goes toward the first system. It is not a separate initiation fee.`,
-    `The first ${monthly} membership charge is ${formatStudio(timeline.firstRecurringAt)}, then monthly.`,
+    `The first ${monthly} membership charge is ${formatStudio(timeline.firstRecurringAt)}. The next charge is one calendar month later, on ${formatStudio(timeline.secondRecurringAt)}, then each calendar month.`,
     "The 30 days before that charge are not unlimited free service.",
     "The first system is made to order and typically takes 8–12 weeks. That lead time is separate from the billing date. The system is not promised within 30 days.",
     `The rate of the tier you join is locked until ${formatStudio(timeline.rateLockEndsAt)}.`,

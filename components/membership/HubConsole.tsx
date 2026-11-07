@@ -5,6 +5,8 @@ import { formatUsd } from "@/lib/membership/offer";
 import { SCHEDULING } from "@/lib/membership/offer";
 import type { DealRecord, DealStage } from "@/lib/membership/types";
 
+type DealCard = DealRecord & { notes?: { id: string; body: string }[] };
+
 type Snapshot = {
   ok: true;
   ghl: string;
@@ -23,7 +25,7 @@ type Snapshot = {
     trialingMonthlyRateCents: number;
     note: string;
   };
-  deals: DealRecord[];
+  deals: DealCard[];
 };
 
 async function post(action: string, body: Record<string, unknown>) {
@@ -138,6 +140,13 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
               <p className="text-xs uppercase tracking-[0.14em] text-ink-600">{deal.syncStatus}</p>
             </div>
             <p className="text-sm text-ink-700">{deal.email}</p>
+            {deal.notes && deal.notes.length > 0 ? (
+              <ul className="mt-2 text-sm text-ink-700">
+                {deal.notes.map((note) => (
+                  <li key={note.id}>{note.body}</li>
+                ))}
+              </ul>
+            ) : null}
             <form
               className="mt-3 grid gap-3 sm:grid-cols-3"
               onSubmit={async (event) => {
@@ -176,9 +185,22 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
                 Next follow-up
                 <input name="nextFollowUp" type="date" defaultValue={deal.nextFollowUp ?? ""} className="mh-input mt-1" />
               </label>
-              <button className="mh-btn mh-btn-ghost sm:col-span-3 w-fit" type="submit">
-                Save deal
-              </button>
+              <div className="flex flex-wrap gap-2 sm:col-span-3">
+                <button className="mh-btn mh-btn-ghost w-fit" type="submit">
+                  Save deal
+                </button>
+                <button
+                  className="mh-btn mh-btn-ghost w-fit"
+                  type="button"
+                  onClick={async () => {
+                    const result = await post("delete-deal", { id: deal.id });
+                    setNotice(result.message ?? "Lead was not removed.");
+                    await refresh();
+                  }}
+                >
+                  Remove local lead
+                </button>
+              </div>
             </form>
             <form
               className="mt-3 grid gap-2"

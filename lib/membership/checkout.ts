@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { billingDisclosure, billingTimeline } from "./dates";
+import { normalizeEmail } from "./tokens";
 import { TERMS_VERSION, TRIAL_DAYS, type TierId } from "./offer";
 import { expectedPrice, type AppEnv, type Blocker } from "./readiness";
 
@@ -59,13 +60,13 @@ function randomLetters(count: number): string {
 }
 
 export function checkoutIdempotencyKey(input: {
-  memberId: string;
+  email: string;
   tier: TierId;
   setupCents: number;
   termsVersion: string;
 }): string {
   const digest = createHash("sha256")
-    .update(`${input.memberId}|${input.tier}|${input.setupCents}|${input.termsVersion}`)
+    .update(`${normalizeEmail(input.email)}|${input.tier}|${input.setupCents}|${input.termsVersion}`)
     .digest("hex")
     .slice(0, 32);
   return `mh_${digest}`;
@@ -146,7 +147,7 @@ export function buildCheckoutParams(input: {
     ok: true,
     params,
     idempotencyKey: checkoutIdempotencyKey({
-      memberId: input.memberId,
+      email: input.email,
       tier: input.tier,
       setupCents: expected.setupCents,
       termsVersion: TERMS_VERSION,

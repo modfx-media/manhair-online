@@ -13,7 +13,7 @@
 - Essential $449 / 4 systems / 9 maintenance; Signature $559 / 6 / 7 (recommended); Elite $669 / 8 / 5 plus priority booking. All tiers 13 visits a year.
 - Setup $495 now, or founding $295 only when `MEMBERSHIP_FOUNDING_ENABLED=true`, cap from `MEMBERSHIP_FOUNDING_CAP` (default 25, maximum 25). No invented end date.
 - One subscription, `trial_period_days: 30`, one one-time setup price, `payment_method_collection: 'always'`, no `payment_method_types`.
-- Refuse Stripe account `acct_1DhNFjGiafo5ImyE`. Live keys require `MEMBERSHIP_PAYMENTS_LIVE=true`.
+- No merchant account id is hard-coded. Checkout stays closed until `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true` and the key's account matches `STRIPE_ACCOUNT_ID`. Live keys also require `MEMBERSHIP_PAYMENTS_LIVE=true`.
 - No HighLevel call without `GHL_LOCATION_ID` plus token. No default location.
 - No customer email or SMS. No raw card fields. No automatic refunds. No add-on balance increments.
 - Hub deny-by-default via `MEMBERSHIP_OWNER_EMAILS` and `MEMBERSHIP_COORDINATOR_EMAILS`.

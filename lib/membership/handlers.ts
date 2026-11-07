@@ -181,54 +181,61 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
   const timeline = billingTimeline(now);
   const setupCents = setupCentsFor(deps.env, useFounding);
   const offer = TIERS[tier];
-  let member = await deps.store.findMemberByEmail(email);
-  if (member && OPEN_STATUSES.has(member.status)) return json({ ok: false, error: "already_member" }, 409);
-  if (!member) {
-    member = {
-      id: newId(),
-      email,
-      phone,
-      firstName,
-      lastName,
-      tier,
-      status: "checkout_open",
-      stripeCustomerId: null,
-      stripeSubscriptionId: null,
-      stripeSubscriptionItemId: null,
-      monthlyCents: offer.monthlyCents,
-      setupCents,
-      setupPaid: false,
-      recurringStartAt: timeline.firstRecurringAt.toISOString(),
-      minimumTermEndsAt: timeline.minimumTermEndsAt.toISOString(),
-      rateLockEndsAt: timeline.rateLockEndsAt.toISOString(),
-      entitlementYearEndsAt: timeline.entitlementYearEndsAt.toISOString(),
-      systemsUsed: 0,
-      maintenanceUsed: 0,
-      pauseDaysUsed: 0,
-      cancelAt: null,
-      pauseCollection: false,
-      attention: null,
-      termsVersion: TERMS_VERSION,
-      lastStatusEventCreated: 0,
-      version: 0,
-      createdAt: now.toISOString(),
-    };
-  } else {
-    member = {
-      ...member,
-      firstName,
-      lastName,
-      phone,
-      tier,
-      monthlyCents: offer.monthlyCents,
-      setupCents,
-      status: "checkout_open",
-      recurringStartAt: timeline.firstRecurringAt.toISOString(),
-      minimumTermEndsAt: timeline.minimumTermEndsAt.toISOString(),
-      rateLockEndsAt: timeline.rateLockEndsAt.toISOString(),
-      entitlementYearEndsAt: timeline.entitlementYearEndsAt.toISOString(),
-    };
+  const idempotencyKey = checkoutIdempotencyKey({
+    email,
+    tier,
+    setupCents,
+    termsVersion: TERMS_VERSION,
+  });
+  const existingCheckout = await deps.store.getCheckout(idempotencyKey);
+  if (existingCheckout?.url && now.getTime() - new Date(existingCheckout.createdAt).getTime() < 30 * 60 * 1000) {
+    const open = await deps.store.findMemberById(existingCheckout.memberId);
+    if (open?.status === "checkout_open") {
+      return json({
+        ok: true,
+        url: existingCheckout.url,
+        reused: true,
+        disclosure: billingDisclosure(now, offer.monthlyCents, setupCents),
+      });
+    }
   }
+  const holders = await deps.store.listMembersByEmail(email);
+  if (holders.some((holder) => OPEN_STATUSES.has(holder.status))) {
+    return json({
+      ok: false,
+      error: "already_member",
+      message: "A membership is already open for this email. Entering the email does not sign you in.",
+    }, 409);
+  }
+  const member: MemberRecord = {
+    id: newId(),
+    email,
+    phone,
+    firstName,
+    lastName,
+    tier,
+    status: "checkout_open",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionItemId: null,
+    monthlyCents: offer.monthlyCents,
+    setupCents,
+    setupPaid: false,
+    recurringStartAt: timeline.firstRecurringAt.toISOString(),
+    minimumTermEndsAt: timeline.minimumTermEndsAt.toISOString(),
+    rateLockEndsAt: timeline.rateLockEndsAt.toISOString(),
+    entitlementYearEndsAt: timeline.entitlementYearEndsAt.toISOString(),
+    systemsUsed: 0,
+    maintenanceUsed: 0,
+    pauseDaysUsed: 0,
+    cancelAt: null,
+    pauseCollection: false,
+    attention: null,
+    termsVersion: TERMS_VERSION,
+    lastStatusEventCreated: 0,
+    version: 0,
+    createdAt: now.toISOString(),
+  };
   await deps.store.saveMember(member);
   await deps.store.addConsent({
     id: newId(),
@@ -237,22 +244,6 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     termsAcceptedAt: now.toISOString(),
     autorenewAcceptedAt: now.toISOString(),
   });
-
-  const idempotencyKey = checkoutIdempotencyKey({
-    memberId: member.id,
-    tier,
-    setupCents,
-    termsVersion: TERMS_VERSION,
-  });
-  const existingCheckout = await deps.store.getCheckout(idempotencyKey);
-  if (existingCheckout?.url && now.getTime() - new Date(existingCheckout.createdAt).getTime() < 30 * 60 * 1000) {
-    return json({
-      ok: true,
-      url: existingCheckout.url,
-      reused: true,
-      disclosure: billingDisclosure(now, offer.monthlyCents, setupCents),
-    });
-  }
 
   let reservationId: string | null = null;
   if (useFounding && founding.enabled) {
@@ -372,11 +363,11 @@ export async function handleReturn(request: Request, deps: Deps): Promise<Respon
   const token = url.searchParams.get("token") ?? "";
   if (!secret) return json({ ok: false, error: "session_secret_missing" }, 503);
   const payload = verifyToken(token, secret, deps.now());
-  if (!payload || payload.purpose !== "checkout_return" || typeof payload.sid !== "string") {
+  if (!payload || payload.purpose !== "checkout_return" || typeof payload.sid !== "string" || typeof payload.mid !== "string") {
     return json({ ok: false, error: "return_token_rejected" }, 400);
   }
   const session = await deps.store.findSession(payload.sid);
-  if (!session || new Date(session.expiresAt).getTime() <= deps.now().getTime()) {
+  if (!session || session.memberId !== payload.mid || new Date(session.expiresAt).getTime() <= deps.now().getTime()) {
     return json({ ok: false, error: "return_expired" }, 400);
   }
   await deps.store.activateSession(session.id);
@@ -512,8 +503,9 @@ async function requestPause(member: MemberRecord, body: Record<string, unknown>,
     return json({
       ok: true,
       applied: false,
+      billingChanged: false,
       message:
-        "Pause request recorded. Billing is unchanged until the studio applies it. While a pause is applied, collection is voided, visits stop, and the minimum term and rate lock move forward by the paused days. That rule is pending attorney review.",
+        "Pause request recorded only. Billing is not paused, collection is unchanged, and studio access is unchanged. A staff member has to apply the pause before any of that happens.",
     });
   }
   return applyPause(member, request.id, days, deps);
@@ -631,8 +623,13 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     return json({ ok: true, duplicate: true });
   }
   try {
-    if (member && effect.statusPatch && !effect.staleStatus) {
-      const next = { ...member, ...effect.statusPatch, version: member.version };
+    if (member && !effect.staleStatus && (effect.statusPatch || effect.attention)) {
+      const next = {
+        ...member,
+        ...effect.statusPatch,
+        attention: effect.attention ?? effect.statusPatch?.attention ?? member.attention,
+        version: member.version,
+      };
       const saved = await deps.store.compareAndSave(next, member.version);
       if (saved === "conflict") {
         await deps.store.finishEvent(event.id, "failed");
@@ -656,9 +653,6 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     if (effect.founding === "convert" && "reservationId" in internal && internal.reservationId) {
       await deps.store.setFoundingStatus(internal.reservationId, "converted");
     }
-    if (effect.attention && member) {
-      await deps.store.saveMember({ ...(await deps.store.findMemberById(member.id))!, attention: effect.attention });
-    }
     await deps.store.finishEvent(event.id, "processed");
     return json({ ok: true, unmapped: effect.unmapped, stale: effect.staleStatus });
   } catch {
@@ -677,6 +671,7 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   const body = (await readJson(request)) ?? {};
   const action = new URL(request.url).searchParams.get("action");
   if (action === "deal") return saveDealAction(body, deps);
+  if (action === "delete-deal") return deleteDealAction(body, deps);
   if (action === "note") return addNoteAction(body, deps);
   if (action === "usage") return usageAction(body, deps);
   if (action === "pause") return staffPause(body, deps);
@@ -686,7 +681,13 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
 }
 
 async function hubSnapshot(deps: Deps) {
-  const deals = await deps.store.listDeals();
+  const deals = await Promise.all(
+    (await deps.store.listDeals()).map(async (deal) => ({
+      ...deal,
+      notes: await deps.store.listNotes(deal.id),
+      activity: await deps.store.listActivity(deal.id),
+    })),
+  );
   const members = await deps.store.listMembers();
   const invoices = await deps.store.listInvoices();
   const stage = deals.reduce<Record<string, number>>((counts, deal) => {
@@ -733,7 +734,15 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
   if (decision === "push" && ghlMode(deps.env) !== "off") {
     const synced = await syncLead(
       deps.env,
-      { email: deal.email, phone: deal.phone, firstName: deal.name, lastName: "", dealId: deal.id },
+      {
+        email: deal.email,
+        phone: deal.phone,
+        firstName: deal.name,
+        lastName: "",
+        dealId: deal.id,
+        contactId: deal.ghlContactId,
+        opportunityId: deal.ghlOpportunityId,
+      },
       deps.fetchImpl ?? fetch,
     );
     deal.syncStatus = synced.status;
@@ -749,6 +758,17 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
     createdAt: deps.now().toISOString(),
   });
   return json({ ok: true, deal });
+}
+
+async function deleteDealAction(body: Record<string, unknown>, deps: Deps): Promise<Response> {
+  const id = typeof body.id === "string" ? body.id : "";
+  if (!id) return json({ ok: false, error: "invalid_deal" }, 400);
+  await deps.store.deleteDeal(id);
+  return json({
+    ok: true,
+    crmChanged: false,
+    message: "Local lead removed. GoHighLevel was not contacted and no contact was deleted there.",
+  });
 }
 
 async function addNoteAction(body: Record<string, unknown>, deps: Deps): Promise<Response> {

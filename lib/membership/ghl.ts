@@ -57,7 +57,23 @@ export type LeadDraft = {
   firstName: string;
   lastName: string;
   dealId: string;
+  contactId?: string | null;
+  opportunityId?: string | null;
 };
+
+async function fetchWithRetry(fetchImpl: typeof fetch, url: string | URL, init: RequestInit): Promise<Response | null> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, init);
+      if (response.ok || (response.status < 500 && response.status !== 429)) return response;
+      last = response;
+    } catch {
+      last = null;
+    }
+  }
+  return last;
+}
 
 export async function syncLead(
   env: AppEnv,
@@ -75,25 +91,20 @@ export async function syncLead(
   const searchUrl = new URL("https://services.leadconnectorhq.com/contacts/");
   searchUrl.searchParams.set("locationId", locationId);
   searchUrl.searchParams.set("query", lead.email);
-  let contacts: GhlContact[] = [];
-  try {
-    const searched = await fetchImpl(searchUrl, { headers });
-    if (!searched.ok) return { status: "push_failed", contactId: null, opportunityId: null };
-    const body = (await searched.json()) as { contacts?: GhlContact[] };
-    contacts = body.contacts ?? [];
-  } catch {
-    return { status: "push_failed", contactId: null, opportunityId: null };
-  }
+  const searched = await fetchWithRetry(fetchImpl, searchUrl, { headers });
+  if (!searched?.ok) return { status: "push_failed", contactId: lead.contactId ?? null, opportunityId: lead.opportunityId ?? null };
+  const body = (await searched.json()) as { contacts?: GhlContact[] };
+  const contacts = body.contacts ?? [];
   if (contacts.some((contact) => contact.locationId && contact.locationId !== locationId)) {
     return { status: "location_mismatch", contactId: null, opportunityId: null };
   }
-  const choice = chooseContact(locationId, contacts, lead.email);
+  const choice = lead.contactId ? { action: "use" as const, id: lead.contactId } : chooseContact(locationId, contacts, lead.email);
   if (choice.action === "ambiguous" || choice.action === "reject") {
     return { status: "ambiguous", contactId: null, opportunityId: null };
   }
   let contactId = choice.action === "use" ? choice.id : null;
   if (!contactId) {
-    const created = await fetchImpl("https://services.leadconnectorhq.com/contacts/", {
+    const created = await fetchWithRetry(fetchImpl, "https://services.leadconnectorhq.com/contacts/", {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -105,18 +116,25 @@ export async function syncLead(
         source: "ManHair membership",
       }),
     });
-    if (!created.ok) return { status: "push_failed", contactId: null, opportunityId: null };
-    const createdBody = (await created.json()) as { contact?: { id?: string; locationId?: string } };
-    if (createdBody.contact?.locationId && createdBody.contact.locationId !== locationId) {
-      return { status: "location_mismatch", contactId: null, opportunityId: null };
+    if (!created?.ok) {
+      const again = await fetchWithRetry(fetchImpl, searchUrl, { headers });
+      const againBody = again?.ok ? ((await again.json()) as { contacts?: GhlContact[] }) : { contacts: [] };
+      const recovered = chooseContact(locationId, againBody.contacts ?? [], lead.email);
+      if (recovered.action !== "use") return { status: "push_failed", contactId: null, opportunityId: null };
+      contactId = recovered.id;
+    } else {
+      const createdBody = (await created.json()) as { contact?: { id?: string; locationId?: string } };
+      if (createdBody.contact?.locationId && createdBody.contact.locationId !== locationId) {
+        return { status: "location_mismatch", contactId: null, opportunityId: null };
+      }
+      contactId = createdBody.contact?.id ?? null;
     }
-    contactId = createdBody.contact?.id ?? null;
   }
   if (!contactId) return { status: "push_failed", contactId: null, opportunityId: null };
-  if (mode !== "contacts_and_opportunities") {
-    return { status: "pushed", contactId, opportunityId: null };
+  if (mode !== "contacts_and_opportunities" || lead.opportunityId) {
+    return { status: "pushed", contactId, opportunityId: lead.opportunityId ?? null };
   }
-  const opportunity = await fetchImpl("https://services.leadconnectorhq.com/opportunities/", {
+  const opportunity = await fetchWithRetry(fetchImpl, "https://services.leadconnectorhq.com/opportunities/", {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -128,7 +146,7 @@ export async function syncLead(
       status: "open",
     }),
   });
-  if (!opportunity.ok) return { status: "pushed", contactId, opportunityId: null };
+  if (!opportunity?.ok) return { status: "pushed", contactId, opportunityId: null };
   const opportunityBody = (await opportunity.json()) as { opportunity?: { id?: string } };
   return { status: "pushed", contactId, opportunityId: opportunityBody.opportunity?.id ?? null };
 }

@@ -121,8 +121,12 @@ export function createSqlStore(connectionString: string): MembershipStore {
 
   return {
     kind: "sql",
+    async listMembersByEmail(email) {
+      const rows = await sql`SELECT * FROM membership_members WHERE lower(email) = lower(${email}) ORDER BY created_at DESC`;
+      return rows.map((row) => mapMember(row as Row));
+    },
     async findMemberByEmail(email) {
-      const rows = await sql`SELECT * FROM membership_members WHERE lower(email) = lower(${email}) LIMIT 1`;
+      const rows = await sql`SELECT * FROM membership_members WHERE lower(email) = lower(${email}) ORDER BY created_at DESC LIMIT 1`;
       return rows[0] ? mapMember(rows[0] as Row) : null;
     },
     async findMemberById(id) {
@@ -352,6 +356,14 @@ export function createSqlStore(connectionString: string): MembershipStore {
       const rows = await sql`SELECT * FROM membership_deals ORDER BY name`;
       return rows.map((row) => mapDeal(row as Row));
     },
+    async deleteDeal(id) {
+      await sql.transaction([
+        sql`DELETE FROM membership_notes WHERE deal_id = ${id}`,
+        sql`DELETE FROM membership_activity WHERE deal_id = ${id}`,
+        sql`DELETE FROM membership_drafts WHERE deal_id = ${id}`,
+        sql`DELETE FROM membership_deals WHERE id = ${id}`,
+      ]);
+    },
     async saveDeal(row) {
       await sql`
         INSERT INTO membership_deals (
@@ -501,6 +513,8 @@ export function unavailableStore(): MembershipStore {
   return {
     kind: "unavailable",
     findMemberByEmail: async () => null,
+    listMembersByEmail: async () => [],
+    deleteDeal: fail,
     findMemberById: async () => null,
     findMemberByCustomer: async () => null,
     findMemberBySubscription: async () => null,

@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { staffRole, memberCanRead } from "../../lib/membership/access";
 import { assessCheckoutAmount, buildCheckoutParams, priceMatches } from "../../lib/membership/checkout";
-import { billingTimeline } from "../../lib/membership/dates";
 import { reduceBillingEvent, type MemberBilling } from "../../lib/membership/billing";
 import { chooseContact, ghlMode, planSync, syncLead } from "../../lib/membership/ghl";
-import { planCancel, planPauseApply, planUsage, revenueReport, tierChangeParams } from "../../lib/membership/lifecycle";
-import { FOUNDING_SETUP_CENTS, SETUP_CENTS, TIERS, isDeniedStripeAccount } from "../../lib/membership/offer";
+import { planCancel, planPauseApply, planUsage, revenueReport, rollEntitlementYear, tierChangeParams } from "../../lib/membership/lifecycle";
+import { addMonths, billingTimeline } from "../../lib/membership/dates";
+import { FOUNDING_SETUP_CENTS, SETUP_CENTS, TIERS } from "../../lib/membership/offer";
 import { foundingConfig, paymentBlockers, type AppEnv } from "../../lib/membership/readiness";
 import { FOUNDING_RESERVE_SQL, USAGE_SQL } from "../../lib/membership/sql-store";
 import { createMemoryStore } from "../../lib/membership/memory-store";
@@ -80,6 +80,9 @@ test("billing timeline charges setup now and membership 30 days later", () => {
   const timeline = billingTimeline(NOW);
   assert.equal(timeline.setupAt.toISOString(), NOW.toISOString());
   assert.equal(timeline.firstRecurringAt.getTime() - NOW.getTime(), 30 * 24 * 60 * 60 * 1000);
+  assert.equal(timeline.secondRecurringAt.toISOString(), "2027-01-07T19:00:00.000Z");
+  assert.notEqual(timeline.secondRecurringAt.getTime() - timeline.firstRecurringAt.getTime(), 30 * 24 * 60 * 60 * 1000);
+  assert.equal(addMonths(new Date("2026-01-31T00:00:00.000Z"), 1).toISOString(), "2026-02-28T00:00:00.000Z");
   assert.equal(timeline.minimumTermEndsAt.toISOString(), "2027-02-07T19:00:00.000Z");
   assert.equal(timeline.rateLockEndsAt.toISOString(), "2028-11-07T19:00:00.000Z");
 });
@@ -116,12 +119,20 @@ test("checkout params are one subscription with a 30 day trial and no card types
   assert.equal(assessCheckoutAmount(0, 49500, 55900), "zero");
 });
 
-test("ModFXMedia Stripe account and live keys are refused", () => {
-  assert.equal(isDeniedStripeAccount("acct_1DhNFjGiafo5ImyE"), true);
-  const denied = paymentBlockers(env({ STRIPE_ACCOUNT_ID: "acct_1DhNFjGiafo5ImyE" }));
-  assert.ok(denied.some((blocker) => blocker.code === "stripe_account_denied"));
-  const retrieved = paymentBlockers(env(), "acct_1DhNFjGiafo5ImyE");
-  assert.ok(retrieved.some((blocker) => blocker.code === "stripe_account_denied"));
+test("live checkout waits for an owner-confirmed account and does not hard-code a merchant", () => {
+  const unconfirmed = paymentBlockers(env({ STRIPE_ACCOUNT_ID: "acct_1DhNFjGiafo5ImyE" }));
+  assert.ok(unconfirmed.some((blocker) => blocker.code === "stripe_account_unconfirmed"));
+  assert.equal(unconfirmed.some((blocker) => blocker.code === "stripe_account_denied"), false);
+  const confirmed = paymentBlockers(
+    env({ STRIPE_ACCOUNT_ID: "acct_owner_confirmed", MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED: "true" }),
+    "acct_owner_confirmed",
+  );
+  assert.equal(confirmed.some((blocker) => blocker.code.startsWith("stripe_account")), false);
+  const mismatch = paymentBlockers(
+    env({ STRIPE_ACCOUNT_ID: "acct_owner_confirmed", MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED: "true" }),
+    "acct_other",
+  );
+  assert.ok(mismatch.some((blocker) => blocker.code === "stripe_account_mismatch"));
   const live = paymentBlockers(env({ STRIPE_SECRET_KEY: "sk_live_secret" }));
   assert.ok(live.some((blocker) => blocker.code === "live_payments_blocked"));
   assert.equal(
@@ -238,6 +249,54 @@ test("founding holds expire and webhook claims do not double-apply", async () =>
   assert.equal(await store.claimEvent("evt_1", "invoice.paid"), "duplicate");
   await store.finishEvent("evt_1", "failed");
   assert.equal(await store.claimEvent("evt_1", "invoice.paid"), "retry");
+});
+
+test("entitlement year rolls on its boundary and stays frozen while paused", () => {
+  const current = member();
+  const before = new Date(new Date(current.entitlementYearEndsAt).getTime() - 1);
+  assert.equal(rollEntitlementYear({ ...current, systemsUsed: 2 }, before).rolled, false);
+  const rolled = rollEntitlementYear({ ...current, systemsUsed: 2 }, new Date(current.entitlementYearEndsAt));
+  assert.equal(rolled.rolled, true);
+  assert.equal(rolled.systemsUsed, 0);
+  assert.equal(rolled.entitlementYearEndsAt, "2028-11-07T19:00:00.000Z");
+  const paused = rollEntitlementYear(
+    { ...current, status: "paused", pauseCollection: true },
+    new Date(current.entitlementYearEndsAt),
+  );
+  assert.equal(paused.rolled, false);
+});
+
+test("HighLevel retries a failed search and does not open a second opportunity", async () => {
+  let searches = 0;
+  let posts = 0;
+  const env = {
+    GHL_API_TOKEN: "token",
+    GHL_LOCATION_ID: "loc_manhair",
+    GHL_PIPELINE_ID: "pipe",
+    GHL_PIPELINE_STAGE_ID: "stage",
+  };
+  const result = await syncLead(env, {
+    email: "a@example.com",
+    phone: null,
+    firstName: "A",
+    lastName: "B",
+    dealId: "deal",
+    contactId: "contact_1",
+    opportunityId: "opp_1",
+  }, async (input) => {
+    const url = String(input);
+    if (url.includes("/contacts/")) {
+      searches += 1;
+      if (searches === 1) return new Response("no", { status: 500 });
+      return Response.json({ contacts: [{ id: "contact_1", locationId: "loc_manhair", email: "a@example.com" }] });
+    }
+    posts += 1;
+    return Response.json({ opportunity: { id: "opp_new" } });
+  });
+  assert.equal(result.status, "pushed");
+  assert.equal(result.opportunityId, "opp_1");
+  assert.equal(posts, 0);
+  assert.ok(searches >= 2);
 });
 
 test("stale subscription status does not overwrite a newer event", () => {

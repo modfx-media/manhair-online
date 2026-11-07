@@ -37,6 +37,10 @@ export function createMemoryStore(): MembershipStore {
 
   return {
     kind: "memory",
+    async listMembersByEmail(email) {
+      const normalized = normalizeEmail(email);
+      return [...members.values()].filter((member) => normalizeEmail(member.email) === normalized);
+    },
     async findMemberByEmail(email) {
       const normalized = normalizeEmail(email);
       return [...members.values()].find((member) => normalizeEmail(member.email) === normalized) ?? null;
@@ -143,6 +147,12 @@ export function createMemoryStore(): MembershipStore {
     },
     async saveDeal(row) {
       deals.set(row.id, row);
+    },
+    async deleteDeal(id) {
+      deals.delete(id);
+      for (let index = notes.length - 1; index >= 0; index -= 1) if (notes[index]?.dealId === id) notes.splice(index, 1);
+      for (let index = activity.length - 1; index >= 0; index -= 1) if (activity[index]?.dealId === id) activity.splice(index, 1);
+      for (let index = drafts.length - 1; index >= 0; index -= 1) if (drafts[index]?.dealId === id) drafts.splice(index, 1);
     },
     async addNote(row) {
       notes.push(row);

@@ -1,4 +1,4 @@
-import { addDays } from "./dates";
+import { addDays, addMonths } from "./dates";
 import type { MemberStatus } from "./billing";
 import { MAX_PAUSE_DAYS, PAUSE_POLICY_VERSION, TIERS, type TierId } from "./offer";
 
@@ -38,9 +38,7 @@ export function rollEntitlementYear<T extends UsageMember>(member: T, now: Date)
     return { ...member, rolled: false };
   }
   if (member.pauseCollection || member.status === "paused") return { ...member, rolled: false };
-  const start = new Date(member.entitlementYearEndsAt);
-  const end = new Date(start.getTime());
-  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  const end = addMonths(new Date(member.entitlementYearEndsAt), 12);
   return {
     ...member,
     systemsUsed: 0,

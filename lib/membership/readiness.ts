@@ -1,8 +1,6 @@
 import {
-  DENIED_STRIPE_ACCOUNT_IDS,
   FOUNDING_CAP_MAX,
   FOUNDING_SETUP_CENTS,
-  isDeniedStripeAccount,
   isTierId,
   SETUP_CENTS,
   TIERS,
@@ -57,19 +55,18 @@ export function paymentBlockers(
 
   if (!env.STRIPE_WEBHOOK_SECRET?.trim()) blockers.push(missing("STRIPE_WEBHOOK_SECRET"));
   if (!account) blockers.push(missing("STRIPE_ACCOUNT_ID"));
-
-  if (isDeniedStripeAccount(account) || isDeniedStripeAccount(retrievedAccountId)) {
+  if (env.MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED !== "true") {
     blockers.push({
-      code: "stripe_account_denied",
+      code: "stripe_account_unconfirmed",
       publicMessage: PUBLIC_PAYMENTS,
       operatorMessage:
-        "The Stripe account is on the unverified-account denylist from the 2026-11-07 ModFXMedia audit. Checkout will not bind to it.",
+        "MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED is not true. Checkout stays closed until the owner confirms the expected Stripe account. No account id is hard-coded as allowed or refused.",
     });
   } else if (retrievedAccountId && account && retrievedAccountId !== account) {
     blockers.push({
       code: "stripe_account_mismatch",
       publicMessage: PUBLIC_PAYMENTS,
-      operatorMessage: "STRIPE_ACCOUNT_ID does not match the account that owns STRIPE_SECRET_KEY.",
+      operatorMessage: "The key's Stripe account does not match STRIPE_ACCOUNT_ID.",
     });
   }
 
@@ -174,7 +171,3 @@ export function sessionSecret(env: AppEnv): string | null {
 }
 
 export const CHECKOUT_TIMELINE_SANDBOX_CONFIRMED = false;
-
-export function deniedAccountIdsForOperators(): readonly string[] {
-  return DENIED_STRIPE_ACCOUNT_IDS;
-}
