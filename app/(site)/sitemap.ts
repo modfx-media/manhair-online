@@ -51,6 +51,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   };
 
+  push("/memberships/", `${SITE.origin}/memberships/`, {
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.8,
+  });
+
   for (const p of PAGES) {
     if (p.path === "/landing-page/" || p.path === "/booking/" || p.path === "/video-call/") continue;
     push(p.path, p.canonical, {

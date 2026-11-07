@@ -138,6 +138,7 @@ export type NavItem = {
 
 export const PRIMARY_NAV: NavItem[] = [
   { label: "Home", href: "/" },
+  { label: "Memberships", href: "/memberships/" },
   {
     label: "Services",
     href: "/mens-hair-replacement-systems/",
