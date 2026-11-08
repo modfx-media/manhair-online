@@ -53,20 +53,62 @@ export type SetupDecision = { run: false; reason: SetupSkipReason } | { run: tru
 
 export type KeyShape = "absent" | "test" | "live" | "unrecognized";
 
-/** Removes wrapping quotes and whitespace. Does not log or return the key. */
+export type StripeKeyClass = {
+  present: boolean;
+  rkTest: boolean;
+  skTest: boolean;
+  rkLive: boolean;
+  skLive: boolean;
+  leadingBom: boolean;
+  zeroWidth: boolean;
+  leadingWhitespace: boolean;
+  trailingWhitespace: boolean;
+  wrappingQuotes: boolean;
+  bearerScheme: boolean;
+  envAssignmentPrefix: boolean;
+  internalWhitespace: boolean;
+};
+
+const INVISIBLE = /[\uFEFF\u200B\u200C\u200D\u2060]/g;
+
+/** Drops invisible characters, wrapping quotes, and a leading label. Does not log or return the key. */
 export function normalizedStripeKey(secret: string | undefined): string {
-  let key = secret?.trim() ?? "";
-  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
-    key = key.slice(1, -1).trim();
+  let key = (secret ?? "").replace(INVISIBLE, "").trim();
+  for (let i = 0; i < 2; i += 1) {
+    const quoted = (key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"));
+    if (!quoted || key.length < 2) break;
+    key = key.slice(1, -1).replace(INVISIBLE, "").trim();
   }
+  key = key.replace(/^bearer\s+/i, "").replace(/^STRIPE_SECRET_KEY=/i, "").replace(INVISIBLE, "").trim();
   return key;
 }
 
+export function stripeKeyClass(secret: string | undefined): StripeKeyClass {
+  const raw = secret ?? "";
+  const trimmed = raw.trim();
+  const normalized = normalizedStripeKey(secret);
+  return {
+    present: raw.length > 0,
+    rkTest: normalized.startsWith("rk_test_"),
+    skTest: normalized.startsWith("sk_test_"),
+    rkLive: normalized.startsWith("rk_live_"),
+    skLive: normalized.startsWith("sk_live_"),
+    leadingBom: raw.charCodeAt(0) === 0xfeff,
+    zeroWidth: /[\u200B\u200C\u200D\u2060]/.test(raw),
+    leadingWhitespace: raw.length > 0 && raw.trimStart() !== raw,
+    trailingWhitespace: raw.length > 0 && raw.trimEnd() !== raw,
+    wrappingQuotes: (trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")),
+    bearerScheme: /^bearer\s+/i.test(trimmed),
+    envAssignmentPrefix: /^STRIPE_SECRET_KEY=/i.test(trimmed.replace(INVISIBLE, "")),
+    internalWhitespace: /\s/.test(normalized),
+  };
+}
+
 export function stripeKeyShape(secret: string | undefined): KeyShape {
-  const key = normalizedStripeKey(secret);
-  if (!key) return "absent";
-  if (key.startsWith("rk_test_") || key.startsWith("sk_test_")) return "test";
-  if (key.startsWith("rk_live_") || key.startsWith("sk_live_")) return "live";
+  const key = stripeKeyClass(secret);
+  if (!key.present) return "absent";
+  if (key.rkTest || key.skTest) return "test";
+  if (key.rkLive || key.skLive) return "live";
   return "unrecognized";
 }
 
@@ -265,6 +307,7 @@ export async function previewSandboxBody(env: Record<string, string | undefined>
   const decision = sandboxSetupDecision(env);
   const keyShape = stripeKeyShape(env.STRIPE_SECRET_KEY);
   const deploymentId = env.VERCEL_DEPLOYMENT_ID ?? null;
+  const keyClass = stripeKeyClass(env.STRIPE_SECRET_KEY);
   if (!decision.run) {
     return {
       scope: "stripe_sandbox_setup",
@@ -272,10 +315,10 @@ export async function previewSandboxBody(env: Record<string, string | undefined>
       run: false as const,
       reason: decision.reason,
       keyShape,
+      keyClass,
       deploymentId,
-      note: "Sensitive preview keys are not present during the build. This response is from the preview function.",
     };
   }
   const report = await runSandboxSetup(connect());
-  return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: true as const, keyShape, deploymentId, ...report };
+  return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: true as const, keyShape, keyClass, deploymentId, ...report };
 }

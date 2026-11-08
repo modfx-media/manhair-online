@@ -8,6 +8,7 @@ import {
   redactStripeText,
   runSandboxSetup,
   sandboxSetupDecision,
+  stripeKeyClass,
   stripeKeyShape,
   type SandboxPrice,
   type SandboxStripe,
@@ -36,8 +37,27 @@ test("sandbox setup stays off outside the preview branch and without a test key"
   if (!liveKey.run) assert.equal(liveKey.reason, "test_key_rejected");
   assert.equal(stripeKeyShape(undefined), "absent");
   assert.equal(stripeKeyShape('"rk_test_example"'), "test");
+  assert.equal(stripeKeyShape("\uFEFFrk_test_example").startsWith("test"), true);
+  assert.equal(sandboxSetupDecision({ ...previewEnv, STRIPE_SECRET_KEY: "\uFEFFrk_test_example" }).run, true);
+  assert.equal(sandboxSetupDecision({ ...previewEnv, STRIPE_SECRET_KEY: "Bearer rk_test_example" }).run, true);
+  assert.equal(sandboxSetupDecision({ ...previewEnv, STRIPE_SECRET_KEY: "STRIPE_SECRET_KEY=rk_test_example" }).run, true);
   assert.equal(sandboxSetupDecision({ ...previewEnv, STRIPE_SECRET_KEY: "'rk_test_example'" }).run, true);
   assert.equal(sandboxSetupDecision(previewEnv).run, true);
+  const wrapped = stripeKeyClass("\uFEFF  \"Bearer rk_test_example\"\n");
+  assert.equal(wrapped.present, true);
+  assert.equal(wrapped.rkTest, true);
+  assert.equal(wrapped.skTest, false);
+  assert.equal(wrapped.rkLive, false);
+  assert.equal(wrapped.skLive, false);
+  assert.equal(wrapped.leadingBom, true);
+  assert.equal(Object.values(wrapped).every((value) => typeof value === "boolean"), true);
+  assert.equal(JSON.stringify(wrapped).includes("rk_test"), false);
+  const unknown = stripeKeyClass("not-a-stripe-key");
+  assert.equal(unknown.present, true);
+  assert.equal(unknown.rkTest, false);
+  assert.equal(unknown.skTest, false);
+  assert.equal(unknown.rkLive, false);
+  assert.equal(unknown.skLive, false);
 });
 
 test("runtime setup does not call Stripe or echo the key when the key is absent", async () => {
