@@ -514,6 +514,17 @@ export function createSqlStore(connectionString: string): MembershipStore {
         VALUES (${row.id}, ${row.memberId}, ${row.action}, ${row.createdAt})
       `;
     },
+    async listAuthAudits(memberId) {
+      const rows = memberId
+        ? await sql`SELECT id, member_id, action, created_at FROM membership_auth_audit WHERE member_id = ${memberId} ORDER BY created_at DESC`
+        : await sql`SELECT id, member_id, action, created_at FROM membership_auth_audit ORDER BY created_at DESC LIMIT 100`;
+      return rows.map((row) => ({
+        id: requiredText(row.id),
+        memberId: text(row.member_id),
+        action: requiredText(row.action),
+        createdAt: requiredText(row.created_at),
+      }));
+    },
     async enqueueAlert(row) {
       const inserted = await sql`
         INSERT INTO membership_alert_outbox (
@@ -787,6 +798,7 @@ export function unavailableStore(): MembershipStore {
     getSyncState: async () => null,
     saveSyncState: fail,
     addAuthAudit: fail,
+    listAuthAudits: async () => [],
     enqueueAlert: fail,
     listAlerts: async () => [],
     claimDueAlerts: async () => [],

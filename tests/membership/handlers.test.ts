@@ -255,7 +255,10 @@ test("cancellation and pause do not claim a processor change when blocked", asyn
     body: "{}",
   });
   const cancel = await handleAccountPost(request(), { ...context, stripe: null });
-  assert.equal(cancel.status, 503);
+  const cancelBody = await cancel.json();
+  assert.equal(cancel.status, 200);
+  assert.equal(cancelBody.applied, false);
+  assert.equal(cancelBody.billingChanged, false);
   const pause = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=pause", {
     method: "POST",
     headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=cookie-a", "content-type": "application/json" },
@@ -342,7 +345,7 @@ test("older webhook does not roll back a newer subscription status", async () =>
   assert.equal(saved?.status, "active");
 });
 
-test("minimum-term cancellation is scheduled and a local lead can be removed without CRM", async () => {
+test("self-serve cancellation is a request and a local lead can be removed without CRM", async () => {
   const context = deps({ staffEmail: "owner@manhaironline.com" });
   await context.store.saveMember(await seedMember(context.store));
   await context.store.createSession({ id: "sess_a", memberId: "mem_1", tokenHash: hashSecret("cookie-a"), expiresAt: "2026-12-01T00:00:00.000Z", active: true, returnUsed: true });
@@ -352,11 +355,12 @@ test("minimum-term cancellation is scheduled and a local lead can be removed wit
     body: "{}",
   }), context);
   assert.equal(cancel.status, 200);
-  const params = context.stripe.updates[0]?.params as { cancel_at?: number; cancel_at_period_end?: boolean };
-  assert.equal(params.cancel_at_period_end, undefined);
-  assert.equal(params.cancel_at, Math.floor(new Date("2027-02-07T19:00:00.000Z").getTime() / 1000));
+  const cancelBody = await cancel.json();
+  assert.equal(cancelBody.applied, false);
+  assert.equal(cancelBody.billingChanged, false);
+  assert.equal(context.stripe.updates.length, 0);
   const saved = await context.store.findMemberById("mem_1");
-  assert.equal(saved?.status, "cancel_scheduled");
+  assert.equal(saved?.status, "trialing");
   const created = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=deal", {
     method: "POST",
     headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
@@ -496,6 +500,19 @@ test("portal session uses the configured id and does not create a configuration"
   }));
   assert.equal(otherId.status, 503);
   assert.equal(creates, 0);
+});
+
+test("a paid member is not moved from Active Clients into a prospect stage", async () => {
+  const context = deps({ staffEmail: "owner@manhaironline.com" });
+  await context.store.saveMember(await seedMember(context.store, { setupPaid: true, status: "active" }));
+  const response = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=deal", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Alex Rivera", email: "member@example.com", stage: "Phone Consult", memberId: "mem_1" }),
+  }), context);
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.error, "stage_regression");
 });
 
 test("messaging send is refused", async () => {

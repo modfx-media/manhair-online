@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { handleConsultation } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
-import { dedupePlans, planMessages, type Suppression } from "../../lib/membership/message-lifecycle";
+import { canonicalEvent, channelSuppressed, dedupePlans, planMessages, type Suppression } from "../../lib/membership/message-lifecycle";
 import { unavailableStore } from "../../lib/membership/sql-store";
 
 const open: Suppression = {
@@ -62,6 +62,23 @@ test("transactional plans require a verified timestamp and never invent a fittin
   }, open);
   assert.equal(fitting[0]?.status, "suppressed");
   assert.equal(fitting[0]?.reason, "missing_verified_timestamp");
+});
+
+test("channel do-not-disturb overrides a global false and setup aliases share one event", () => {
+  assert.equal(channelSuppressed("sms", { ...open, dnd: false, smsDnd: true }), "sms_dnd");
+  assert.equal(channelSuppressed("email", { ...open, dnd: false, smsDnd: true }), null);
+  assert.equal(channelSuppressed("sms", { ...open, marketingSmsConsent: true }), null);
+  const blocked = planMessages({
+    eventId: "consult_3",
+    type: "consultation_stored",
+    occurredAt: "2026-11-08T09:00:00.000Z",
+    memberId: null,
+    email: "lead@example.com",
+  }, { ...open, emailDnd: true });
+  assert.equal(blocked[0]?.reason, "email_dnd");
+  assert.equal(canonicalEvent("membership.setup_payment_verified"), "membership.setup_paid");
+  assert.equal(canonicalEvent("membership.setup_payment_verified + 14 days"), "membership.setup_paid + 14 days");
+  assert.equal(canonicalEvent("membership.setup_paid"), "membership.setup_paid");
 });
 
 test("a consultation stays local when storage exists and is refused without a database", async () => {

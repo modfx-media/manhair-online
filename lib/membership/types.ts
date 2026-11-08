@@ -218,6 +218,7 @@ export interface MembershipStore {
   getSyncState(): Promise<SyncState | null>;
   saveSyncState(row: SyncState): Promise<void>;
   addAuthAudit(row: AuthAuditRecord): Promise<void>;
+  listAuthAudits(memberId?: string): Promise<AuthAuditRecord[]>;
   enqueueAlert(row: AlertRecord): Promise<"created" | "duplicate">;
   listAlerts(): Promise<AlertRecord[]>;
   claimDueAlerts(now: Date, limit: number): Promise<AlertRecord[]>;

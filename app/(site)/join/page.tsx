@@ -77,7 +77,7 @@ export default async function JoinPage({
         blockedMessage={blockers[0]?.publicMessage ?? null}
         preview={process.env.VERCEL_ENV === "preview"}
         setupConsent={`${formatUsd(setup)} is charged today for Custom Design & First Fitting.`}
-        monthlyConsent={`I agree the first monthly charge of ${formatUsd(offer.monthlyCents)} is scheduled for ${formatStudio(timeline.firstRecurringAt)}, then each calendar month, until I cancel. The rate locks for 24 months. The minimum term is 3 months. During the minimum, cancellation is scheduled for the end of the minimum and adds no fee.`}
+        monthlyConsent={`I agree the first monthly charge of ${formatUsd(offer.monthlyCents)} is scheduled for ${formatStudio(timeline.firstRecurringAt)}, then each calendar month. The rate locks for 24 months. The minimum term is 3 months. A cancellation from the account page is a request and does not change billing until staff review it.`}
       />
     </main>
   );

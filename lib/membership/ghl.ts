@@ -44,6 +44,32 @@ export function stageMap(env: AppEnv): Record<string, string> | null {
   return target.ok ? target.stageMap : null;
 }
 
+const PROSPECT_STAGES = new Set([
+  "New Leads",
+  "Hot Leads",
+  "Proposal Sent",
+  "Phone Consult",
+  "Video Consultation",
+  "No show/Cancelled",
+  "No Buy/Nurture",
+  "DND",
+]);
+
+/** A paid membership stays Active Clients. Appointment and prospect stages do not replace it. */
+export function paidMemberStageChange(paid: boolean, nextStage: string): "allow" | "keep_active_client" {
+  if (!paid) return "allow";
+  if (nextStage === "Active Clients") return "allow";
+  if (PROSPECT_STAGES.has(nextStage)) return "keep_active_client";
+  return "allow";
+}
+
+/** Workflow API 403 is location availability, not a bad token. Do not retry or bypass it. */
+export function ghlErrorDisposition(status: number, code: string | null): "retry" | "stop_availability" | "stop" {
+  if (status === 403 && code === "WORKFLOW_API_NOT_ENABLED_FOR_LOCATION") return "stop_availability";
+  if (status === 429 || status >= 500) return "retry";
+  return "stop";
+}
+
 export async function pushOpportunityStage(
   env: AppEnv,
   opportunityId: string | null,
@@ -89,12 +115,21 @@ export type LeadDraft = {
   opportunityId?: string | null;
 };
 
+async function ghlResponseCode(response: Response): Promise<string | null> {
+  const header = response.headers.get("x-ghl-error-code");
+  if (header && /^[A-Z0-9_]+$/.test(header)) return header;
+  if (response.ok) return null;
+  const body = (await response.clone().json().catch(() => null)) as { code?: unknown } | null;
+  return typeof body?.code === "string" && /^[A-Z0-9_]+$/.test(body.code) ? body.code : null;
+}
+
 async function fetchWithRetry(fetchImpl: typeof fetch, url: string | URL, init: RequestInit): Promise<Response | null> {
   let last: Response | null = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await fetchImpl(url, init);
-      if (response.ok || (response.status < 500 && response.status !== 429)) return response;
+      const code = await ghlResponseCode(response);
+      if (ghlErrorDisposition(response.status, code) !== "retry") return response;
       last = response;
     } catch {
       last = null;

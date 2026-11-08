@@ -28,7 +28,7 @@ export default async function AccountPage({
   return (
     <main className="mx-auto grid max-w-3xl gap-6 px-5 py-12 md:py-16">
       <PreviewNotice />
-      <AccountPanel member={data.member} invoices={data.invoices} pauses={data.pauses} afterCheckout={query.next === "checkout"} />
+      <AccountPanel member={data.member} invoices={data.invoices} pauses={data.pauses} cancellationRequests={data.cancellationRequests} afterCheckout={query.next === "checkout"} />
     </main>
   );
 }

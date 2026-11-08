@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS membership_members (
 
 ALTER TABLE membership_members ADD COLUMN IF NOT EXISTS payment_grace_started_at timestamptz;
 
--- Email is a contact field, not an account key. Drop any earlier unique index.
-DROP INDEX IF EXISTS membership_members_email_idx;
+-- Email is a contact field, not an account key. A non-unique lookup is additive.
 CREATE INDEX IF NOT EXISTS membership_members_email_lookup_idx
   ON membership_members (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS membership_members_customer_idx

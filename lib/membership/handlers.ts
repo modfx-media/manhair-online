@@ -4,23 +4,21 @@ import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches, safeAppOrigin, type PriceSnapshot } from "./checkout";
-import { ghlMode, pushOpportunityStage, syncHash, syncLead } from "./ghl";
+import { ghlMode, paidMemberStageChange, pushOpportunityStage, syncHash, syncLead } from "./ghl";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import { reviewedLifecycle } from "./lifecycle-review";
 import { appointmentInput, schedulingMessages, MANUAL_SCHEDULING } from "./scheduling";
 import { matchConfirmedRefund, planSuitabilityFailure, refundStatusFromProcessor } from "./suitability";
-import { applyInvoiceObservation, reconcileGrace } from "./payment-grace";
+import { applyInvoiceObservation, paymentServiceHold, reconcileGrace } from "./payment-grace";
 import { isMembershipSchemaMissing } from "./sql-store";
 import {
   allowance,
-  planCancel,
   planPauseApply,
   planUsage,
   revenueReport,
   rollEntitlementYear,
   tierChangeParams,
-  cancelStripeParams,
 } from "./lifecycle";
 import {
   FIRST_SYSTEM_LEAD,
@@ -524,22 +522,26 @@ export async function handleAccountGet(request: Request, deps: Deps): Promise<Re
   if (!member) return json({ ok: false, error: "signed_out" }, 401);
   const invoices = await deps.store.listInvoices(member.id);
   const pauses = await deps.store.listPauseRequests(member.id);
+  const cancellationRequests = (await deps.store.listAuthAudits(member.id)).filter((row) => row.action === "cancellation_requested");
   return json({
     ok: true,
-    member: publicMember(member),
+    member: publicMember(member, deps.now()),
     invoices,
     pauses,
+    cancellationRequests,
     scheduling: SCHEDULING,
     disclosure: billingDisclosure(new Date(member.createdAt), member.monthlyCents, member.setupCents),
   });
 }
 
-function publicMember(member: MemberRecord) {
+function publicMember(member: MemberRecord, now: Date) {
   const timeline = {
     firstRecurringAt: member.recurringStartAt,
     minimumTermEndsAt: member.minimumTermEndsAt,
     rateLockEndsAt: member.rateLockEndsAt,
   };
+  const visits = planUsage(member, "maintenance", 1, now);
+  const orders = planUsage(member, "system", 1, now);
   return {
     id: member.id,
     firstName: member.firstName,
@@ -557,6 +559,9 @@ function publicMember(member: MemberRecord) {
     pauseDaysUsed: member.pauseDaysUsed,
     cancelAt: member.cancelAt,
     pauseCollection: member.pauseCollection,
+    serviceHold: paymentServiceHold(member.paymentGraceStartedAt, now) === "held",
+    visits: visits.ok ? "available" : visits.reason,
+    newSystemOrders: orders.ok ? "available" : orders.reason,
     ...timeline,
     paymentMethod: "Shown by the processor. This app does not store a card number.",
   };
@@ -580,28 +585,17 @@ export async function handleAccountPost(request: Request, deps: Deps): Promise<R
 }
 
 async function cancelMember(member: MemberRecord, deps: Deps): Promise<Response> {
-  if (!member.stripeSubscriptionId || !deps.stripe || paymentBlockers(deps.env).length) {
-    return json({
-      ok: false,
-      error: "cancel_not_sent",
-      message: "Cancellation was not sent to the processor. Nothing was changed.",
-    }, 503);
-  }
-  const plan = planCancel(member.minimumTermEndsAt, deps.now());
-  try {
-    await deps.stripe.subscriptions.update(member.stripeSubscriptionId, cancelStripeParams(plan));
-  } catch {
-    return json({ ok: false, error: "processor_error", message: "The processor did not accept the cancellation. Nothing was marked cancelled." }, 502);
-  }
-  const cancelAt = plan.mode === "at_minimum_term" ? plan.cancelAt.toISOString() : member.cancelAt;
-  await deps.store.saveMember({ ...member, status: "cancel_scheduled", cancelAt });
+  await deps.store.addAuthAudit({
+    id: newId(),
+    memberId: member.id,
+    action: "cancellation_requested",
+    createdAt: deps.now().toISOString(),
+  });
   return json({
     ok: true,
-    cancelAt,
-    message:
-      plan.mode === "at_minimum_term"
-        ? `The 3-month minimum is still in effect, so cancellation is scheduled for ${formatStudio(plan.cancelAt)}, not today. No cancellation fee was added. This application does not issue a refund.`
-        : "The processor accepted a cancellation at the end of the current paid period. No cancellation fee was added. This application does not issue a refund.",
+    applied: false,
+    billingChanged: false,
+    message: "Cancellation request recorded. Billing is unchanged until staff review it. Nothing was sent to the processor.",
   });
 }
 
@@ -1115,9 +1109,6 @@ async function staffSuitability(body: Record<string, unknown>, deps: Deps): Prom
     await deps.store.saveRefundRequest(row);
     refunds.push(row);
   }
-  if (cancelStatus === "processor_canceled") {
-    await deps.store.saveMember({ ...member, status: "canceled", cancelAt: now });
-  }
   await deps.store.addAuthAudit({ id: newId(), memberId: member.id, action: "suitability_failure_recorded", createdAt: now });
   const completed = cancelStatus === "processor_canceled" && refunds.length > 0 && refunds.every((refund) => refund.status === "processor_succeeded");
   return json({
@@ -1226,6 +1217,7 @@ async function hubSnapshot(deps: Deps) {
     stageCounts: stage,
     revenue: revenueReport(invoices, members),
     alerts: await deps.store.listAlerts(),
+    cancellationRequests: (await deps.store.listAuthAudits()).filter((row) => row.action === "cancellation_requested"),
     deals,
     ghlSync: await deps.store.getSyncState(),
     freshness: ghlFreshness(await deps.store.getSyncState(), ghlMode(deps.env)),
@@ -1339,7 +1331,7 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
   const followUp = typeof body.nextFollowUp === "string" ? body.nextFollowUp : existing?.nextFollowUp ?? null;
   const deal: DealRecord = {
     id,
-    memberId: existing?.memberId ?? null,
+    memberId: typeof body.memberId === "string" ? body.memberId : existing?.memberId ?? null,
     name: typeof body.name === "string" ? body.name.trim() : existing?.name ?? "",
     email: typeof body.email === "string" ? normalizeEmail(body.email) : existing?.email ?? "",
     phone: typeof body.phone === "string" ? body.phone : existing?.phone ?? null,
@@ -1355,6 +1347,15 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
     staffEditedAt: deps.now().toISOString(),
   };
   if (!deal.name || !validEmail(deal.email)) return json({ ok: false, error: "invalid_deal" }, 400);
+  const linked = deal.memberId ? await deps.store.findMemberById(deal.memberId) : null;
+  const paid = Boolean(linked && (linked.setupPaid || ["trialing", "active", "past_due", "paused", "cancel_scheduled"].includes(linked.status)));
+  if (paidMemberStageChange(paid, deal.stage) === "keep_active_client") {
+    return json({
+      ok: false,
+      error: "stage_regression",
+      message: "A paid membership stays in Active Clients. Appointment and prospect stages do not replace it.",
+    }, 409);
+  }
   const decision = existing ? "push" : "push";
   if (decision === "push" && ghlMode(deps.env) !== "off") {
     const synced = await syncLead(
@@ -1462,14 +1463,15 @@ async function saveDraftAction(body: Record<string, unknown>, deps: Deps): Promi
 export async function loadAccountPage(request: Request, deps: Deps) {
   try {
     const member = await currentMember(request, deps);
-    if (!member) return { member: null, invoices: [], pauses: [] };
+    if (!member) return { member: null, invoices: [], pauses: [], cancellationRequests: [] };
     return {
-      member: publicMember(member),
+      member: publicMember(member, deps.now()),
       invoices: await deps.store.listInvoices(member.id),
       pauses: await deps.store.listPauseRequests(member.id),
+      cancellationRequests: (await deps.store.listAuthAudits(member.id)).filter((row) => row.action === "cancellation_requested"),
     };
   } catch (error) {
-    if (isMembershipSchemaMissing(error)) return { member: null, invoices: [], pauses: [] };
+    if (isMembershipSchemaMissing(error)) return { member: null, invoices: [], pauses: [], cancellationRequests: [] };
     throw error;
   }
 }

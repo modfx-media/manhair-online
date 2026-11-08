@@ -212,6 +212,9 @@ export function createMemoryStore(): MembershipStore {
     async addAuthAudit(row) {
       audits.push(row);
     },
+    async listAuthAudits(memberId) {
+      return audits.filter((row) => !memberId || row.memberId === memberId);
+    },
     async enqueueAlert(row) {
       if ([...alerts.values()].some((item) => item.dedupeKey === row.dedupeKey)) return "duplicate";
       alerts.set(row.id, row);

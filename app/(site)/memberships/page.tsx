@@ -85,7 +85,7 @@ export default function MembershipsPage() {
             </div>
             <div>
               <dt className="font-semibold">Term</dt>
-              <dd>{SHARED_PACKAGE.minimumMonths}-month minimum, then month to month. The monthly rate you join at is locked for {SHARED_PACKAGE.rateLockMonths} months. During the minimum, cancellation is scheduled for the end of the minimum and adds no fee.</dd>
+              <dd>{SHARED_PACKAGE.minimumMonths}-month minimum, then month to month. The monthly rate you join at is locked for {SHARED_PACKAGE.rateLockMonths} months. Cancellation from the account page is a request. It does not change billing until staff review it.</dd>
             </div>
             <div>
               <dt className="font-semibold">Pause</dt>

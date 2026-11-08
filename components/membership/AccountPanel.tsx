@@ -25,10 +25,14 @@ type MemberView = {
   minimumTermEndsAt: string;
   rateLockEndsAt: string;
   paymentMethod: string;
+  serviceHold?: boolean;
+  visits?: string;
+  newSystemOrders?: string;
 };
 
 type Invoice = { id: string; kind: string; status: string; amountPaid: number; amountRefunded: number };
 type Pause = { id: string; days: number; status: string };
+type CancellationRequest = { id: string; createdAt: string };
 
 async function post(action: string, body: Record<string, unknown>) {
   const response = await fetch(`/api/membership/account/?action=${action}`, {
@@ -43,11 +47,13 @@ export function AccountPanel({
   member,
   invoices,
   pauses,
+  cancellationRequests = [],
   afterCheckout = false,
 }: {
   member: MemberView | null;
   invoices: Invoice[];
   pauses: Pause[];
+  cancellationRequests?: CancellationRequest[];
   afterCheckout?: boolean;
 }) {
   const [message, setMessage] = useState<string | null>(null);
@@ -100,6 +106,16 @@ export function AccountPanel({
           {member.firstRecurringAt ? ` on ${formatStudio(new Date(member.firstRecurringAt))}` : ""}.
           Setup {member.setup} is {member.setupPaid ? "marked paid by a processor event" : "not confirmed by a processor event yet"}.
         </p>
+        {member.serviceHold ? (
+          <section role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-6 text-red-900">
+            <h2 className="font-semibold">Visits and new system orders are held</h2>
+            <p className="mt-1">
+              A monthly invoice is still unpaid after 14 days. The membership is not cancelled, and an order already underway is not cancelled.
+              Updating the payment method stays available and does not clear this hold. The hold clears only after the processor verifies payment of every unpaid monthly invoice.
+            </p>
+            <p className="mt-1">Visits: {member.visits}. New system orders: {member.newSystemOrders}.</p>
+          </section>
+        ) : null}
         {member.attention ? (
           <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             The processor record needs review ({member.attention}). This page will not describe the billing timeline as confirmed.
@@ -138,14 +154,26 @@ export function AccountPanel({
       </section>
       <section className="grid gap-3">
         <h2 className="font-display text-2xl">Cancellation</h2>
+        <p className="text-sm leading-6 text-ink-700">
+          This records a request for staff review. It does not change the processor, the next charge, or the membership status.
+        </p>
         <button
           className="mh-btn mh-btn-ghost w-fit"
           type="button"
           onClick={async () => setMessage((await post("cancel", {})).message ?? "Cancellation was not changed.")}
         >
-          Schedule cancellation
+          Request cancellation
         </button>
-        {member.cancelAt ? <p className="text-sm">Scheduled for {member.cancelAt}.</p> : null}
+        {member.cancelAt ? <p className="text-sm">A processor date is on file: {member.cancelAt}. This page does not treat a new request as that date.</p> : null}
+        {cancellationRequests.length === 0 ? (
+          <p className="text-sm text-ink-700">No cancellation requests.</p>
+        ) : (
+          <ul className="text-sm">
+            {cancellationRequests.map((request) => (
+              <li key={request.id}>{request.createdAt} · requested, billing unchanged</li>
+            ))}
+          </ul>
+        )}
       </section>
       <section className="grid gap-3">
         <h2 className="font-display text-2xl">Pause request</h2>
