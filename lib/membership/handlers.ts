@@ -205,13 +205,13 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
   const lastName = typeof body.lastName === "string" ? body.lastName.trim() : "";
   const phone = typeof body.phone === "string" && body.phone.trim() ? body.phone.trim() : null;
   if (!validEmail(email) || !firstName || !lastName) return json({ ok: false, error: "invalid_lead" }, 400);
+  try {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const allowed = await deps.store.consumeRate(`consult:${email}:${ip}`, deps.now(), 6, 60 * 60 * 1000);
   if (!allowed) return json({ ok: false, error: "rate_limited", message: "Too many consultation requests. Nothing was sent." }, 429);
   const marketing = body.marketingConsent === true;
   const dealId = newId();
   const now = deps.now().toISOString();
-  try {
   await deps.store.saveDeal({
     id: dealId,
     memberId: null,
