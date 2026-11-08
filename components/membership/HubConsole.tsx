@@ -168,9 +168,17 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
           <li key={deal.id} className="rounded-md border border-ink-300 bg-white p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h3 className="font-display text-xl">{deal.name}</h3>
-              <p className="text-xs uppercase tracking-[0.14em] text-ink-600">{deal.syncStatus}</p>
+              <p className="text-xs uppercase tracking-[0.14em] text-ink-600">
+                {deal.syncStatus}
+                {deal.remoteUpdatedAt ? ` · remote ${deal.remoteUpdatedAt}` : " · no remote update"}
+              </p>
             </div>
             <p className="text-sm text-ink-700">{deal.email}</p>
+            {deal.stage.startsWith("unmapped:") ? (
+              <p className="mt-1 text-sm text-ink-700">
+                HighLevel sent stage {deal.stage.slice("unmapped:".length)}. It is not one of the nine marketing stages, so this card is not marked synced.
+              </p>
+            ) : null}
             {deal.notes && deal.notes.length > 0 ? (
               <ul className="mt-2 text-sm text-ink-700">
                 {deal.notes.map((note) => (
@@ -198,7 +206,7 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
               <label className="text-sm sm:col-span-3">
                 Stage
                 <select name="stage" defaultValue={deal.stage} className="mh-input mt-1 min-h-11 text-base">
-                  {data.stages.map((item) => (
+                  {(data.stages.includes(deal.stage) ? data.stages : [deal.stage, ...data.stages]).map((item) => (
                     <option key={item}>{item}</option>
                   ))}
                 </select>

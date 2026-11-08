@@ -151,7 +151,7 @@ test("missing consent is rejected and HighLevel is not called without a location
 
 test("HighLevel location mismatch does not keep the foreign contact", async () => {
   const context = deps({
-    env: baseEnv({ GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc_manhair" }),
+    env: baseEnv({ GHL_API_TOKEN: "token" }),
     fetchImpl: async () => Response.json({ contacts: [{ id: "c_1", locationId: "loc_other", email: "member@example.com" }] }),
   });
   const response = await handleCheckout(checkoutRequest(checkoutBody()), context);
@@ -337,7 +337,7 @@ test("minimum-term cancellation is scheduled and a local lead can be removed wit
   const created = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=deal", {
     method: "POST",
     headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
-    body: JSON.stringify({ name: "New Lead", email: "lead@example.com", stage: "new" }),
+    body: JSON.stringify({ name: "New Lead", email: "lead@example.com", stage: "New Leads" }),
   }), context);
   const deal = (await created.json()).deal;
   const removed = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=delete-deal", {

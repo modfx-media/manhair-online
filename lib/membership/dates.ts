@@ -1,5 +1,8 @@
 import { MERCHANT, MIN_TERM_MONTHS, RATE_LOCK_MONTHS, TRIAL_DAYS } from "./offer";
 
+/** Studio clock. This is the app timezone. It is not copied from a HighLevel location setting. */
+export const APP_TIMEZONE = "America/Los_Angeles";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function addDays(date: Date, days: number): Date {
@@ -43,13 +46,13 @@ export function billingTimeline(start: Date): BillingTimeline {
 
 export function formatStudio(date: Date): string {
   const datePart = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: APP_TIMEZONE,
     year: "numeric",
     month: "long",
     day: "numeric",
   }).format(date);
   const timePart = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: APP_TIMEZONE,
     hour: "numeric",
     minute: "2-digit",
     hourCycle: "h12",

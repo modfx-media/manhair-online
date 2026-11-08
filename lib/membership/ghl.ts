@@ -1,3 +1,4 @@
+import { resolveGhlTarget } from "./manhair-ghl";
 import type { AppEnv } from "./readiness";
 
 const REJECTED_LOCATIONS = new Set(["", "default", "0", "null", "undefined", "manhair", "test"]);
@@ -5,11 +6,7 @@ const REJECTED_LOCATIONS = new Set(["", "default", "0", "null", "undefined", "ma
 export type GhlMode = "off" | "contacts" | "contacts_and_opportunities";
 
 export function ghlMode(env: AppEnv): GhlMode {
-  const location = env.GHL_LOCATION_ID?.trim().toLowerCase() ?? "";
-  const token = env.GHL_API_TOKEN?.trim();
-  if (!token || REJECTED_LOCATIONS.has(location)) return "off";
-  if (!env.GHL_PIPELINE_ID?.trim() || !env.GHL_PIPELINE_STAGE_ID?.trim()) return "contacts";
-  return "contacts_and_opportunities";
+  return resolveGhlTarget(env).ok ? "contacts_and_opportunities" : "off";
 }
 
 export function assertGhlLocation(
@@ -43,16 +40,8 @@ export function chooseContact(
 }
 
 export function stageMap(env: AppEnv): Record<string, string> | null {
-  const raw = env.GHL_STAGE_MAP?.trim();
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const entries = Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0);
-    return entries.length ? Object.fromEntries(entries.map(([key, value]) => [key, value.trim()])) : null;
-  } catch {
-    return null;
-  }
+  const target = resolveGhlTarget(env);
+  return target.ok ? target.stageMap : null;
 }
 
 export async function pushOpportunityStage(
@@ -61,21 +50,23 @@ export async function pushOpportunityStage(
   stage: string,
   fetchImpl: typeof fetch,
 ): Promise<"not_connected" | "stage_map_missing" | "pushed" | "push_failed"> {
-  if (ghlMode(env) === "off") return "not_connected";
-  const mapped = stageMap(env)?.[stage];
+  const target = resolveGhlTarget(env);
+  if (!target.ok) return "not_connected";
+  const mapped = target.stageMap[stage as keyof typeof target.stageMap];
   if (!opportunityId || !mapped) return "stage_map_missing";
   const response = await fetchWithRetry(fetchImpl, `https://services.leadconnectorhq.com/opportunities/${encodeURIComponent(opportunityId)}`, {
     method: "PUT",
     headers: {
-      Authorization: `Bearer ${env.GHL_API_TOKEN}`,
+      Authorization: `Bearer ${target.token}`,
       Version: "2021-07-28",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ locationId: env.GHL_LOCATION_ID, pipelineStageId: mapped }),
+    body: JSON.stringify({ locationId: target.locationId, pipelineId: target.pipelineId, pipelineStageId: mapped }),
   });
   if (!response?.ok) return "push_failed";
-  const body = (await response.json().catch(() => ({}))) as { opportunity?: { locationId?: string } };
-  if (body.opportunity?.locationId && body.opportunity.locationId !== env.GHL_LOCATION_ID?.trim()) return "push_failed";
+  const body = (await response.json().catch(() => ({}))) as { opportunity?: { locationId?: string; pipelineId?: string } };
+  if (body.opportunity?.locationId && body.opportunity.locationId !== target.locationId) return "push_failed";
+  if (body.opportunity?.pipelineId && body.opportunity.pipelineId !== target.pipelineId) return "push_failed";
   return "pushed";
 }
 
@@ -117,11 +108,11 @@ export async function syncLead(
   lead: LeadDraft,
   fetchImpl: typeof fetch,
 ): Promise<{ status: "not_connected" | "ambiguous" | "pushed" | "push_failed" | "location_mismatch"; contactId: string | null; opportunityId: string | null }> {
-  const mode = ghlMode(env);
-  if (mode === "off") return { status: "not_connected", contactId: null, opportunityId: null };
-  const locationId = env.GHL_LOCATION_ID!.trim();
+  const target = resolveGhlTarget(env);
+  if (!target.ok) return { status: "not_connected", contactId: null, opportunityId: null };
+  const locationId = target.locationId;
   const headers = {
-    Authorization: `Bearer ${env.GHL_API_TOKEN}`,
+    Authorization: `Bearer ${target.token}`,
     Version: "2021-07-28",
     "Content-Type": "application/json",
   };
@@ -168,16 +159,16 @@ export async function syncLead(
     }
   }
   if (!contactId) return { status: "push_failed", contactId: null, opportunityId: null };
-  if (mode !== "contacts_and_opportunities" || lead.opportunityId) {
-    return { status: "pushed", contactId, opportunityId: lead.opportunityId ?? null };
+  if (lead.opportunityId) {
+    return { status: "pushed", contactId, opportunityId: lead.opportunityId };
   }
   const opportunity = await fetchWithRetry(fetchImpl, "https://services.leadconnectorhq.com/opportunities/", {
     method: "POST",
     headers,
     body: JSON.stringify({
       locationId,
-      pipelineId: env.GHL_PIPELINE_ID,
-      pipelineStageId: env.GHL_PIPELINE_STAGE_ID,
+      pipelineId: target.pipelineId,
+      pipelineStageId: target.stageMap["New Leads"],
       contactId,
       name: `${lead.firstName} ${lead.lastName}`.trim(),
       status: "open",

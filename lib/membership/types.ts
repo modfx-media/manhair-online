@@ -50,28 +50,25 @@ export type InvoiceRecord = {
   amountRefunded: number;
 };
 
-export type DealStage =
-  | "new"
-  | "checkout"
-  | "consult"
-  | "design"
-  | "fitting"
-  | "active"
-  | "pause_requested"
-  | "cancel_scheduled"
-  | "closed";
+export const SALES_STAGES = [
+  "New Leads",
+  "Hot Leads",
+  "Proposal Sent",
+  "Phone Consult",
+  "Video Consultation",
+  "No show/Cancelled",
+  "Active Clients",
+  "No Buy/Nurture",
+  "DND",
+] as const;
 
-export const DEAL_STAGES: DealStage[] = [
-  "new",
-  "checkout",
-  "consult",
-  "design",
-  "fitting",
-  "active",
-  "pause_requested",
-  "cancel_scheduled",
-  "closed",
-];
+export type SalesStage = (typeof SALES_STAGES)[number];
+export type DealStage = SalesStage | `unmapped:${string}`;
+export const DEAL_STAGES: readonly SalesStage[] = SALES_STAGES;
+
+export function isSalesStage(value: string): value is SalesStage {
+  return (SALES_STAGES as readonly string[]).includes(value);
+}
 
 export type DealRecord = {
   id: string;

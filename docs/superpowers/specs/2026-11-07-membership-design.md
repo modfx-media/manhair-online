@@ -19,6 +19,7 @@ Status: Approved direction from the owner request, updated with the live connect
 ## Live connector audit (do not rediscover through other businesses)
 
 - HighLevel name searches for ManHair, Man, and Hair returned no locations. There is no verified location id. The integration stays off until `GHL_LOCATION_ID` is set to a location the owner confirms. No default location is allowed.
+- Later the same day the owner verified location `jv4grExvok7omWurc4PE` and marketing pipeline `arkMXixdGM81H9FjL2gc`. With `GHL_API_TOKEN` set, the app uses those ids and the nine stage ids in `lib/membership/manhair-ghl.ts`. Any other location, legacy pipeline `nN1jyhFV5trEjTBGlc46`, or a disagreeing stage id stays off. The token is still not in this repo.
 - The only accessible Stripe merchant in the 2026-11-07 audit identifies as ModFXMedia, `acct_1DhNFjGiafo5ImyE`, in live mode. The owner has not said whether that merchant is intended. Checkout does not hard-code that id as allowed or refused. It stays closed until `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true` and the authenticated account matches `STRIPE_ACCOUNT_ID`. This pull request does not set that confirmation.
 - Vercel project `manhair-online` (`prj_KYNMITbRpNx4np9hRPZQzZuNG3fd`, team `team_FQDxgNtaJYX8DHFa0X5V7jiN`) returned 404 on project read and 403 on deployment list. Production deployment is unverified. This change does not use the Vercel CLI or session tokens to get around that.
 

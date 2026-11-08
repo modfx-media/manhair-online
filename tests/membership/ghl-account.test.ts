@@ -2,6 +2,12 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { pushOpportunityStage } from "../../lib/membership/ghl";
+import {
+  MANHAIR_GHL_LOCATION_ID,
+  MANHAIR_LEGACY_PIPELINE_ID,
+  MANHAIR_MARKETING_PIPELINE_ID,
+  MANHAIR_STAGE_IDS,
+} from "../../lib/membership/manhair-ghl";
 import { GHL_ED25519_PUBLIC_KEY, mergeInboundLead, pullHighLevel, verifyGhlSignature } from "../../lib/membership/ghl-inbound";
 import { BILLING_PORTAL_FEATURES, handleAccountPost, handleGhlWebhook, handleHub, handleRecover, type Deps } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
@@ -24,9 +30,6 @@ function env(extra: Record<string, string> = {}) {
     MEMBERSHIP_OWNER_EMAILS: "owner@manhaironline.com",
     NEXT_PUBLIC_SITE_URL: "https://www.manhaironline.com",
     GHL_API_TOKEN: "token",
-    GHL_LOCATION_ID: "loc_manhair",
-    GHL_PIPELINE_ID: "pipe",
-    GHL_PIPELINE_STAGE_ID: "stage",
     ...extra,
   };
 }
@@ -38,14 +41,14 @@ function deal(partial: Partial<DealRecord> = {}): DealRecord {
     name: "Alex Rivera",
     email: "alex@example.com",
     phone: null,
-    stage: "consult",
+    stage: "Phone Consult",
     assignee: "owner@manhaironline.com",
     nextFollowUp: "2026-11-10",
     ghlContactId: "contact_1",
     ghlOpportunityId: null,
     syncStatus: "updated",
     syncHash: "old",
-    locationId: "loc_manhair",
+    locationId: MANHAIR_GHL_LOCATION_ID,
     remoteUpdatedAt: "2026-11-01T00:00:00.000Z",
     staffEditedAt: "2026-11-02T00:00:00.000Z",
     ...partial,
@@ -67,46 +70,69 @@ test("inbound merge keeps staff workflow on conflict and imports a new location 
     webhookId: "wh_1",
     type: "ContactUpdate",
     timestamp: NOW.toISOString(),
-    locationId: "loc_manhair",
+    locationId: MANHAIR_GHL_LOCATION_ID,
     contactId: "contact_1",
     opportunityId: "opp_1",
-    pipelineStageId: "stage_consult",
+    pipelineId: null,
+    pipelineStageId: MANHAIR_STAGE_IDS["Phone Consult"],
     email: "alex@example.com",
     name: "Alex Updated",
     phone: "9045550100",
     updatedAt: NOW.toISOString(),
   };
   const conflict = mergeInboundLead({
-    configuredLocation: "loc_manhair",
+    configuredLocation: MANHAIR_GHL_LOCATION_ID,
     remote: { ...remote, updatedAt: "2026-11-01T00:00:00.000Z" },
     deals: [deal()],
     now: NOW,
-    stageMap: { consult: "stage_consult", design: "stage_design" },
+    stageMap: MANHAIR_STAGE_IDS,
   });
   assert.equal(conflict.action, "conflict");
   if (conflict.action === "conflict") {
-    assert.equal(conflict.deal.stage, "consult");
+    assert.equal(conflict.deal.stage, "Phone Consult");
     assert.equal(conflict.deal.assignee, "owner@manhaironline.com");
     assert.equal(conflict.deal.name, "Alex Updated");
   }
   const moved = mergeInboundLead({
-    configuredLocation: "loc_manhair",
-    remote: { ...remote, pipelineStageId: "stage_design" },
+    configuredLocation: MANHAIR_GHL_LOCATION_ID,
+    remote: { ...remote, pipelineStageId: MANHAIR_STAGE_IDS["Proposal Sent"] },
     deals: [deal({ staffEditedAt: "2026-11-01T00:00:00.000Z" })],
     now: NOW,
-    stageMap: { consult: "stage_consult", design: "stage_design" },
+    stageMap: MANHAIR_STAGE_IDS,
   });
   assert.equal(moved.action, "update");
-  if (moved.action === "update") assert.equal(moved.deal.stage, "design");
-  const wrong = mergeInboundLead({ configuredLocation: "loc_manhair", remote: { ...remote, locationId: "loc_other" }, deals: [], now: NOW });
+  if (moved.action === "update") assert.equal(moved.deal.stage, "Proposal Sent");
+  const unknown = mergeInboundLead({
+    configuredLocation: MANHAIR_GHL_LOCATION_ID,
+    remote: { ...remote, contactId: "contact_unknown", email: "unknown-stage@example.com", pipelineStageId: "stage-not-in-pipeline" },
+    deals: [deal()],
+    now: NOW,
+    stageMap: MANHAIR_STAGE_IDS,
+  });
+  assert.equal(unknown.action, "import");
+  if (unknown.action === "import") {
+    assert.equal(unknown.deal.stage, "unmapped:stage-not-in-pipeline");
+    assert.equal(unknown.deal.syncStatus, "unknown_stage");
+  }
+  const legacy = mergeInboundLead({
+    configuredLocation: MANHAIR_GHL_LOCATION_ID,
+    remote: { ...remote, contactId: "contact_legacy", pipelineId: MANHAIR_LEGACY_PIPELINE_ID },
+    deals: [],
+    now: NOW,
+    stageMap: MANHAIR_STAGE_IDS,
+  });
+  assert.equal(legacy.action, "unchanged");
+  const wrong = mergeInboundLead({ configuredLocation: MANHAIR_GHL_LOCATION_ID, remote: { ...remote, locationId: "loc_other" }, deals: [], now: NOW });
   assert.equal(wrong.action, "skip_location");
   const imported = mergeInboundLead({
-    configuredLocation: "loc_manhair",
+    configuredLocation: MANHAIR_GHL_LOCATION_ID,
     remote: { ...remote, contactId: "contact_new", email: "new@example.com" },
     deals: [deal()],
     now: NOW,
+    stageMap: MANHAIR_STAGE_IDS,
   });
   assert.equal(imported.action, "import");
+  if (imported.action === "import") assert.equal(imported.deal.stage, "Phone Consult");
 });
 
 test("unsigned or wrong-location HighLevel posts do not create leads, and a signed post imports once", async () => {
@@ -116,8 +142,8 @@ test("unsigned or wrong-location HighLevel posts do not create leads, and a sign
     type: "ContactCreate",
     webhookId: "wh_signed",
     timestamp: NOW.toISOString(),
-    locationId: "loc_manhair",
-    data: { id: "contact_9", email: "new@example.com", firstName: "New", lastName: "Lead", locationId: "loc_manhair" },
+    locationId: MANHAIR_GHL_LOCATION_ID,
+    data: { id: "contact_9", email: "new@example.com", firstName: "New", lastName: "Lead", locationId: MANHAIR_GHL_LOCATION_ID },
   });
   const signature = sign(null, Buffer.from(payload), privateKey).toString("base64");
   const deps = {
@@ -151,38 +177,52 @@ test("unsigned or wrong-location HighLevel posts do not create leads, and a sign
     method: "POST",
     headers: { "x-ghl-signature": signature },
     body: payload,
-  }), { ...deps, env: env({ GHL_LOCATION_ID: "" }) });
+  }), { ...deps, env: env({ GHL_LOCATION_ID: "loc_other" }) });
   assert.equal(disconnected.status, 503);
+  const foreignBody = JSON.stringify({
+    type: "ContactCreate",
+    webhookId: "wh_foreign",
+    timestamp: NOW.toISOString(),
+    locationId: "loc_other",
+    data: { id: "contact_other", email: "other@example.com" },
+  });
+  const foreign = await handleGhlWebhook(new Request("https://www.manhaironline.com/api/membership/ghl/", {
+    method: "POST",
+    headers: { "x-ghl-signature": sign(null, Buffer.from(foreignBody), privateKey).toString("base64") },
+    body: foreignBody,
+  }), deps);
+  assert.equal(foreign.status, 403);
+  assert.equal((await store.listDeals()).length, 1);
 });
 
-test("stage push stays off without a ManHair location and updates only the mapped opportunity", async () => {
+test("stage push refuses the legacy pipeline and writes only a verified marketing stage", async () => {
   let calls = 0;
-  const off = await pushOpportunityStage({ GHL_API_TOKEN: "token" }, "opp_1", "consult", async () => {
+  const legacy = await pushOpportunityStage(
+    { GHL_API_TOKEN: "token", GHL_PIPELINE_ID: MANHAIR_LEGACY_PIPELINE_ID },
+    "opp_1",
+    "Phone Consult",
+    async () => {
+      calls += 1;
+      return new Response("{}");
+    },
+  );
+  assert.equal(legacy, "not_connected");
+  const unknown = await pushOpportunityStage({ GHL_API_TOKEN: "token" }, "opp_1", "consult", async () => {
     calls += 1;
     return new Response("{}");
   });
-  assert.equal(off, "not_connected");
+  assert.equal(unknown, "stage_map_missing");
   assert.equal(calls, 0);
-  const pushed = await pushOpportunityStage(
-    {
-      GHL_API_TOKEN: "token",
-      GHL_LOCATION_ID: "loc_manhair",
-      GHL_PIPELINE_ID: "pipe",
-      GHL_PIPELINE_STAGE_ID: "stage_new",
-      GHL_STAGE_MAP: JSON.stringify({ consult: "stage_consult" }),
-    },
-    "opp_1",
-    "consult",
-    async (input, init) => {
-      calls += 1;
-      assert.equal(String(input), "https://services.leadconnectorhq.com/opportunities/opp_1");
-      assert.equal(init?.method, "PUT");
-      const body = JSON.parse(String(init?.body));
-      assert.equal(body.locationId, "loc_manhair");
-      assert.equal(body.pipelineStageId, "stage_consult");
-      return Response.json({ opportunity: { locationId: "loc_manhair" } });
-    },
-  );
+  const pushed = await pushOpportunityStage({ GHL_API_TOKEN: "token" }, "opp_1", "Phone Consult", async (input, init) => {
+    calls += 1;
+    assert.equal(String(input), "https://services.leadconnectorhq.com/opportunities/opp_1");
+    assert.equal(init?.method, "PUT");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.locationId, MANHAIR_GHL_LOCATION_ID);
+    assert.equal(body.pipelineId, MANHAIR_MARKETING_PIPELINE_ID);
+    assert.equal(body.pipelineStageId, MANHAIR_STAGE_IDS["Phone Consult"]);
+    return Response.json({ opportunity: { locationId: MANHAIR_GHL_LOCATION_ID, pipelineId: MANHAIR_MARKETING_PIPELINE_ID } });
+  });
   assert.equal(pushed, "pushed");
   assert.equal(calls, 1);
 });
@@ -190,7 +230,7 @@ test("stage push stays off without a ManHair location and updates only the mappe
 test("HighLevel pull is off without a location and imports a page with a cursor", async () => {
   let calls = 0;
   const disconnected = await pullHighLevel({
-    env: { GHL_API_TOKEN: "token" },
+    env: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "other-location" },
     fetchImpl: async () => {
       calls += 1;
       return new Response("{}");
@@ -211,7 +251,7 @@ test("HighLevel pull is off without a location and imports a page with a cursor"
       const url = String(input);
       if (url.includes("/contacts/")) {
         return Response.json({
-          contacts: [{ id: "contact_2", locationId: "loc_manhair", email: "pull@example.com", firstName: "Pulled", lastName: "Lead", dateUpdated: NOW.toISOString() }],
+          contacts: [{ id: "contact_2", locationId: MANHAIR_GHL_LOCATION_ID, email: "pull@example.com", firstName: "Pulled", lastName: "Lead", dateUpdated: NOW.toISOString() }],
           meta: { startAfterId: "cursor_2" },
         });
       }

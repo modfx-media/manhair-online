@@ -14,7 +14,7 @@
 - Setup $495 now, or founding $295 only when `MEMBERSHIP_FOUNDING_ENABLED=true`, cap from `MEMBERSHIP_FOUNDING_CAP` (default 25, maximum 25). No invented end date.
 - One subscription, `trial_period_days: 30`, one one-time setup price, `payment_method_collection: 'always'`, no `payment_method_types`.
 - No merchant account id is hard-coded. Checkout stays closed until `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true` and the key's account matches `STRIPE_ACCOUNT_ID`. Live keys also require `MEMBERSHIP_PAYMENTS_LIVE=true`.
-- No HighLevel call without `GHL_LOCATION_ID` plus token. No default location.
+- No HighLevel call without `GHL_API_TOKEN`. That token may target only location `jv4grExvok7omWurc4PE` and marketing pipeline `arkMXixdGM81H9FjL2gc`. Another location, the legacy pipeline, or a stage id that disagrees with the nine verified ids stays off.
 - No customer email or SMS. No raw card fields. No automatic refunds. No add-on balance increments.
 - Hub deny-by-default via `MEMBERSHIP_OWNER_EMAILS` and `MEMBERSHIP_COORDINATOR_EMAILS`.
 - Do not change Payload admin access for existing users. Do not run a migration against a live database in this change.

@@ -1,7 +1,8 @@
 import { createPublicKey, verify } from "node:crypto";
-import { ghlMode, type GhlMode } from "./ghl";
+import type { GhlMode } from "./ghl";
+import { MANHAIR_LEGACY_PIPELINE_ID, MANHAIR_MARKETING_PIPELINE_ID, resolveGhlTarget } from "./manhair-ghl";
 import type { AppEnv } from "./readiness";
-import { DEAL_STAGES, type DealRecord, type DealStage } from "./types";
+import { isSalesStage, type DealRecord, type DealStage } from "./types";
 
 /** Published HighLevel Ed25519 key for X-GHL-Signature. Current contract after 2026-09-01. */
 export const GHL_ED25519_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -31,6 +32,7 @@ export type InboundLead = {
   locationId: string;
   contactId: string | null;
   opportunityId: string | null;
+  pipelineId: string | null;
   pipelineStageId: string | null;
   email: string;
   name: string;
@@ -56,6 +58,7 @@ export function parseInbound(body: Record<string, unknown>): InboundLead | null 
     locationId,
     contactId: stringField(data.contactId) ?? stringField(data.id) ?? stringField(body.contactId),
     opportunityId: stringField(data.opportunityId) ?? (type.toLowerCase().includes("opportunity") ? stringField(data.id) : null),
+    pipelineId: stringField(data.pipelineId),
     pipelineStageId: stringField(data.pipelineStageId),
     email,
     name: name || email || "HighLevel lead",
@@ -82,8 +85,8 @@ export type MergeResult =
 export function stageIdToLocal(map: Record<string, string> | null, stageId: string | null): DealStage | null {
   if (!map || !stageId) return null;
   const match = Object.entries(map).find(([, id]) => id === stageId);
-  if (!match || !DEAL_STAGES.includes(match[0] as DealStage)) return null;
-  return match[0] as DealStage;
+  if (!match || !isSalesStage(match[0])) return null;
+  return match[0];
 }
 
 export function mergeInboundLead(input: {
@@ -94,6 +97,8 @@ export function mergeInboundLead(input: {
   stageMap?: Record<string, string> | null;
 }): MergeResult {
   if (input.remote.locationId !== input.configuredLocation) return { action: "skip_location" };
+  if (input.remote.pipelineId === MANHAIR_LEGACY_PIPELINE_ID) return { action: "unchanged" };
+  if (input.remote.pipelineId && input.remote.pipelineId !== MANHAIR_MARKETING_PIPELINE_ID) return { action: "unchanged" };
   const byContact = input.remote.contactId
     ? input.deals.filter((deal) => deal.ghlContactId === input.remote.contactId && deal.locationId === input.configuredLocation)
     : [];
@@ -112,12 +117,12 @@ export function mergeInboundLead(input: {
       name: input.remote.name,
       email: input.remote.email || "unknown@invalid.local",
       phone: input.remote.phone,
-      stage: "new",
+      stage: mappedImportStage(input),
       assignee: "",
       nextFollowUp: null,
       ghlContactId: input.remote.contactId,
       ghlOpportunityId: input.remote.opportunityId,
-      syncStatus: "imported",
+      syncStatus: importStatus(input),
       syncHash: inboundHash(input.remote),
       locationId: input.configuredLocation,
       remoteUpdatedAt: input.remote.updatedAt,
@@ -130,6 +135,7 @@ export function mergeInboundLead(input: {
   }
   const staffIsNewer = Boolean(local.staffEditedAt) && new Date(local.staffEditedAt!).getTime() >= new Date(input.remote.updatedAt).getTime();
   const mappedStage = stageIdToLocal(input.stageMap ?? null, input.remote.pipelineStageId);
+  const unknownStage = Boolean(input.remote.pipelineStageId) && !mappedStage;
   const deal: DealRecord = {
     ...local,
     name: input.remote.name || local.name,
@@ -140,8 +146,8 @@ export function mergeInboundLead(input: {
     locationId: input.configuredLocation,
     remoteUpdatedAt: input.remote.updatedAt,
     syncHash: inboundHash(input.remote),
-    syncStatus: staffIsNewer ? "conflict" : mappedStage ? "updated" : "stage_map_missing",
-    stage: staffIsNewer || !mappedStage ? local.stage : mappedStage,
+    syncStatus: staffIsNewer ? "conflict" : unknownStage ? "unknown_stage" : mappedStage ? "updated" : "contact_updated",
+    stage: staffIsNewer ? local.stage : unknownStage ? (`unmapped:${input.remote.pipelineStageId}` as DealStage) : mappedStage ?? local.stage,
     assignee: local.assignee,
     nextFollowUp: local.nextFollowUp,
   };
@@ -150,10 +156,24 @@ export function mergeInboundLead(input: {
     deal,
     activity: staffIsNewer
       ? "HighLevel changed this lead. The newer staff stage, assignee, and follow-up were kept."
-      : mappedStage
-        ? `Stage updated from HighLevel to ${mappedStage}.`
-        : "HighLevel contact updated. Stage was not changed because GHL_STAGE_MAP is not set.",
+      : unknownStage
+        ? `HighLevel stage ${input.remote.pipelineStageId} is not one of the nine marketing stages. It was kept and not marked synced.`
+        : mappedStage
+          ? `Stage updated from HighLevel to ${mappedStage}.`
+          : "HighLevel contact updated. The local stage was kept.",
   };
+}
+
+function mappedImportStage(input: { remote: InboundLead; stageMap?: Record<string, string> | null }): DealStage {
+  const mapped = stageIdToLocal(input.stageMap ?? null, input.remote.pipelineStageId);
+  if (mapped) return mapped;
+  if (input.remote.pipelineStageId) return `unmapped:${input.remote.pipelineStageId}`;
+  return "New Leads";
+}
+
+function importStatus(input: { remote: InboundLead; stageMap?: Record<string, string> | null }): string {
+  if (input.remote.pipelineStageId && !stageIdToLocal(input.stageMap ?? null, input.remote.pipelineStageId)) return "unknown_stage";
+  return "imported";
 }
 
 function inboundHash(remote: InboundLead): string {
@@ -199,7 +219,10 @@ export function readOpportunityPage(body: unknown, locationId: string): { leads:
     const opportunity = item as Record<string, unknown>;
     const id = stringField(opportunity.id);
     const foundLocation = stringField(opportunity.locationId) ?? locationId;
+    const pipelineId = stringField(opportunity.pipelineId);
     if (!id || foundLocation !== locationId) return [];
+    if (pipelineId === MANHAIR_LEGACY_PIPELINE_ID) return [];
+    if (pipelineId && pipelineId !== MANHAIR_MARKETING_PIPELINE_ID) return [];
     const contact = opportunity.contact && typeof opportunity.contact === "object" ? (opportunity.contact as Record<string, unknown>) : {};
     const parsed = parseInbound({
       type: "OpportunityImport",
@@ -212,6 +235,7 @@ export function readOpportunityPage(body: unknown, locationId: string): { leads:
         email: stringField(contact.email) ?? stringField(opportunity.email) ?? "",
         name: stringField(opportunity.name) ?? "",
         phone: stringField(contact.phone),
+        pipelineId,
         pipelineStageId: stringField(opportunity.pipelineStageId),
       },
     });
@@ -237,9 +261,10 @@ export async function pullHighLevel(input: {
       nextOpportunityPage: number | null;
     }
 > {
-  if (ghlMode(input.env) === "off") return { ok: false, status: "not_connected" };
-  const locationId = input.env.GHL_LOCATION_ID!.trim();
-  const headers = { Authorization: `Bearer ${input.env.GHL_API_TOKEN}`, Version: "2021-07-28", Accept: "application/json" };
+  const target = resolveGhlTarget(input.env);
+  if (!target.ok) return { ok: false, status: "not_connected" };
+  const locationId = target.locationId;
+  const headers = { Authorization: `Bearer ${target.token}`, Version: "2021-07-28", Accept: "application/json" };
   const contactUrl = new URL("https://services.leadconnectorhq.com/contacts/");
   contactUrl.searchParams.set("locationId", locationId);
   contactUrl.searchParams.set("limit", "100");
@@ -250,7 +275,7 @@ export async function pullHighLevel(input: {
   const opportunityResponse = await fetchRetry(input.fetchImpl, "https://services.leadconnectorhq.com/opportunities/search", {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({ locationId, limit: 100, page: input.opportunityPage }),
+    body: JSON.stringify({ locationId, pipelineId: target.pipelineId, limit: 100, page: input.opportunityPage }),
   });
   const opportunities = opportunityResponse?.ok
     ? readOpportunityPage(await opportunityResponse.json(), locationId)
@@ -279,7 +304,11 @@ async function fetchRetry(fetchImpl: typeof fetch, url: string | URL, init: Requ
 }
 
 export function ghlFreshness(state: { pulledAt: string | null; status: string } | null, mode: GhlMode): string {
-  if (mode === "off") return "HighLevel is not connected. No location is confirmed, so no leads are pulled or accepted.";
-  if (!state?.pulledAt) return "No HighLevel pull has completed. Webhooks apply only after a signed event. This is not a live socket.";
-  return `Last HighLevel pull ${state.pulledAt}. Status ${state.status}. New leads also arrive from signed webhooks. This view is not a continuous socket.`;
+  if (mode === "off") {
+    return "HighLevel is not connected. The private API token is missing, or the location, pipeline, or stage map does not match the ManHair marketing pipeline. Stage changes stay in this hub and are not marked synced. This page refreshes about every 15 seconds. That is not a live socket.";
+  }
+  if (!state?.pulledAt) {
+    return "No HighLevel pull has completed. Signed webhooks can still add leads. Each lead shows pending, error, or last status. This page refreshes about every 15 seconds. That is not a live socket.";
+  }
+  return `Last HighLevel pull ${state.pulledAt}. Status ${state.status}. Signed webhooks and the 15-second refresh update this board. Each lead shows its own sync status. This is not a live socket.`;
 }

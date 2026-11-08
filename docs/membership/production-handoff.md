@@ -58,15 +58,24 @@ Staff and sessions:
 - `DATABASE_URL` — existing Neon pooled URL
 - `PAYLOAD_SECRET` — existing
 
-HighLevel, leave empty until the owner confirms the location:
+HighLevel stays off until `GHL_API_TOKEN` is a private app token for location `jv4grExvok7omWurc4PE`. Connector OAuth is not that token. Do not put the token in git.
 
-- `GHL_API_TOKEN`
-- `GHL_LOCATION_ID`
-- `GHL_PIPELINE_ID`
-- `GHL_PIPELINE_STAGE_ID` — required before an opportunity is created
-- `GHL_STAGE_MAP` — JSON object of hub stage name to that location's pipeline stage id. Without it, stage changes stay in the hub and are not described as synced.
+Non-secret values are already in code. Leave these unset unless you are pinning the same values:
 
-The separate ManHair HighLevel connection was approved but is not authenticated. Do not point these variables at a different agency location. Until that connection is authorized, the hub works locally and says HighLevel is not connected.
+- `GHL_LOCATION_ID` — only `jv4grExvok7omWurc4PE`. Any other value turns calls off.
+- `GHL_PIPELINE_ID` — only `arkMXixdGM81H9FjL2gc` (ManHair Marketing Pipeline). Legacy pipeline `nN1jyhFV5trEjTBGlc46` is refused.
+- `GHL_STAGE_MAP` — optional JSON. Each of these labels must keep its verified id. A different id turns calls off. If unset, the app uses these ids:
+  - New Leads `6a222649-1e28-4ac5-b6eb-b0f80624911d`
+  - Hot Leads `6695bb51-2314-4cfc-8c0b-c1d54dc3d1ed`
+  - Proposal Sent `c37b7f54-f4a4-47aa-897b-d3a7577a0a58`
+  - Phone Consult `2241d975-fa06-4138-b33a-2333f5cd52fc`
+  - Video Consultation `118eff81-ca9d-481b-a00a-d8495fdfb461`
+  - No show/Cancelled `e4034e59-8a30-4648-bead-667f8d5a11a6`
+  - Active Clients `58fb7eaa-4fc7-47f3-b00c-392e4cbd91e8`
+  - No Buy/Nurture `4ee34d60-d48c-4455-b851-3ef989374a11`
+  - DND `8dd0b5f8-9db1-43c9-89d3-831da9a70185`
+
+`GHL_PIPELINE_STAGE_ID` is ignored. A new opportunity is created in New Leads. An inbound stage id outside this list is stored as `unmapped:<id>` with status `unknown_stage`. It is not dropped and it is not marked synced. Griselda is a local assignee from `MEMBERSHIP_COORDINATOR_EMAILS`. There is no HighLevel user id for her. The app timezone is `America/Los_Angeles`. Do not copy a HighLevel address onto the public site.
 - `GHL_WEBHOOK_SECRET` is not used. Inbound events must carry HighLevel's Ed25519 `X-GHL-Signature`. The public key is the one published in HighLevel's webhook guide. Do not put a shared secret in the URL.
 
 Pause:
@@ -101,7 +110,7 @@ Events to subscribe:
 - `charge.dispute.created`
 - `radar.early_fraud_warning.created`
 
-Alert drain cron: `POST /api/membership/alerts/run` with `Authorization: Bearer $CRON_SECRET`. It does not send held alerts.
+Alert drain cron: `GET` or `POST` `/api/membership/alerts/run/` with `Authorization: Bearer $CRON_SECRET`. It retries pending rows only. It does not send held alerts.
 
 ## Database
 
@@ -150,7 +159,7 @@ Webhook endpoint: `https://www.manhaironline.com/api/membership/webhook/`
 
 Unit tests cover pricing, the 30-day then calendar-month timeline, account confirmation, email not signing a member in, cancellation scheduled through the minimum term, pause requests leaving billing unchanged, webhook staleness and duplicates, entitlement-year boundaries, HighLevel location mismatch, bounded search retry, and local lead create/delete. They do not call Stripe. No Stripe test-clock or sandbox checkout has been run. `CHECKOUT_TIMELINE_SANDBOX_CONFIRMED` remains false.
 
-HighLevel code is present and disabled until `GHL_LOCATION_ID` and `GHL_API_TOKEN` are set. Signed inbound events use `POST /api/membership/ghl/`. The verifier checks `X-GHL-Signature` with HighLevel's published Ed25519 public key over the raw body, rejects a missing or bad signature, rejects a stale `timestamp`, and rejects any other location. A pull from the hub reads contacts with a cursor and opportunities by page, retries failed reads, dedupes by contact id, and keeps staff stage, assignee, and follow-up when both sides changed. The hub says the last pull time. It is not a live socket. No verified location is configured, so runtime calls do not leave this app.
+HighLevel calls stay off until `GHL_API_TOKEN` is set. The location, marketing pipeline, and nine stage ids are fixed in code to the verified ManHair account. A token plus a different location, the legacy pipeline, or a stage id that disagrees with those nine turns the adapter off. Signed inbound events use `POST /api/membership/ghl/`. The verifier checks `X-GHL-Signature` with HighLevel's published Ed25519 public key over the raw body, rejects a missing or bad signature, rejects a stale `timestamp`, rejects a duplicate `webhookId`, and rejects any other location. A pull from the hub reads contacts with a cursor and opportunities on the marketing pipeline, retries failed reads, and keeps the staff stage when the staff edit is newer than the remote update. A newer remote stage is applied only when its id is one of the nine. The hub dropdown uses those labels, refreshes about every 15 seconds, and shows each lead's sync status. That refresh is not a live socket. No token is in this repo, so these tests use a fake fetch. They are not a live HighLevel call.
 
 Member sessions are stored as a hash of the cookie secret. Checkout return links work once. Logout deletes the session and writes an audit row. A later visit asks for a one-time email link. That link is sent only when `RESEND_API_KEY`, `RESEND_FROM`, and `MEMBERSHIP_RECOVERY_SEND=true` are all set. They are not set here, and the request fails closed without sending mail or opening a session. Typing an email never signs someone in. A member does not pay again to recover an existing membership.
 

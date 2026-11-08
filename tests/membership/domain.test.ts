@@ -3,9 +3,10 @@ import { test } from "node:test";
 import { staffRole, memberCanRead } from "../../lib/membership/access";
 import { assessCheckoutAmount, buildCheckoutParams, priceMatches } from "../../lib/membership/checkout";
 import { reduceBillingEvent, type MemberBilling } from "../../lib/membership/billing";
+import { APP_TIMEZONE, addMonths, billingTimeline, formatStudio } from "../../lib/membership/dates";
 import { chooseContact, ghlMode, planSync, syncLead } from "../../lib/membership/ghl";
+import { MANHAIR_GHL_LOCATION_ID, MANHAIR_LEGACY_PIPELINE_ID } from "../../lib/membership/manhair-ghl";
 import { planCancel, planPauseApply, planUsage, revenueReport, rollEntitlementYear, tierChangeParams } from "../../lib/membership/lifecycle";
-import { addMonths, billingTimeline } from "../../lib/membership/dates";
 import { FOUNDING_SETUP_CENTS, SETUP_CENTS, TIERS } from "../../lib/membership/offer";
 import { foundingConfig, paymentBlockers, type AppEnv } from "../../lib/membership/readiness";
 import { FOUNDING_RESERVE_SQL, USAGE_SQL } from "../../lib/membership/sql-store";
@@ -196,11 +197,17 @@ test("staff deny by default and member isolation", () => {
   assert.equal(memberCanRead("mem_1", "mem_1"), true);
 });
 
-test("HighLevel stays off without a location and does not guess among duplicates", async () => {
+test("HighLevel stays off for the wrong tenant and does not guess among duplicates", async () => {
+  assert.equal(APP_TIMEZONE, "America/Los_Angeles");
+  assert.notEqual(APP_TIMEZONE, "America/New_York");
+  assert.match(formatStudio(NOW), /Pacific Time/);
   assert.equal(ghlMode({}), "off");
+  assert.equal(ghlMode({ GHL_API_TOKEN: "token" }), "contacts_and_opportunities");
   assert.equal(ghlMode({ GHL_API_TOKEN: "token", GHL_LOCATION_ID: "default" }), "off");
+  assert.equal(ghlMode({ GHL_API_TOKEN: "token", GHL_PIPELINE_ID: MANHAIR_LEGACY_PIPELINE_ID }), "off");
+  assert.equal(ghlMode({ GHL_API_TOKEN: "token", GHL_STAGE_MAP: JSON.stringify({ "New Leads": "not-the-real-stage" }) }), "off");
   let called = false;
-  const result = await syncLead({ GHL_API_TOKEN: "token" }, {
+  const result = await syncLead({ GHL_API_TOKEN: "token", GHL_LOCATION_ID: "other-location" }, {
     email: "a@example.com",
     phone: null,
     firstName: "A",
@@ -272,9 +279,7 @@ test("HighLevel retries a failed search and does not open a second opportunity",
   let posts = 0;
   const env = {
     GHL_API_TOKEN: "token",
-    GHL_LOCATION_ID: "loc_manhair",
-    GHL_PIPELINE_ID: "pipe",
-    GHL_PIPELINE_STAGE_ID: "stage",
+    GHL_LOCATION_ID: MANHAIR_GHL_LOCATION_ID,
   };
   const result = await syncLead(env, {
     email: "a@example.com",
@@ -289,7 +294,7 @@ test("HighLevel retries a failed search and does not open a second opportunity",
     if (url.includes("/contacts/")) {
       searches += 1;
       if (searches === 1) return new Response("no", { status: 500 });
-      return Response.json({ contacts: [{ id: "contact_1", locationId: "loc_manhair", email: "a@example.com" }] });
+      return Response.json({ contacts: [{ id: "contact_1", locationId: MANHAIR_GHL_LOCATION_ID, email: "a@example.com" }] });
     }
     posts += 1;
     return Response.json({ opportunity: { id: "opp_new" } });

@@ -3,7 +3,8 @@ import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches, safeAppOrigin, type PriceSnapshot } from "./checkout";
-import { ghlMode, pushOpportunityStage, stageMap, syncHash, syncLead } from "./ghl";
+import { ghlMode, pushOpportunityStage, syncHash, syncLead } from "./ghl";
+import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import {
   allowance,
@@ -35,8 +36,8 @@ import {
 } from "./readiness";
 import { mapStripeEvent, type StripeEventShape } from "./stripe-map";
 import { hashSecret, newId, newSecret, normalizeEmail, signToken, validEmail, verifyToken } from "./tokens";
-import type { DealRecord, DealStage, MemberRecord, MembershipStore } from "./types";
-import { DEAL_STAGES } from "./types";
+import type { DealRecord, MemberRecord, MembershipStore } from "./types";
+import { DEAL_STAGES, isSalesStage } from "./types";
 
 export type StripeLike = {
   accounts: { retrieveCurrent(): Promise<{ id: string }> };
@@ -324,13 +325,13 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
       name: `${firstName} ${lastName}`,
       email,
       phone,
-      stage: "checkout",
+      stage: "New Leads",
       assignee: "",
       nextFollowUp: null,
       ghlContactId: null,
       ghlOpportunityId: null,
       syncStatus: "not_connected",
-      syncHash: syncHash({ stage: "checkout", assignee: "", followUp: "" }),
+      syncHash: syncHash({ stage: "New Leads", assignee: "", followUp: "" }),
       locationId: null,
       remoteUpdatedAt: null,
       staffEditedAt: null,
@@ -343,7 +344,8 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     deal.syncStatus = ghl.status;
     deal.ghlContactId = ghl.contactId;
     deal.ghlOpportunityId = ghl.opportunityId;
-    deal.locationId = ghl.status === "not_connected" ? null : deps.env.GHL_LOCATION_ID?.trim() ?? null;
+    const target = resolveGhlTarget(deps.env);
+    deal.locationId = ghl.status === "pushed" && target.ok ? target.locationId : null;
     await deps.store.saveDeal(deal);
     await deps.store.addActivity({
       id: newId(),
@@ -920,7 +922,8 @@ async function hubSnapshot(deps: Deps) {
 }
 
 export async function handleGhlWebhook(request: Request, deps: Deps): Promise<Response> {
-  if (ghlMode(deps.env) === "off" || deps.store.kind === "unavailable") {
+  const ghlTarget = resolveGhlTarget(deps.env);
+  if (!ghlTarget.ok || deps.store.kind === "unavailable") {
     return json({ ok: false, error: "not_connected" }, 503);
   }
   const raw = await request.text();
@@ -938,7 +941,7 @@ export async function handleGhlWebhook(request: Request, deps: Deps): Promise<Re
   if (!inbound || !webhookTimestampFresh(inbound.timestamp, deps.now())) {
     return json({ ok: false, error: "stale_or_incomplete" }, 401);
   }
-  if (inbound.locationId !== deps.env.GHL_LOCATION_ID?.trim()) return json({ ok: false, error: "location_rejected" }, 403);
+  if (inbound.locationId !== ghlTarget.locationId) return json({ ok: false, error: "location_rejected" }, 403);
   const claim = await deps.store.claimEvent(inbound.webhookId, inbound.type);
   if (claim === "duplicate") return json({ ok: true, duplicate: true });
   const applied = await applyInbound(deps, inbound);
@@ -968,7 +971,7 @@ async function pullGhl(deps: Deps): Promise<Record<string, unknown>> {
       if (result === "conflict") conflicts += 1;
     }
     const next = {
-      locationId: deps.env.GHL_LOCATION_ID!.trim(),
+      locationId: MANHAIR_GHL_LOCATION_ID,
       contactCursor: page.nextContactCursor,
       opportunityPage: page.nextOpportunityPage ?? (state?.opportunityPage || 1),
       pulledAt: deps.now().toISOString(),
@@ -979,7 +982,7 @@ async function pullGhl(deps: Deps): Promise<Record<string, unknown>> {
     return { ok: true, imported, conflicts, status: next.status, freshness: ghlFreshness(next, mode) };
   } catch {
     const failed = {
-      locationId: deps.env.GHL_LOCATION_ID!.trim(),
+      locationId: MANHAIR_GHL_LOCATION_ID,
       contactCursor: state?.contactCursor ?? null,
       opportunityPage: state?.opportunityPage || 1,
       pulledAt: state?.pulledAt ?? null,
@@ -993,13 +996,15 @@ async function pullGhl(deps: Deps): Promise<Record<string, unknown>> {
 
 async function applyInbound(deps: Deps, inbound: ReturnType<typeof parseInbound>): Promise<string> {
   if (!inbound) return "skipped";
+  const target = resolveGhlTarget(deps.env);
+  if (!target.ok) return "skipped";
   const deals = await deps.store.listDeals();
   const merged = mergeInboundLead({
-    configuredLocation: deps.env.GHL_LOCATION_ID?.trim() ?? "",
+    configuredLocation: target.locationId,
     remote: inbound,
     deals,
     now: deps.now(),
-    stageMap: stageMap(deps.env),
+    stageMap: target.stageMap,
   });
   if (merged.action === "import" || merged.action === "update" || merged.action === "conflict") {
     await deps.store.saveDeal(merged.deal);
@@ -1017,7 +1022,7 @@ async function applyInbound(deps: Deps, inbound: ReturnType<typeof parseInbound>
 async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promise<Response> {
   const id = typeof body.id === "string" ? body.id : newId();
   const existing = (await deps.store.listDeals()).find((deal) => deal.id === id);
-  const stage = DEAL_STAGES.includes(body.stage as DealStage) ? (body.stage as DealStage) : existing?.stage ?? "new";
+  const stage = typeof body.stage === "string" && isSalesStage(body.stage) ? body.stage : existing?.stage ?? "New Leads";
   const assignee = typeof body.assignee === "string" ? body.assignee.trim().toLowerCase() : existing?.assignee ?? "";
   if (assignee && !assignableStaff(deps.env).includes(assignee)) return json({ ok: false, error: "assignee_rejected" }, 400);
   const followUp = typeof body.nextFollowUp === "string" ? body.nextFollowUp : existing?.nextFollowUp ?? null;
@@ -1034,7 +1039,7 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
     ghlOpportunityId: existing?.ghlOpportunityId ?? null,
     syncStatus: ghlMode(deps.env) === "off" ? "not_connected" : existing?.syncStatus ?? "local_only",
     syncHash: syncHash({ stage, assignee, followUp: followUp ?? "" }),
-    locationId: ghlMode(deps.env) === "off" ? null : deps.env.GHL_LOCATION_ID?.trim() ?? null,
+    locationId: resolveGhlTarget(deps.env).ok ? MANHAIR_GHL_LOCATION_ID : null,
     remoteUpdatedAt: existing?.remoteUpdatedAt ?? null,
     staffEditedAt: deps.now().toISOString(),
   };
