@@ -23,7 +23,12 @@ export function ConsultForm() {
         marketingConsent: form.get("marketingConsent") === "on",
       }),
     });
-    const body = (await response.json()) as { ok?: boolean; message?: string; synced?: boolean };
+    let body: { ok?: boolean; message?: string; synced?: boolean } = {};
+    try {
+      body = (await response.json()) as { ok?: boolean; message?: string; synced?: boolean };
+    } catch {
+      body = {};
+    }
     setPending(false);
     if (!response.ok || !body.ok) {
       setMessage(body.message ?? "The request was not stored. Nothing was sent.");

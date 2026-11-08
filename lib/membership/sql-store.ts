@@ -686,6 +686,15 @@ export function unavailableStore(): MembershipStore {
   };
 }
 
+/** True when the membership tables have not been created yet. Payload tables are unrelated. */
+export function isMembershipSchemaMissing(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String((error as { code: unknown }).code) : "";
+  if (code === "42P01" || code === "42703") return true;
+  const message = error instanceof Error ? error.message : "";
+  return /membership_/i.test(message) && /does not exist/i.test(message);
+}
+
 export function getMembershipStore(env: AppEnv = process.env): MembershipStore {
   const url = env.DATABASE_URL?.trim();
   if (!url) return unavailableStore();

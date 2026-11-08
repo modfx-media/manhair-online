@@ -7,6 +7,7 @@ import { ghlMode, pushOpportunityStage, syncHash, syncLead } from "./ghl";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import { reviewedLifecycle } from "./lifecycle-review";
+import { isMembershipSchemaMissing } from "./sql-store";
 import {
   allowance,
   planCancel,
@@ -101,6 +102,15 @@ export type Deps = {
 };
 
 const OPEN_STATUSES = new Set(["trialing", "active", "past_due", "paused", "cancel_scheduled"]);
+
+function storageNotReady(): Response {
+  return json({
+    ok: false,
+    synced: false,
+    error: "database_not_configured",
+    message: "Membership storage is not ready on this site yet. Nothing was saved, synced, charged, or sent.",
+  }, 503);
+}
 
 function json(body: unknown, status = 200, headers?: HeadersInit): Response {
   return Response.json(body, { status, headers: { "cache-control": "no-store", ...Object.fromEntries(new Headers(headers)) } });
@@ -201,6 +211,7 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
   const marketing = body.marketingConsent === true;
   const dealId = newId();
   const now = deps.now().toISOString();
+  try {
   await deps.store.saveDeal({
     id: dealId,
     memberId: null,
@@ -232,6 +243,10 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
     synced: false,
     message: "Saved for the studio as a local lead. It is not in HighLevel, and no email was sent.",
   });
+  } catch (error) {
+    if (isMembershipSchemaMissing(error)) return storageNotReady();
+    throw error;
+  }
 }
 
 export async function handleCheckout(request: Request, deps: Deps): Promise<Response> {
@@ -445,7 +460,8 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
       firstRecurringAt: formatStudio(timeline.firstRecurringAt),
       leadTime: FIRST_SYSTEM_LEAD,
     });
-  } catch {
+  } catch (error) {
+    if (isMembershipSchemaMissing(error)) return storageNotReady();
     if (reservationId) await deps.store.setFoundingStatus(reservationId, "released");
     member.status = "checkout_failed";
     await deps.store.saveMember(member);
@@ -920,8 +936,14 @@ async function recordPaymentAlerts(
   }
 }
 
-export async function drainAlerts(deps: Deps): Promise<{ delivered: number; failed: number; held: number }> {
-  const due = await deps.store.claimDueAlerts(deps.now(), 20);
+export async function drainAlerts(deps: Deps): Promise<{ delivered: number; failed: number; held: number; unavailable?: boolean }> {
+  let due;
+  try {
+    due = await deps.store.claimDueAlerts(deps.now(), 20);
+  } catch (error) {
+    if (isMembershipSchemaMissing(error)) return { delivered: 0, failed: 0, held: 0, unavailable: true };
+    throw error;
+  }
   let delivered = 0;
   let failed = 0;
   for (const alert of due) {
@@ -976,6 +998,7 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   const role = staffRole(deps.staffEmail, deps.env);
   if (!role) return json({ ok: false, error: "staff_denied" }, 401);
   if (deps.store.kind === "unavailable") return json({ ok: false, error: "database_not_configured" }, 503);
+  try {
   if (request.method === "GET") return json(await hubSnapshot(deps));
   const origin = safeAppOrigin(request, deps.env);
   if (!isSameOrigin(request, origin)) return json({ ok: false, error: "origin_rejected" }, 403);
@@ -991,6 +1014,10 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   if (action === "alerts-drain") return json({ ok: true, ...(await drainAlerts(deps)) });
   if (action === "send") return json({ ok: false, error: "messaging_disabled", message: "No customer email or SMS is sent from this hub." }, 403);
   return json({ ok: false, error: "unknown_action" }, 404);
+  } catch (error) {
+    if (isMembershipSchemaMissing(error)) return storageNotReady();
+    throw error;
+  }
 }
 
 function messageDrafts() {
@@ -1257,11 +1284,16 @@ async function saveDraftAction(body: Record<string, unknown>, deps: Deps): Promi
 }
 
 export async function loadAccountPage(request: Request, deps: Deps) {
-  const member = await currentMember(request, deps);
-  if (!member) return { member: null, invoices: [], pauses: [] };
-  return {
-    member: publicMember(member),
-    invoices: await deps.store.listInvoices(member.id),
-    pauses: await deps.store.listPauseRequests(member.id),
-  };
+  try {
+    const member = await currentMember(request, deps);
+    if (!member) return { member: null, invoices: [], pauses: [] };
+    return {
+      member: publicMember(member),
+      invoices: await deps.store.listInvoices(member.id),
+      pauses: await deps.store.listPauseRequests(member.id),
+    };
+  } catch (error) {
+    if (isMembershipSchemaMissing(error)) return { member: null, invoices: [], pauses: [] };
+    throw error;
+  }
 }

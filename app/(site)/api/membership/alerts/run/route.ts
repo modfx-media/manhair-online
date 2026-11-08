@@ -11,6 +11,9 @@ async function run(request: Request) {
     return Response.json({ ok: false, error: "cron_unauthorized" }, { status: 401 });
   }
   const result = await drainAlerts(runtimeDeps());
+  if (result.unavailable) {
+    return Response.json({ ok: false, error: "database_not_configured" }, { status: 503 });
+  }
   return Response.json({ ok: true, ...result });
 }
 

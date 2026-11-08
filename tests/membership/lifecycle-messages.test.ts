@@ -100,4 +100,24 @@ test("a consultation stays local when storage exists and is refused without a da
     now: () => new Date("2026-11-08T09:00:00.000Z"),
   });
   assert.equal(closed.status, 503);
+  const missing = createMemoryStore();
+  missing.saveDeal = async () => {
+    const error = new Error('relation "membership_deals" does not exist') as Error & { code: string };
+    error.code = "42P01";
+    throw error;
+  };
+  const refused = await handleConsultation(new Request("https://www.manhaironline.com/api/membership/consultation/", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ firstName: "Ari", lastName: "Cole", email: "ari@example.com" }),
+  }), {
+    env: { NEXT_PUBLIC_SITE_URL: "https://www.manhaironline.com" },
+    store: missing,
+    stripe: null,
+    now: () => new Date("2026-11-08T09:00:00.000Z"),
+  });
+  assert.equal(refused.status, 503);
+  const refusedBody = await refused.json();
+  assert.equal(refusedBody.ok, false);
+  assert.equal(refusedBody.synced, false);
 });
