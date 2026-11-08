@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import Stripe from "stripe";
 import {
   BILLING_PORTAL_FEATURES,
@@ -21,7 +23,9 @@ import {
 async function main() {
   const decision = sandboxSetupDecision(process.env);
   if (!decision.run) {
-    console.log(JSON.stringify({ scope: "stripe_sandbox_setup", run: false, reason: decision.reason }));
+    const skipped = { scope: "stripe_sandbox_setup", run: false, reason: decision.reason };
+    console.log(JSON.stringify(skipped));
+    if (process.env.VERCEL_ENV === "preview") await writeReport(skipped);
     return;
   }
   const key = process.env.STRIPE_SECRET_KEY?.trim() ?? "";
@@ -29,10 +33,18 @@ async function main() {
   const report = await Promise.race([
     runSandboxSetup(client(stripe)),
     new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("sandbox_setup_timeout")), 25_000);
+      setTimeout(() => reject(new Error("sandbox_setup_timeout")), 45_000);
     }),
   ]);
-  console.log(JSON.stringify({ scope: "stripe_sandbox_setup", run: true, ...report }));
+  const body = { scope: "stripe_sandbox_setup", run: true, ...report };
+  console.log(JSON.stringify(body));
+  await writeReport(body);
+}
+
+async function writeReport(body: unknown) {
+  const directory = path.join(process.cwd(), "public");
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, "stripe-sandbox-setup.json"), JSON.stringify(body));
 }
 
 function client(stripe: Stripe): SandboxStripe {
@@ -135,7 +147,9 @@ function priceParams(item: CatalogItem, productId: string): Stripe.PriceCreatePa
   };
 }
 
-main().catch((error: unknown) => {
+main().catch(async (error: unknown) => {
   const message = error instanceof Error ? error.message : "sandbox_setup_failed";
-  console.log(JSON.stringify({ scope: "stripe_sandbox_setup", run: false, reason: "error", message: redactStripeText(message) }));
+  const body = { scope: "stripe_sandbox_setup", run: false, reason: "error", message: redactStripeText(message) };
+  console.log(JSON.stringify(body));
+  if (process.env.VERCEL_ENV === "preview") await writeReport(body);
 });
