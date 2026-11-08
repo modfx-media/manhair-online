@@ -50,32 +50,47 @@ const nextConfig: NextConfig = {
       ],
     };
   },
+  async headers() {
+    if (process.env.VERCEL_ENV !== "preview") return [];
+    return [
+      {
+        source: "/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ];
+  },
   async redirects() {
     return [
       {
         source: "/",
-        has: [{ type: "host", value: "manhaironline.com" }],
+        has: [{ type: "host" as const, value: "manhaironline.com" }],
         destination: `${LIVE_ORIGIN}/`,
         permanent: true,
       },
       {
         source: "/:path*",
-        has: [{ type: "host", value: "manhaironline.com" }],
+        has: [{ type: "host" as const, value: "manhaironline.com" }],
         destination: `${LIVE_ORIGIN}/:path*`,
         permanent: true,
       },
-      {
-        source: "/",
-        has: [{ type: "host", value: "(?<host>.+)\\.vercel\\.app" }],
-        destination: `${LIVE_ORIGIN}/`,
-        permanent: true,
-      },
-      {
-        source: "/:path*",
-        has: [{ type: "host", value: "(?<host>.+)\\.vercel\\.app" }],
-        destination: `${LIVE_ORIGIN}/:path*`,
-        permanent: true,
-      },
+      // Preview builds omit this so a review URL on *.vercel.app can render.
+      // Production builds keep the canonical redirect.
+      ...(process.env.VERCEL_ENV === "preview"
+        ? []
+        : [
+            {
+              source: "/",
+              has: [{ type: "host" as const, value: "(?<host>.+)\\.vercel\\.app" }],
+              destination: `${LIVE_ORIGIN}/`,
+              permanent: true,
+            },
+            {
+              source: "/:path*",
+              has: [{ type: "host" as const, value: "(?<host>.+)\\.vercel\\.app" }],
+              destination: `${LIVE_ORIGIN}/:path*`,
+              permanent: true,
+            },
+          ]),
       { source: "/before-after", destination: "/results/", permanent: true },
       { source: "/about-us", destination: "/about/", permanent: true },
       { source: "/prices", destination: "/", permanent: true },

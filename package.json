@@ -15,7 +15,11 @@
     "cms:import": "tsx scripts/cms-import.ts",
     "cms:validate-export": "tsx scripts/cms-validate-export.ts",
     "cms:bootstrap": "tsx scripts/cms-bootstrap.ts",
-    "cms:ensure-admin": "tsx scripts/cms-ensure-admin-user.ts"
+    "cms:ensure-admin": "tsx scripts/cms-ensure-admin-user.ts",
+    "test": "tsx --test tests/membership/*.test.ts",
+    "membership:migrate": "tsx scripts/membership-migrate.ts",
+    "membership:check-migration": "tsx scripts/membership-migration-check.ts",
+    "membership:smoke": "tsx scripts/membership-smoke.ts"
   },
   "dependencies": {
     "@google/genai": "^2.23.0",
@@ -33,7 +37,8 @@
     "next": "^16.3.8",
     "payload": "^3.90.2",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "stripe": "^23.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

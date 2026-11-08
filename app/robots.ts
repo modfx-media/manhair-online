@@ -13,6 +13,10 @@ const DISALLOW = [
   "/video-call/",
   "/hair-preview/",
   "/admin/",
+  "/join/",
+  "/account/",
+  "/hub/",
+  "/api/membership/",
   "/wp-admin/",
   "/wp-login.php",
 ];
