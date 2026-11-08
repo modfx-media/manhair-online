@@ -116,15 +116,17 @@ Alert drain cron: `GET` or `POST` `/api/membership/alerts/run/` with `Authorizat
 
 From a machine that already has the ManHair `DATABASE_URL`:
 
+Confirm a Neon point-in-time restore on the production branch, then run this from a machine that already has the ManHair `DATABASE_URL`. The timestamp is the restore point you just confirmed. It is not a secret and it is not a copy of production data.
+
 ```bash
-MEMBERSHIP_MIGRATE_CONFIRM=apply npm run membership:migrate
+MEMBERSHIP_MIGRATE_CONFIRM=apply MEMBERSHIP_MIGRATE_RESTORE_POINT=2026-11-08T16:00:00Z npm run membership:migrate
 ```
 
-The script refuses to run without that flag. It creates only `membership_*` tables. It does not change Payload tables. It was not run in this change.
+The script refuses to run without both values. It creates only `membership_*` tables. It does not change Payload tables. It was not run in this change. There is no public migration route.
 
 ## Stripe sandbox check before any live key
 
-In a ManHair test sandbox, not the ModFXMedia account:
+In test mode on the approved ModFXMedia account `acct_1DhNFjGiafo5ImyE`. Do not use a live key, and do not reuse the live price ids:
 
 1. Create the four prices above.
 2. Complete Checkout for Signature.

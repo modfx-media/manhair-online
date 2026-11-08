@@ -11,6 +11,14 @@ async function main() {
     console.error("Refusing to migrate. Set MEMBERSHIP_MIGRATE_CONFIRM=apply to create membership tables.");
     process.exit(1);
   }
+  const restorePoint = process.env.MEMBERSHIP_MIGRATE_RESTORE_POINT?.trim() ?? "";
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(restorePoint)) {
+    console.error(
+      "Refusing to migrate. Set MEMBERSHIP_MIGRATE_RESTORE_POINT to the Neon restore-point time in UTC, such as 2026-11-08T16:00:00Z. Do not put a connection string in that variable.",
+    );
+    process.exit(1);
+  }
+  console.log(`Restore point acknowledged: ${restorePoint}`);
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) {
     console.error("DATABASE_URL is not set.");

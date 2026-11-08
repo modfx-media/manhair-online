@@ -1,4 +1,5 @@
-import { alertAfterFailure, alertLogFields, alertsForPayment, customerAlertsReady, ownerAlertText, ownerAlertsReady, type AlertRecord } from "./alerts";
+import { alertAfterFailure, alertLogFields, alertsForPayment, ownerAlertText, ownerAlertsReady, type AlertRecord } from "./alerts";
+import { messageHolds, messageTransport } from "./message-holds";
 import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
@@ -936,41 +937,48 @@ async function recordPaymentAlerts(
   }
 }
 
-export async function drainAlerts(deps: Deps): Promise<{ delivered: number; failed: number; held: number; unavailable?: boolean }> {
+export async function drainAlerts(deps: Deps): Promise<{ delivered: number; failed: number; held: number; fake: number; unavailable?: boolean }> {
   let due;
   try {
     due = await deps.store.claimDueAlerts(deps.now(), 20);
   } catch (error) {
-    if (isMembershipSchemaMissing(error)) return { delivered: 0, failed: 0, held: 0, unavailable: true };
+    if (isMembershipSchemaMissing(error)) return { delivered: 0, failed: 0, held: 0, fake: 0, unavailable: true };
     throw error;
   }
   let delivered = 0;
   let failed = 0;
+  let fake = 0;
   for (const alert of due) {
     const outcome = await deliverAlert(deps, alert);
     if (outcome === "held") continue;
-    if (outcome === "delivered") delivered += 1;
+    if (outcome === "fake") fake += 1;
+    else if (outcome === "delivered") delivered += 1;
     else failed += 1;
   }
   const held = (await deps.store.listAlerts()).filter((alert) => alert.status === "held").length;
-  return { delivered, failed, held };
+  return { delivered, failed, held, fake };
 }
 
-async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered" | "failed" | "held"> {
-  const ready = alert.audience === "owner" ? ownerAlertsReady(deps.env) : customerAlertsReady(deps.env);
-  if (!ready) {
-    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "alerts_not_configured" });
+async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered" | "failed" | "held" | "fake"> {
+  if (alert.audience === "customer") {
+    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "customer_content_unreviewed" });
     return "held";
   }
-  let to = deps.env.MEMBERSHIP_ALERT_TO?.trim() ?? "";
-  if (alert.audience === "customer") {
-    const member = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
-    to = member?.email ?? "";
-    if (!to) {
-      await deps.store.updateAlert(alert.id, { status: "failed", nextAttemptAt: null, lastError: "member_email_missing" });
-      return "failed";
-    }
+  const transport = messageTransport(deps.env);
+  if (!ownerAlertsReady(deps.env) || transport === "off") {
+    await deps.store.updateAlert(alert.id, {
+      status: "held",
+      nextAttemptAt: null,
+      lastError: ownerAlertsReady(deps.env) ? "transport_not_live" : "alerts_not_configured",
+    });
+    return "held";
   }
+  if (transport === "fake") {
+    await deps.store.updateAlert(alert.id, { status: "fake_recorded", nextAttemptAt: null, lastError: "fake_transport" });
+    console.info(JSON.stringify({ scope: "membership", event: "alert_fake_recorded", ...alertLogFields(alert) }));
+    return "fake";
+  }
+  const to = deps.env.MEMBERSHIP_ALERT_TO?.trim() ?? "";
   try {
     const response = await (deps.fetchImpl ?? fetch)("https://api.resend.com/emails", {
       method: "POST",
@@ -1044,6 +1052,7 @@ async function hubSnapshot(deps: Deps) {
     ghl: ghlMode(deps.env),
     scheduling: SCHEDULING,
     messaging: "disabled",
+    messageHolds: messageHolds(),
     messageTemplates: messageDrafts(),
     assignees: assignableStaff(deps.env),
     stages: DEAL_STAGES,

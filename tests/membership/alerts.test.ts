@@ -54,3 +54,48 @@ test("payment alerts are idempotent, held until sender and recipient exist, and 
   assert.equal(again.status, "pending");
   assert.ok(again.nextAttemptAt);
 });
+
+test("customer payment alerts stay held and a fake transport does not call the email provider", async () => {
+  const env = {
+    RESEND_API_KEY: "re_test",
+    RESEND_FROM: "ManHair <studio@manhaironline.com>",
+    MEMBERSHIP_ALERT_TO: "owner@example.com",
+    MEMBERSHIP_OWNER_ALERTS_SEND: "true",
+    MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+    MEMBERSHIP_MESSAGE_TRANSPORT: "fake",
+  };
+  const drafts = alertsForPayment({
+    eventId: "evt_fake",
+    previousStatus: "trialing",
+    invoice: { kind: "setup", status: "paid", amountPaid: 49500 },
+    webhookFailed: false,
+    memberId: "mem_1",
+    now,
+    env,
+  });
+  assert.deepEqual(
+    drafts.map((draft) => draft.audience + ":" + draft.status),
+    ["owner:pending", "customer:held"],
+  );
+  const store = createMemoryStore();
+  for (const draft of drafts) {
+    await store.enqueueAlert({ ...draft, id: newId(), attempts: 0, lastError: null, createdAt: now.toISOString() });
+  }
+  let calls = 0;
+  const drained = await drainAlerts({
+    env,
+    store,
+    stripe: null,
+    now: () => now,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response("sent", { status: 200 });
+    },
+  } as Deps);
+  assert.equal(calls, 0);
+  assert.equal(drained.delivered, 0);
+  assert.equal(drained.fake, 1);
+  const saved = await store.listAlerts();
+  assert.equal(saved.find((alert) => alert.audience === "customer")?.status, "held");
+  assert.equal(saved.find((alert) => alert.audience === "owner")?.status, "fake_recorded");
+});
