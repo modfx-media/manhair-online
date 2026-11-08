@@ -38,7 +38,7 @@ Payments, all required before checkout will open:
 
 One product per tier. Do not put the three tiers on one product. The owner said ManHair does not currently collect sales tax. Leave `automatic_tax` off. Do not add a tax registration for this launch.
 
-The app creates a Customer Portal session for the signed-in member's own Stripe customer id. The session configuration turns on invoice history and payment-method update, and turns off subscription cancel, subscription update, and customer update. `STRIPE_PORTAL_CONFIGURATION_ID` is no longer required. A missing processor customer id fails closed.
+The app opens a Customer Portal session for the signed-in member's own Stripe customer id. Set `STRIPE_PORTAL_CONFIGURATION_ID` to the approved configuration. On the live account that id is `bpc_1UZPyXGiafo5ImyEcopKjnZr`. It is not hard-coded. A sandbox or preview must use its own configuration id, not this live one. The app retrieves that configuration and opens the session only when invoice history and payment-method update are enabled and cancel, plan changes, and customer edits are disabled. A missing or different configuration returns an error. The app does not create or update a portal configuration.
 
 Founding, leave off:
 
@@ -163,7 +163,7 @@ HighLevel calls stay off until `GHL_API_TOKEN` is set. The location, marketing p
 
 Member sessions are stored as a hash of the cookie secret. Checkout return links work once. Logout deletes the session and writes an audit row. A later visit asks for a one-time email link. That link is sent only when `RESEND_API_KEY`, `RESEND_FROM`, and `MEMBERSHIP_RECOVERY_SEND=true` are all set. They are not set here, and the request fails closed without sending mail or opening a session. Typing an email never signs someone in. A member does not pay again to recover an existing membership.
 
-The Customer Portal session uses the signed-in member's Stripe customer id. Its configuration allows invoice history and payment-method updates and disallows cancel, plan changes, and customer edits.
+The Customer Portal session uses the signed-in member's Stripe customer id and the configuration id in `STRIPE_PORTAL_CONFIGURATION_ID`. Tests reject a missing id, a non-portal id, a retrieved id that differs, and a configuration that allows cancellation. They do not create a Stripe configuration.
 
 Screenshots in the pull request are rendered pages on a local production server with payments, founding, database, and staff sign-in unconfigured. They show the public offer, the blocked checkout form, the signed-out account gate, and the hub denial. They are not a successful payment or a populated lead board.
 

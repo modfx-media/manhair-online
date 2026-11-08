@@ -53,7 +53,20 @@ function fakeStripe(accountId = "acct_manhair_confirmed", mismatch = false): Str
       },
     },
     billingPortal: {
-      configurations: { async create(params) { creates.push({ portal: params }); return { id: "bpc_created" }; } },
+      configurations: {
+        async retrieve(id: string) {
+          return {
+            id,
+            features: {
+              invoice_history: { enabled: true },
+              payment_method_update: { enabled: true },
+              subscription_cancel: { enabled: false },
+              subscription_update: { enabled: false },
+              customer_update: { enabled: false },
+            },
+          };
+        },
+      },
       sessions: { async create(params) { creates.push({ portalSession: params }); return { url: "https://billing.stripe.com/p/session_test" }; } },
     },
     subscriptions: {
@@ -348,6 +361,131 @@ test("minimum-term cancellation is scheduled and a local lead can be removed wit
   const removedBody = await removed.json();
   assert.equal(removedBody.crmChanged, false);
   assert.equal((await context.store.listDeals()).some((item) => item.id === deal.id), false);
+});
+
+test("portal session uses the configured id and does not create a configuration", async () => {
+  const store = createMemoryStore();
+  await store.saveMember(await seedMember(store));
+  await store.createSession({
+    id: "sess_portal",
+    memberId: "mem_1",
+    tokenHash: hashSecret("cookie-portal"),
+    expiresAt: "2026-12-01T00:00:00.000Z",
+    active: true,
+    returnUsed: true,
+  });
+  const headers = {
+    origin: "https://www.manhaironline.com",
+    host: "www.manhaironline.com",
+    cookie: "mh_member_session=cookie-portal",
+    "content-type": "application/json",
+  };
+  const request = () => new Request("https://www.manhaironline.com/api/membership/account/?action=portal", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ customer: "cus_attacker" }),
+  });
+  let creates = 0;
+  let retrieves = 0;
+  let sessionConfiguration = "";
+  let sessionCustomer = "";
+  const stripe = fakeStripe();
+  stripe.billingPortal = {
+    configurations: {
+      async retrieve(id: string) {
+        retrieves += 1;
+        return {
+          id,
+          features: {
+            invoice_history: { enabled: true },
+            payment_method_update: { enabled: true },
+            subscription_cancel: { enabled: false },
+            subscription_update: { enabled: false },
+            customer_update: { enabled: false },
+          },
+        };
+      },
+    },
+    sessions: {
+      async create(params) {
+        sessionConfiguration = params.configuration;
+        sessionCustomer = params.customer;
+        return { url: "https://billing.stripe.com/p/session_test" };
+      },
+    },
+  };
+  (stripe.billingPortal.configurations as { create?: () => void }).create = () => {
+    creates += 1;
+  };
+  const opened = await handleAccountPost(request(), deps({ store, stripe, env: baseEnv({ STRIPE_PORTAL_CONFIGURATION_ID: "bpc_approved" }) }));
+  assert.equal(opened.status, 200);
+  assert.equal(creates, 0);
+  assert.equal(retrieves, 1);
+  assert.equal(sessionConfiguration, "bpc_approved");
+  assert.equal(sessionCustomer, "cus_1");
+
+  const missing = await handleAccountPost(request(), deps({
+    store,
+    stripe,
+    env: baseEnv({ STRIPE_PORTAL_CONFIGURATION_ID: "" }),
+  }));
+  assert.equal(missing.status, 503);
+  assert.equal(creates, 0);
+
+  const malformed = await handleAccountPost(request(), deps({
+    store,
+    stripe,
+    env: baseEnv({ STRIPE_PORTAL_CONFIGURATION_ID: "price_not_a_portal" }),
+  }));
+  assert.equal(malformed.status, 503);
+  assert.equal(retrieves, 1);
+
+  const mismatched = await handleAccountPost(request(), deps({
+    store,
+    stripe: {
+      ...stripe,
+      billingPortal: {
+        ...stripe.billingPortal,
+        configurations: {
+          async retrieve(id: string) {
+            retrieves += 1;
+            return { id, features: { invoice_history: { enabled: true }, payment_method_update: { enabled: true }, subscription_cancel: { enabled: true }, subscription_update: { enabled: false }, customer_update: { enabled: false } } };
+          },
+        },
+      },
+    },
+    env: baseEnv({ STRIPE_PORTAL_CONFIGURATION_ID: "bpc_approved" }),
+  }));
+  assert.equal(mismatched.status, 503);
+  assert.equal(sessionConfiguration, "bpc_approved");
+
+  const otherId = await handleAccountPost(request(), deps({
+    store,
+    stripe: {
+      ...stripe,
+      billingPortal: {
+        ...stripe.billingPortal,
+        configurations: {
+          async retrieve() {
+            retrieves += 1;
+            return {
+              id: "bpc_other",
+              features: {
+                invoice_history: { enabled: true },
+                payment_method_update: { enabled: true },
+                subscription_cancel: { enabled: false },
+                subscription_update: { enabled: false },
+                customer_update: { enabled: false },
+              },
+            };
+          },
+        },
+      },
+    },
+    env: baseEnv({ STRIPE_PORTAL_CONFIGURATION_ID: "bpc_approved" }),
+  }));
+  assert.equal(otherId.status, 503);
+  assert.equal(creates, 0);
 });
 
 test("messaging send is refused", async () => {

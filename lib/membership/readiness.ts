@@ -99,8 +99,16 @@ export function paymentBlockers(
   return blockers;
 }
 
+/** Billing Portal configuration id. A live id is not hard-coded; sandbox uses its own value. */
+export function portalConfigurationId(env: AppEnv): string | null {
+  const id = env.STRIPE_PORTAL_CONFIGURATION_ID?.trim() ?? "";
+  return /^bpc_[A-Za-z0-9]+$/.test(id) ? id : null;
+}
+
 export function portalBlockers(env: AppEnv): Blocker[] {
-  return paymentBlockers(env);
+  const blockers = paymentBlockers(env);
+  if (!portalConfigurationId(env)) blockers.push(missing("STRIPE_PORTAL_CONFIGURATION_ID"));
+  return blockers;
 }
 
 export type FoundingConfig =

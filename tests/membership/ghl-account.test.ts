@@ -9,7 +9,7 @@ import {
   MANHAIR_STAGE_IDS,
 } from "../../lib/membership/manhair-ghl";
 import { GHL_ED25519_PUBLIC_KEY, mergeInboundLead, pullHighLevel, verifyGhlSignature } from "../../lib/membership/ghl-inbound";
-import { BILLING_PORTAL_FEATURES, handleAccountPost, handleGhlWebhook, handleHub, handleRecover, type Deps } from "../../lib/membership/handlers";
+import { handleAccountPost, handleGhlWebhook, handleHub, handleRecover, type Deps } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
 import { hashSecret } from "../../lib/membership/tokens";
 import type { DealRecord, MemberRecord } from "../../lib/membership/types";
@@ -29,6 +29,7 @@ function env(extra: Record<string, string> = {}) {
     MEMBERSHIP_SESSION_SECRET: "test-secret",
     MEMBERSHIP_OWNER_EMAILS: "owner@manhaironline.com",
     NEXT_PUBLIC_SITE_URL: "https://www.manhaironline.com",
+    STRIPE_PORTAL_CONFIGURATION_ID: "bpc_approved",
     GHL_API_TOKEN: "token",
     ...extra,
   };
@@ -321,7 +322,22 @@ test("recovery email stays closed, portal uses only this member's customer, and 
       prices: { async retrieve(id: string) { return { id, unit_amount: 55900, currency: "usd", recurring: { interval: "month" } }; } },
       checkout: { sessions: { async create() { return { id: "cs", url: "https://checkout.stripe.test" }; } } },
       billingPortal: {
-        configurations: { async create(params: Record<string, unknown>) { portalCalls.push(params); return { id: "bpc_test" }; } },
+        configurations: {
+          async create(params: Record<string, unknown>) { portalCalls.push({ created: params }); return { id: "bpc_created" }; },
+          async retrieve(id: string) {
+            portalCalls.push({ retrieved: id });
+            return {
+              id,
+              features: {
+                invoice_history: { enabled: true },
+                payment_method_update: { enabled: true },
+                subscription_cancel: { enabled: false },
+                subscription_update: { enabled: false },
+                customer_update: { enabled: false },
+              },
+            };
+          },
+        },
         sessions: { async create(params: { customer: string; return_url: string; configuration: string }) { portalCalls.push(params); return { url: "https://billing.stripe.com/p/session_test" }; } },
       },
       subscriptions: { async update() { return { id: "sub_1" }; } },
@@ -364,11 +380,11 @@ test("recovery email stays closed, portal uses only this member's customer, and 
     body: JSON.stringify({ customer: "cus_attacker" }),
   }), deps);
   assert.equal(portal.status, 200);
-  const features = portalCalls[0]?.features as typeof BILLING_PORTAL_FEATURES;
-  assert.equal(features.subscription_cancel.enabled, false);
-  assert.equal(features.subscription_update.enabled, false);
-  assert.equal(features.payment_method_update.enabled, true);
-  assert.equal((portalCalls[1] as { customer: string }).customer, "cus_member");
+  assert.equal(portalCalls.some((call) => "created" in call), false);
+  assert.equal((portalCalls.find((call) => "retrieved" in call) as { retrieved?: string } | undefined)?.retrieved, "bpc_approved");
+  const session = portalCalls.find((call) => "customer" in call) as { customer: string; configuration: string };
+  assert.equal(session.customer, "cus_member");
+  assert.equal(session.configuration, "bpc_approved");
   const logout = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=logout", {
     method: "POST",
     headers,

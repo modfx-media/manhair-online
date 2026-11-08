@@ -30,6 +30,8 @@ import {
   databaseReady,
   foundingConfig,
   paymentBlockers,
+  portalBlockers,
+  portalConfigurationId,
   sessionSecret,
   setupCentsFor,
   type AppEnv,
@@ -38,6 +40,28 @@ import { mapStripeEvent, type StripeEventShape } from "./stripe-map";
 import { hashSecret, newId, newSecret, normalizeEmail, signToken, validEmail, verifyToken } from "./tokens";
 import type { DealRecord, MemberRecord, MembershipStore } from "./types";
 import { DEAL_STAGES, isSalesStage } from "./types";
+
+export const BILLING_PORTAL_FEATURES = {
+  invoice_history: { enabled: true },
+  payment_method_update: { enabled: true },
+  subscription_cancel: { enabled: false },
+  subscription_update: { enabled: false },
+  customer_update: { enabled: false },
+} as const;
+
+export type PortalConfigurationSnapshot = {
+  id: string;
+  features?: Partial<Record<keyof typeof BILLING_PORTAL_FEATURES, { enabled?: boolean }>>;
+};
+
+/** True only when Stripe returned the requested configuration and its features match the approved billing-only set. */
+export function portalConfigurationMatches(configuration: PortalConfigurationSnapshot | null, expectedId: string): boolean {
+  if (!configuration || configuration.id !== expectedId) return false;
+  const features = configuration.features ?? {};
+  return (Object.keys(BILLING_PORTAL_FEATURES) as Array<keyof typeof BILLING_PORTAL_FEATURES>).every(
+    (key) => features[key]?.enabled === BILLING_PORTAL_FEATURES[key].enabled,
+  );
+}
 
 export type StripeLike = {
   accounts: { retrieveCurrent(): Promise<{ id: string }> };
@@ -52,7 +76,7 @@ export type StripeLike = {
   };
   billingPortal: {
     configurations: {
-      create(params: Record<string, unknown>): Promise<{ id: string }>;
+      retrieve(id: string): Promise<PortalConfigurationSnapshot>;
     };
     sessions: {
       create(params: { customer: string; return_url: string; configuration: string }): Promise<{ url: string }>;
@@ -592,29 +616,48 @@ async function changeTier(member: MemberRecord, body: Record<string, unknown>, d
   });
 }
 
-export const BILLING_PORTAL_FEATURES = {
-  invoice_history: { enabled: true },
-  payment_method_update: { enabled: true },
-  subscription_cancel: { enabled: false },
-  subscription_update: { enabled: false },
-  customer_update: { enabled: false },
-} as const;
-
 async function openPortal(member: MemberRecord, deps: Deps, origin: string): Promise<Response> {
-  if (!member.stripeCustomerId || !deps.stripe || paymentBlockers(deps.env).length) {
+  if (!member.stripeCustomerId || !deps.stripe) {
     return json({
       ok: false,
       error: "portal_not_configured",
-      message: member.stripeCustomerId
-        ? "Payment method update is not available until the confirmed payment account is connected."
-        : "The processor has not confirmed a customer for this membership yet.",
+      message: "The processor has not confirmed a customer for this membership yet.",
     }, 503);
   }
-  const configuration = await deps.stripe.billingPortal.configurations.create({ features: BILLING_PORTAL_FEATURES });
+  if (portalBlockers(deps.env).length) {
+    return json({
+      ok: false,
+      error: "portal_not_configured",
+      message: paymentBlockers(deps.env).length
+        ? "Payment method update is not available until the confirmed payment account is connected."
+        : "Payment method update is not available until STRIPE_PORTAL_CONFIGURATION_ID is set.",
+    }, 503);
+  }
+  const configurationId = portalConfigurationId(deps.env);
+  if (!configurationId) {
+    return json({ ok: false, error: "portal_not_configured" }, 503);
+  }
+  let configuration: PortalConfigurationSnapshot;
+  try {
+    configuration = await deps.stripe.billingPortal.configurations.retrieve(configurationId);
+  } catch {
+    return json({
+      ok: false,
+      error: "portal_configuration_rejected",
+      message: "The billing portal configuration could not be read. No portal configuration was created or changed.",
+    }, 503);
+  }
+  if (!portalConfigurationMatches(configuration, configurationId)) {
+    return json({
+      ok: false,
+      error: "portal_configuration_rejected",
+      message: "The billing portal configuration does not match the approved invoice and payment-method settings. It was not changed.",
+    }, 503);
+  }
   const session = await deps.stripe.billingPortal.sessions.create({
     customer: member.stripeCustomerId,
     return_url: `${origin}/account/`,
-    configuration: configuration.id,
+    configuration: configurationId,
   });
   const returned = new URL(session.url);
   if (returned.protocol !== "https:") return json({ ok: false, error: "portal_url_rejected" }, 502);

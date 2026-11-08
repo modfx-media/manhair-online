@@ -65,7 +65,20 @@ const deps = {
       },
     },
     billingPortal: {
-      configurations: { async create() { return { id: "bpc_smoke" }; } },
+      configurations: {
+        async retrieve(id: string) {
+          return {
+            id,
+            features: {
+              invoice_history: { enabled: true },
+              payment_method_update: { enabled: true },
+              subscription_cancel: { enabled: false },
+              subscription_update: { enabled: false },
+              customer_update: { enabled: false },
+            },
+          };
+        },
+      },
       sessions: { async create() { return { url: "https://billing.stripe.com/p/smoke" }; } },
     },
     subscriptions: { async update() { return { id: "sub_smoke" }; } },
