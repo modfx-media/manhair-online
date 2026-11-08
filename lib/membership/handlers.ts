@@ -6,7 +6,7 @@ import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches
 import { ghlMode, pushOpportunityStage, syncHash, syncLead } from "./ghl";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
-import { MESSAGE_TEMPLATES } from "./message-lifecycle";
+import { reviewedLifecycle } from "./lifecycle-review";
 import {
   allowance,
   planCancel,
@@ -993,6 +993,11 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   return json({ ok: false, error: "unknown_action" }, 404);
 }
 
+function messageDrafts() {
+  const reviewed = reviewedLifecycle();
+  return reviewed.ok ? reviewed.emails : [];
+}
+
 async function hubSnapshot(deps: Deps) {
   const deals = await Promise.all(
     (await deps.store.listDeals()).map(async (deal) => ({
@@ -1012,7 +1017,7 @@ async function hubSnapshot(deps: Deps) {
     ghl: ghlMode(deps.env),
     scheduling: SCHEDULING,
     messaging: "disabled",
-    messageTemplates: MESSAGE_TEMPLATES,
+    messageTemplates: messageDrafts(),
     assignees: assignableStaff(deps.env),
     stages: DEAL_STAGES,
     stageCounts: stage,

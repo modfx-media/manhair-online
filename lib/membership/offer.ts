@@ -77,8 +77,8 @@ export const TIERS: Record<TierId, TierOffer> = {
     maintenance: 7,
     priorityBooking: false,
     recommended: true,
-    badge: "Most guys pick this",
-    fit: "The membership most members choose.",
+    badge: "Default",
+    fit: "Pre-selected when you open join.",
   },
   elite: {
     id: "elite",

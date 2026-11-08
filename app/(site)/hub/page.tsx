@@ -5,6 +5,7 @@ import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { staffRole } from "@/lib/membership/access";
 import { handleHub } from "@/lib/membership/handlers";
 import { currentStaffEmail, runtimeDeps } from "@/lib/membership/runtime";
+import { reviewedLifecycle } from "@/lib/membership/lifecycle-review";
 import { SCHEDULING } from "@/lib/membership/offer";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,25 @@ export const metadata: Metadata = {
   title: "Studio hub",
   robots: { index: false, follow: false },
 };
+
+function DraftList() {
+  const reviewed = reviewedLifecycle();
+  if (!reviewed.ok) return <p role="alert">Message drafts failed validation ({reviewed.error}). Nothing is sent.</p>;
+  return (
+    <section className="mt-6">
+      <h2 className="font-display text-2xl">Message drafts</h2>
+      <p className="mt-2 text-sm leading-6 text-ink-700">All {reviewed.emails.length} drafts are disabled. Unresolved booking, sender, support, care, and pause-billing facts block the messages that need them. Stripe receipt settings are not confirmed, so payment confirmations stay blocked.</p>
+      <ul className="mt-3 divide-y divide-ink-300 text-sm">
+        {reviewed.emails.map((email) => (
+          <li key={email.id} className="py-2">
+            <span className="font-semibold">{email.id}</span>
+            <span className="mt-1 block text-ink-700">{email.blocks.join(", ")}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export default async function HubPage() {
   const staff = await currentStaffEmail();
@@ -41,6 +61,7 @@ export default async function HubPage() {
         <h1 className="mh-display text-4xl">Studio hub</h1>
         <PreviewNotice />
         <p className="mt-4 text-sm leading-7">{body.error === "database_not_configured" ? "Membership storage is not connected on this preview, so leads cannot be loaded or changed here. This is not a synced HighLevel board." : "The hub could not be loaded."}</p>
+        <DraftList />
       </main>
     );
   }

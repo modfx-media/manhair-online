@@ -12,7 +12,7 @@ type Snapshot = {
   ghl: string;
   scheduling: { summary: string };
   messaging: string;
-  messageTemplates?: Array<{ id: string; version: string; channel: string; copyStatus: string; entersOn: string }>;
+  messageTemplates?: Array<{ id: string; channel: string; enabled: false; sendable: false; blocks: string[] }>;
   freshness?: string;
   alerts?: Array<{ id: string; kind: string; audience: string; status: string; attempts: number; amountCents: number; memberId: string | null }>;
   assignees: string[];
@@ -108,7 +108,7 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
           {(data.messageTemplates ?? []).map((template) => (
             <li key={template.id} className="grid gap-1 py-2">
               <span className="font-semibold">{template.id}</span>
-              <span className="text-ink-700">{template.channel} · {template.copyStatus} · version {template.version} · enters on {template.entersOn} · held</span>
+              <span className="text-ink-700">{template.channel} · disabled · not sendable · {template.blocks.join(", ")}</span>
             </li>
           ))}
         </ul>
