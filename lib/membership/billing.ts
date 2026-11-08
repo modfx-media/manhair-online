@@ -1,5 +1,4 @@
 import { assessCheckoutAmount } from "./checkout";
-import { nextGraceStart } from "./payment-grace";
 import type { TierId } from "./offer";
 
 export type MemberStatus =
@@ -239,15 +238,6 @@ export function reduceBillingEvent(
           ? "recurring"
           : "other";
     const stale = event.created < member.lastStatusEventCreated;
-    const grace = nextGraceStart({
-      failed: event.type === "invoice.payment_failed",
-      paid: event.type === "invoice.paid",
-      kind,
-      stale,
-      current: member.paymentGraceStartedAt ?? null,
-      eventCreated: event.created,
-    });
-    const gracePatch = grace === undefined ? {} : { paymentGraceStartedAt: grace };
     return {
       ...emptyEffect(),
       staleStatus: stale,
@@ -262,10 +252,10 @@ export function reduceBillingEvent(
       statusPatch: stale
         ? null
         : event.type === "invoice.payment_failed"
-          ? { status: "past_due", lastStatusEventCreated: event.created, ...gracePatch }
+          ? { status: "past_due", lastStatusEventCreated: event.created }
           : kind === "setup"
-            ? { setupPaid: true, ...gracePatch }
-            : { ...gracePatch },
+            ? { setupPaid: true }
+            : null,
     };
   }
 

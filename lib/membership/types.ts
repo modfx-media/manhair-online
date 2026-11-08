@@ -50,6 +50,8 @@ export type InvoiceRecord = {
   amountPaid: number;
   amountRefunded: number;
   chargeId?: string | null;
+  failedAt?: string | null;
+  statusEventCreated?: number | null;
 };
 
 export type SuitabilityCaseRecord = {

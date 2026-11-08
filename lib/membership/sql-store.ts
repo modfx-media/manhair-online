@@ -282,13 +282,19 @@ export function createSqlStore(connectionString: string): MembershipStore {
     },
     async upsertInvoice(row) {
       await sql`
-        INSERT INTO membership_invoices (id, member_id, kind, status, amount_paid, amount_refunded, charge_id)
-        VALUES (${row.id}, ${row.memberId}, ${row.kind}, ${row.status}, ${row.amountPaid}, ${row.amountRefunded}, ${row.chargeId ?? null})
+        INSERT INTO membership_invoices (
+          id, member_id, kind, status, amount_paid, amount_refunded, charge_id, failed_at, status_event_created
+        ) VALUES (
+          ${row.id}, ${row.memberId}, ${row.kind}, ${row.status}, ${row.amountPaid}, ${row.amountRefunded},
+          ${row.chargeId ?? null}, ${row.failedAt ?? null}, ${row.statusEventCreated ?? null}
+        )
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
           amount_paid = EXCLUDED.amount_paid,
           kind = EXCLUDED.kind,
-          charge_id = COALESCE(EXCLUDED.charge_id, membership_invoices.charge_id)
+          charge_id = COALESCE(EXCLUDED.charge_id, membership_invoices.charge_id),
+          failed_at = COALESCE(membership_invoices.failed_at, EXCLUDED.failed_at),
+          status_event_created = EXCLUDED.status_event_created
       `;
     },
     async addRefund(_invoiceId, cents) {
@@ -413,6 +419,8 @@ export function createSqlStore(connectionString: string): MembershipStore {
           amountPaid: num(record.amount_paid),
           amountRefunded: num(record.amount_refunded),
           chargeId: text(record.charge_id),
+          failedAt: text(record.failed_at),
+          statusEventCreated: record.status_event_created == null ? null : num(record.status_event_created),
         };
       });
     },

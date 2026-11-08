@@ -264,9 +264,18 @@ export async function runSandboxSetup(stripe: SandboxStripe): Promise<SandboxRep
 export async function previewSandboxBody(env: Record<string, string | undefined>, connect: () => SandboxStripe) {
   const decision = sandboxSetupDecision(env);
   const keyShape = stripeKeyShape(env.STRIPE_SECRET_KEY);
+  const deploymentId = env.VERCEL_DEPLOYMENT_ID ?? null;
   if (!decision.run) {
-    return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: false as const, reason: decision.reason, keyShape };
+    return {
+      scope: "stripe_sandbox_setup",
+      phase: "runtime" as const,
+      run: false as const,
+      reason: decision.reason,
+      keyShape,
+      deploymentId,
+      note: "Sensitive preview keys are not present during the build. This response is from the preview function.",
+    };
   }
   const report = await runSandboxSetup(connect());
-  return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: true as const, keyShape, ...report };
+  return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: true as const, keyShape, deploymentId, ...report };
 }

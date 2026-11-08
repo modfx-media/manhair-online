@@ -82,10 +82,14 @@ CREATE TABLE IF NOT EXISTS membership_invoices (
   status text NOT NULL,
   amount_paid integer NOT NULL,
   amount_refunded integer NOT NULL DEFAULT 0,
-  charge_id text
+  charge_id text,
+  failed_at timestamptz,
+  status_event_created bigint
 );
 
 ALTER TABLE membership_invoices ADD COLUMN IF NOT EXISTS charge_id text;
+ALTER TABLE membership_invoices ADD COLUMN IF NOT EXISTS failed_at timestamptz;
+ALTER TABLE membership_invoices ADD COLUMN IF NOT EXISTS status_event_created bigint;
 
 CREATE TABLE IF NOT EXISTS membership_suitability_cases (
   id text PRIMARY KEY,

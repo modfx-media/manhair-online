@@ -10,6 +10,7 @@ import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlS
 import { reviewedLifecycle } from "./lifecycle-review";
 import { appointmentInput, schedulingMessages, MANUAL_SCHEDULING } from "./scheduling";
 import { matchConfirmedRefund, planSuitabilityFailure, refundStatusFromProcessor } from "./suitability";
+import { applyInvoiceObservation, reconcileGrace } from "./payment-grace";
 import { isMembershipSchemaMissing } from "./sql-store";
 import {
   allowance,
@@ -880,7 +881,23 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
         return json({ ok: false, error: "conflict" }, 409);
       }
     }
-    if (effect.invoice) await deps.store.upsertInvoice(effect.invoice);
+    if (effect.invoice) {
+      const ownerId = member?.id ?? effect.invoice.memberId;
+      const prior = ownerId
+        ? (await deps.store.listInvoices(ownerId)).find((invoice) => invoice.id === effect.invoice!.id) ?? null
+        : null;
+      const observed = applyInvoiceObservation(prior, { ...effect.invoice, statusEventCreated: internal.created });
+      if (!prior || observed.applied) await deps.store.upsertInvoice(observed.invoice);
+      if (ownerId) {
+        const fresh = (await deps.store.findMemberById(ownerId)) ?? member;
+        if (fresh) {
+          const grace = reconcileGrace(fresh.paymentGraceStartedAt ?? null, await deps.store.listInvoices(ownerId));
+          if ((fresh.paymentGraceStartedAt ?? null) !== grace) {
+            await deps.store.compareAndSave({ ...fresh, paymentGraceStartedAt: grace }, fresh.version);
+          }
+        }
+      }
+    }
     if (effect.refundCents > 0 && internal.type === "charge.refunded") {
       const holder = member ?? (internal.customerId ? await deps.store.findMemberByCustomer(internal.customerId) : null);
       if (holder) {
