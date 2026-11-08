@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { HubConsole } from "@/components/membership/HubConsole";
+import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { staffRole } from "@/lib/membership/access";
 import { handleHub } from "@/lib/membership/handlers";
 import { currentStaffEmail, runtimeDeps } from "@/lib/membership/runtime";
@@ -17,9 +18,10 @@ export default async function HubPage() {
   const role = staffRole(staff.email, process.env);
   if (!role) {
     return (
-      <main className="mx-auto max-w-xl px-5 py-16">
+      <main className="mx-auto grid max-w-xl gap-4 px-5 py-16">
+        <PreviewNotice />
         <h1 className="mh-display text-4xl">Studio hub</h1>
-        <p className="mt-4 text-sm leading-7 text-ink-800">
+        <p className="text-sm leading-7 text-ink-800">
           This page is for the owner and the studio coordinator. A hidden address is not access. Sign in with your own
           Payload account, and that email has to be on the server allowlist.
         </p>
@@ -37,13 +39,15 @@ export default async function HubPage() {
     return (
       <main className="mx-auto max-w-xl px-5 py-16">
         <h1 className="mh-display text-4xl">Studio hub</h1>
-        <p className="mt-4 text-sm">{body.error === "database_not_configured" ? "Membership storage is not configured." : "The hub could not be loaded."}</p>
+        <PreviewNotice />
+        <p className="mt-4 text-sm leading-7">{body.error === "database_not_configured" ? "Membership storage is not connected on this preview, so leads cannot be loaded or changed here. This is not a synced HighLevel board." : "The hub could not be loaded."}</p>
       </main>
     );
   }
   const snapshot = await response.json();
   return (
-    <main className="mx-auto max-w-5xl px-5 py-12">
+    <main className="mx-auto grid max-w-5xl gap-4 px-5 py-12">
+      <PreviewNotice />
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-600">{role}</p>
       <h1 className="mh-display mt-2 text-4xl">Lead hub</h1>
       <p className="mt-3 max-w-2xl text-sm leading-7 text-ink-700">

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Display } from "@/components/ui";
-import { BookingButton } from "@/components/BookingButton";
+import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { billingTimeline, formatStudio } from "@/lib/membership/dates";
 import {
   ADDON_POLICY,
@@ -32,7 +32,8 @@ export default function MembershipsPage() {
   const founding = foundingConfig(process.env);
   return (
     <div className="bg-ink-50 text-ink-900">
-      <section className="mx-auto grid max-w-6xl gap-8 px-5 py-16 md:px-8 md:py-24">
+      <section className="mx-auto grid max-w-6xl gap-8 px-5 py-12 md:px-8 md:py-24">
+        <PreviewNotice />
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-700">Orange studio membership</p>
         <Display as={1} size="hero">
           A standing plan for <em>the hair you actually wear.</em>
@@ -110,9 +111,15 @@ export default function MembershipsPage() {
           <p className="mt-3 text-sm leading-7 text-ink-800">{ADDON_POLICY.summary}</p>
           <p className="mt-3 text-sm leading-7 text-ink-800">{REFUND_POLICY.summary}</p>
           <p className="mt-3 text-sm leading-7 text-ink-800">{SCHEDULING.summary}</p>
-          <div className="mt-5">
-            <BookingButton variant="ghost">Book a private consultation</BookingButton>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <Link className="mh-btn mh-btn-primary min-h-11" href="/join/?tier=signature">
+              Start with Signature
+            </Link>
+            <Link className="mh-btn mh-btn-ghost min-h-11" href="/consultation/">
+              Request a consultation
+            </Link>
           </div>
+          <p className="mt-3 text-sm leading-6 text-ink-700">A consultation is not a membership and does not open checkout. Studio scheduling is not connected, so this does not book a time.</p>
         </div>
       </section>
     </div>

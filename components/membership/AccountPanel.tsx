@@ -43,10 +43,12 @@ export function AccountPanel({
   member,
   invoices,
   pauses,
+  afterCheckout = false,
 }: {
   member: MemberView | null;
   invoices: Invoice[];
   pauses: Pause[];
+  afterCheckout?: boolean;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   if (!member) {
@@ -82,6 +84,14 @@ export function AccountPanel({
 
   return (
     <div className="grid gap-8">
+      {afterCheckout ? (
+        <section role="status" className="rounded-md border border-copper-500 bg-ink-100 p-4 text-sm leading-6">
+          <h2 className="font-display text-2xl">Next steps</h2>
+          <p className="mt-2">Returning from checkout does not confirm a charge. The processor webhook is what marks setup as paid.</p>
+          <p className="mt-2">The first system typically takes 8–12 weeks. The monthly charge can begin before the system is ready. That 30 days is not a promise that the system arrives.</p>
+          <p className="mt-2">{SCHEDULING.summary}</p>
+        </section>
+      ) : null}
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-600">Membership</p>
         <h1 className="mh-display mt-2 text-4xl">{member.tierName}</h1>

@@ -6,6 +6,7 @@ import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches
 import { ghlMode, pushOpportunityStage, syncHash, syncLead } from "./ghl";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
+import { MESSAGE_TEMPLATES } from "./message-lifecycle";
 import {
   allowance,
   planCancel,
@@ -174,6 +175,62 @@ export async function handleReadiness(deps: Deps): Promise<Response> {
     database: databaseReady(deps.env) ? "configured" : "missing",
     sandboxTimelineConfirmed: CHECKOUT_TIMELINE_SANDBOX_CONFIRMED,
     legalReview: "pending",
+  });
+}
+
+export async function handleConsultation(request: Request, deps: Deps): Promise<Response> {
+  const origin = safeAppOrigin(request, deps.env);
+  if (!isSameOrigin(request, origin)) return json({ ok: false, error: "origin_rejected" }, 403);
+  if (deps.store.kind === "unavailable") {
+    return json({
+      ok: false,
+      error: "database_not_configured",
+      message: "This preview has no membership database, so the consultation was not stored. Nothing was sent and nothing was marked synced.",
+    }, 503);
+  }
+  const body = await readJson(request);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+  const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+  const firstName = typeof body.firstName === "string" ? body.firstName.trim() : "";
+  const lastName = typeof body.lastName === "string" ? body.lastName.trim() : "";
+  const phone = typeof body.phone === "string" && body.phone.trim() ? body.phone.trim() : null;
+  if (!validEmail(email) || !firstName || !lastName) return json({ ok: false, error: "invalid_lead" }, 400);
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const allowed = await deps.store.consumeRate(`consult:${email}:${ip}`, deps.now(), 6, 60 * 60 * 1000);
+  if (!allowed) return json({ ok: false, error: "rate_limited", message: "Too many consultation requests. Nothing was sent." }, 429);
+  const marketing = body.marketingConsent === true;
+  const dealId = newId();
+  const now = deps.now().toISOString();
+  await deps.store.saveDeal({
+    id: dealId,
+    memberId: null,
+    name: `${firstName} ${lastName}`,
+    email,
+    phone,
+    stage: "New Leads",
+    assignee: "",
+    nextFollowUp: null,
+    ghlContactId: null,
+    ghlOpportunityId: null,
+    syncStatus: "local_only",
+    syncHash: syncHash({ stage: "New Leads", assignee: "", followUp: marketing ? "marketing" : "" }),
+    locationId: null,
+    remoteUpdatedAt: null,
+    staffEditedAt: null,
+  });
+  await deps.store.addActivity({
+    id: newId(),
+    dealId,
+    actor: "consultation",
+    action: marketing
+      ? `Consultation stored ${now}. Marketing consent recorded. Not synced. No message sent.`
+      : `Consultation stored ${now}. Marketing consent declined. Not synced. No message sent.`,
+    createdAt: now,
+  });
+  return json({
+    ok: true,
+    synced: false,
+    message: "Saved for the studio as a local lead. It is not in HighLevel, and no email was sent.",
   });
 }
 
@@ -375,7 +432,9 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
       id: newId(),
       dealId,
       actor: "checkout",
-      action: "Checkout opened. No payment is confirmed until the processor webhook arrives.",
+      action: body.marketingConsent === true
+        ? "Checkout opened. Marketing messages accepted. No payment is confirmed until the processor webhook arrives, and no message is sent."
+        : "Checkout opened. Marketing messages declined. No payment is confirmed until the processor webhook arrives, and no message is sent.",
       createdAt: now.toISOString(),
     });
     return json({
@@ -418,7 +477,7 @@ export async function handleReturn(request: Request, deps: Deps): Promise<Respon
   return new Response(null, {
     status: 302,
     headers: {
-      location: "/account/",
+      location: "/account/?next=checkout",
       "set-cookie": cookieHeader(raw, secure),
       "cache-control": "no-store",
     },
@@ -953,6 +1012,7 @@ async function hubSnapshot(deps: Deps) {
     ghl: ghlMode(deps.env),
     scheduling: SCHEDULING,
     messaging: "disabled",
+    messageTemplates: MESSAGE_TEMPLATES,
     assignees: assignableStaff(deps.env),
     stages: DEAL_STAGES,
     stageCounts: stage,

@@ -12,6 +12,7 @@ type Snapshot = {
   ghl: string;
   scheduling: { summary: string };
   messaging: string;
+  messageTemplates?: Array<{ id: string; version: string; channel: string; copyStatus: string; entersOn: string }>;
   freshness?: string;
   alerts?: Array<{ id: string; kind: string; audience: string; status: string; attempts: number; amountCents: number; memberId: string | null }>;
   assignees: string[];
@@ -93,10 +94,24 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
           Pull HighLevel now
         </button>
         <p>{SCHEDULING.summary}</p>
-        <p>Messaging is {data.messaging}. Drafts can be saved. Nothing is sent.</p>
+        <p>Messaging is {data.messaging}. Draft templates below are not approved copy and nothing is sent.</p>
         <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={() => void refresh()}>
           Refresh
         </button>
+      </section>
+      <section>
+        <h2 className="font-display text-2xl">Message drafts</h2>
+        <p className="mt-2 text-sm leading-6 text-ink-700">
+          These ids are waiting for owner copy. Marketing stops after signup, unsubscribe, or do-not-disturb. A fitting message is not planned without a staff-verified date. Stripe receipts are separate and are not duplicated here.
+        </p>
+        <ul className="mt-3 divide-y divide-ink-300 text-sm">
+          {(data.messageTemplates ?? []).map((template) => (
+            <li key={template.id} className="grid gap-1 py-2">
+              <span className="font-semibold">{template.id}</span>
+              <span className="text-ink-700">{template.channel} · {template.copyStatus} · version {template.version} · enters on {template.entersOn} · held</span>
+            </li>
+          ))}
+        </ul>
       </section>
       <section>
         <h2 className="font-display text-2xl">Recorded money</h2>

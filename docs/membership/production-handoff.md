@@ -143,6 +143,30 @@ Webhook endpoint: `https://www.manhaironline.com/api/membership/webhook/`
 3. Add the owner’s Payload email to `MEMBERSHIP_OWNER_EMAILS`.
 4. An empty allowlist means even a CMS admin gets a denial on `/hub/`.
 
+## Least-privilege provider access
+
+Sandbox or test credentials first. Do not put live prices or a live key on Preview. `MEMBERSHIP_PAYMENTS_LIVE` stays unset until a real sandbox checkout is reviewed.
+
+Stripe restricted key, only these calls. The app does not create products, prices, customers by hand, refunds, or portal configurations.
+
+- `GET /v1/account` — confirm the key's account matches `STRIPE_ACCOUNT_ID`
+- `GET /v1/prices/:id` — confirm the four price amounts before checkout
+- `POST /v1/checkout/sessions` — hosted checkout only
+- `GET /v1/billing_portal/configurations/:id` — read `STRIPE_PORTAL_CONFIGURATION_ID`; do not write configurations
+- `POST /v1/billing_portal/sessions` — one session for the signed-in customer
+- `POST /v1/subscriptions/:id` — set `cancel_at`, replace the subscription item price, or set `pause_collection` after staff apply a pause
+
+Webhook receive is `POST /api/membership/webhook/` with the signing secret. It is not a Stripe write permission.
+
+HighLevel private token for location `jv4grExvok7omWurc4PE` only. No workflow, conversation, user, calendar, or location-write scope.
+
+- `GET` and `POST /contacts/`
+- `POST /opportunities/` and `POST /opportunities/search`
+- `PUT /opportunities/:id`
+- Inbound `POST /api/membership/ghl/` verified with the published Ed25519 key
+
+Resend, when a send is later approved: one sending key for the verified domain `manhaironline.com` (`156da5ef-13f5-4b44-a4bb-b3cdcbe23544`). Tracking and receiving stay off. The key should not be an account-admin key. No send flag is on.
+
 ## Still unresolved on purpose
 
 - Refund rule. The app records refunds and does not issue them.
