@@ -14,10 +14,10 @@ export function messageHolds(): MessageHold[] {
   return [
     { channel: "email", event: "consultation", status: "held", reason: "marketing_consent_and_copy_unreviewed" },
     { channel: "email", event: "order_payment", status: "held", reason: "receipt_dedup_unverified" },
-    { channel: "email", event: "service_scheduling", status: "held", reason: "scheduling_not_connected" },
+    { channel: "email", event: "service_scheduling", status: "held", reason: "manual_appointment_or_send_not_approved" },
     { channel: "sms", event: "consultation", status: "held", reason: "sms_source_unverified" },
     { channel: "sms", event: "order_payment", status: "held", reason: "sms_source_unverified" },
-    { channel: "sms", event: "service_scheduling", status: "held", reason: "scheduling_not_connected" },
+    { channel: "sms", event: "service_scheduling", status: "held", reason: "manual_appointment_or_send_not_approved" },
   ];
 }
 

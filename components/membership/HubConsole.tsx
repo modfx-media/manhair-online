@@ -94,6 +94,34 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
           Pull HighLevel now
         </button>
         <p>{SCHEDULING.summary}</p>
+        <form
+          className="mt-2 grid gap-2"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const result = await post("appointment", {
+              memberId: form.get("memberId"),
+              startsAt: form.get("startsAt"),
+              timeZone: form.get("timeZone"),
+              state: form.get("state"),
+              note: form.get("note"),
+            });
+            setNotice(result.message ?? result.error ?? "The visit was not recorded.");
+            await refresh();
+          }}
+        >
+          <p className="font-semibold">Record a visit Griselda arranged</p>
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="memberId" placeholder="Member id" required />
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="startsAt" type="datetime-local" required />
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="timeZone" defaultValue="America/Los_Angeles" required />
+          <select className="min-h-11 rounded-md border border-ink-300 px-3" name="state" defaultValue="scheduled">
+            <option value="scheduled">Scheduled</option>
+            <option value="updated">Updated</option>
+            <option value="canceled">Canceled</option>
+          </select>
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="note" placeholder="What was arranged" />
+          <button className="mh-btn mh-btn-ghost w-fit" type="submit">Save visit</button>
+        </form>
         <p>Messaging is {data.messaging}. Draft templates below are not approved copy and nothing is sent.</p>
         <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={() => void refresh()}>
           Refresh

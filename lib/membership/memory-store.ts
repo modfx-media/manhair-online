@@ -8,12 +8,15 @@ import type {
   DealRecord,
   DraftRecord,
   EventClaim,
+  AppointmentRecord,
   InvoiceRecord,
   MemberRecord,
   MembershipStore,
   NoteRecord,
   PauseRequestRecord,
+  RefundRequestRecord,
   SessionRecord,
+  SuitabilityCaseRecord,
   UsageResult,
 } from "./types";
 
@@ -40,6 +43,9 @@ export function createMemoryStore(): MembershipStore {
   const ledger: Ledger[] = [];
   const rates = new Map<string, { hits: number; started: number }>();
   const consents: ConsentRecord[] = [];
+  const suitabilityCases: SuitabilityCaseRecord[] = [];
+  const refundRequests: RefundRequestRecord[] = [];
+  const appointments: AppointmentRecord[] = [];
 
   return {
     kind: "memory",
@@ -124,6 +130,38 @@ export function createMemoryStore(): MembershipStore {
     },
     async listInvoices(memberId) {
       return [...invoices.values()].filter((invoice) => !memberId || invoice.memberId === memberId);
+    },
+    async saveSuitabilityCase(row) {
+      const index = suitabilityCases.findIndex((item) => item.id === row.id);
+      if (index >= 0) suitabilityCases[index] = row;
+      else suitabilityCases.push(row);
+    },
+    async findSuitabilityCase(memberId) {
+      return suitabilityCases.find((item) => item.memberId === memberId) ?? null;
+    },
+    async updateSuitabilityCancel(id, cancelStatus) {
+      const row = suitabilityCases.find((item) => item.id === id);
+      if (row) row.cancelStatus = cancelStatus;
+    },
+    async saveRefundRequest(row) {
+      const index = refundRequests.findIndex((item) => item.id === row.id);
+      if (index >= 0) refundRequests[index] = row;
+      else refundRequests.push(row);
+    },
+    async listRefundRequests(memberId) {
+      return refundRequests.filter((item) => item.memberId === memberId);
+    },
+    async updateRefundRequest(id, patch) {
+      const row = refundRequests.find((item) => item.id === id);
+      if (row) Object.assign(row, patch);
+    },
+    async saveAppointment(row) {
+      const index = appointments.findIndex((item) => item.id === row.id);
+      if (index >= 0) appointments[index] = row;
+      else appointments.push(row);
+    },
+    async listAppointments(memberId) {
+      return appointments.filter((item) => item.memberId === memberId);
     },
     async consumeRate(bucket, now, limit, windowMs) {
       const current = rates.get(bucket);

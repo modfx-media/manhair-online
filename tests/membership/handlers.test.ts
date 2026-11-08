@@ -144,6 +144,16 @@ test("unconfirmed and mismatched Stripe accounts do not open checkout", async ()
   assert.equal(mismatch.stripe.creates.length, 0);
 });
 
+test("checkout does not require a consultation", async () => {
+  const context = deps();
+  assert.equal((await context.store.listDeals()).length, 0);
+  const response = await handleCheckout(checkoutRequest(checkoutBody()), context);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.error, undefined);
+});
+
 test("missing consent is rejected and HighLevel is not called without a location", async () => {
   let called = false;
   const context = deps({

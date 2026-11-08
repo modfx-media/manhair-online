@@ -21,6 +21,14 @@ if (!/create\s+table\s+if\s+not\s+exists\s+membership_members/i.test(sql)) {
   console.error("Migration check failed: membership_members table missing.");
   process.exit(1);
 }
+if (!/create\s+table\s+if\s+not\s+exists\s+membership_suitability_cases/i.test(sql)) {
+  console.error("Migration check failed: suitability cases missing.");
+  process.exit(1);
+}
+if (!/create\s+table\s+if\s+not\s+exists\s+membership_appointments/i.test(sql)) {
+  console.error("Migration check failed: appointments missing.");
+  process.exit(1);
+}
 if (!/create\s+table\s+if\s+not\s+exists\s+membership_alert_outbox/i.test(sql)) {
   console.error("Migration check failed: alert outbox missing.");
   process.exit(1);

@@ -8,6 +8,8 @@ import { ghlMode, pushOpportunityStage, syncHash, syncLead } from "./ghl";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import { reviewedLifecycle } from "./lifecycle-review";
+import { appointmentInput, schedulingMessages, MANUAL_SCHEDULING } from "./scheduling";
+import { matchConfirmedRefund, planSuitabilityFailure, refundStatusFromProcessor } from "./suitability";
 import { isMembershipSchemaMissing } from "./sql-store";
 import {
   allowance,
@@ -87,6 +89,13 @@ export type StripeLike = {
   };
   subscriptions: {
     update(id: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
+    cancel?(id: string, params: { prorate: false; invoice_now: false }): Promise<{ status: string }>;
+  };
+  refunds?: {
+    create(
+      params: { charge: string; amount: number },
+      options?: { idempotencyKey?: string },
+    ): Promise<{ id: string; status: string }>;
   };
 };
 
@@ -181,7 +190,7 @@ export async function handleReadiness(deps: Deps): Promise<Response> {
     recoveryEmail: recoveryEmailReady(deps.env) ? "enabled" : "not_configured",
     founding: founding.enabled ? { enabled: true, cap: founding.cap } : { enabled: false, reason: founding.reason },
     ghl: ghlMode(deps.env),
-    scheduling: SCHEDULING.status,
+    scheduling: MANUAL_SCHEDULING.status,
     messaging: "disabled",
     database: databaseReady(deps.env) ? "configured" : "missing",
     sandboxTimelineConfirmed: CHECKOUT_TIMELINE_SANDBOX_CONFIRMED,
@@ -872,6 +881,17 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
       }
     }
     if (effect.invoice) await deps.store.upsertInvoice(effect.invoice);
+    if (effect.refundCents > 0 && internal.type === "charge.refunded") {
+      const holder = member ?? (internal.customerId ? await deps.store.findMemberByCustomer(internal.customerId) : null);
+      if (holder) {
+        const requests = await deps.store.listRefundRequests(holder.id);
+        const matched = matchConfirmedRefund(requests, effect.refundCents);
+        const current = requests.find((request) => request.id === matched);
+        if (matched && current) {
+          await deps.store.updateRefundRequest(matched, { status: "processor_succeeded", stripeRefundId: current.stripeRefundId });
+        }
+      }
+    }
     if (effect.refundCents > 0) {
       await deps.store.upsertInvoice({
         id: `refund_${event.id}`,
@@ -1002,6 +1022,134 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
   }
 }
 
+async function staffSuitability(body: Record<string, unknown>, deps: Deps): Promise<Response> {
+  const role = staffRole(deps.staffEmail, deps.env);
+  if (!role || !deps.staffEmail) return json({ ok: false, error: "staff_denied" }, 401);
+  const memberId = typeof body.memberId === "string" ? body.memberId : "";
+  const member = memberId ? await deps.store.findMemberById(memberId) : null;
+  if (!member) return json({ ok: false, error: "member_not_found" }, 404);
+  const invoices = await deps.store.listInvoices(member.id);
+  const planned = planSuitabilityFailure({ invoices, confirmation: body.confirmation, note: body.note });
+  if (!planned.ok) return json({ ok: false, error: planned.reason }, 400);
+  const existing = await deps.store.findSuitabilityCase(member.id);
+  if (existing) {
+    const prior = await deps.store.listRefundRequests(member.id);
+    return json({
+      ok: true,
+      duplicate: true,
+      minimumTermWaived: true,
+      cancelStatus: existing.cancelStatus,
+      refunds: prior.map(publicRefund),
+      completed: false,
+      message: "This suitability failure is already recorded. No second refund or cancellation was sent.",
+    });
+  }
+  const now = deps.now().toISOString();
+  const caseId = newId();
+  let cancelStatus: "not_sent" | "processor_pending" | "processor_canceled" | "processor_failed" = "not_sent";
+  const canCall = Boolean(member.stripeSubscriptionId && deps.stripe && paymentBlockers(deps.env).length === 0);
+  if (canCall && deps.stripe?.subscriptions.cancel && member.stripeSubscriptionId) {
+    try {
+      const result = await deps.stripe.subscriptions.cancel(member.stripeSubscriptionId, planned.plan.cancel);
+      cancelStatus = result.status === "canceled" ? "processor_canceled" : "processor_pending";
+    } catch {
+      cancelStatus = "processor_failed";
+    }
+  }
+  await deps.store.saveSuitabilityCase({
+    id: caseId,
+    memberId: member.id,
+    staffEmail: deps.staffEmail,
+    staffRole: role,
+    note: typeof body.note === "string" ? body.note.trim() : "",
+    policyVersion: planned.plan.policyVersion,
+    minimumTermWaived: true,
+    cancelStatus,
+    createdAt: now,
+  });
+  const refunds = [];
+  for (const item of planned.plan.refunds) {
+    let status: "requested" | "processor_pending" | "processor_succeeded" | "processor_failed" = "requested";
+    let stripeRefundId: string | null = null;
+    if (item.chargeId && deps.stripe?.refunds && paymentBlockers(deps.env).length === 0) {
+      try {
+        const refund = await deps.stripe.refunds.create(
+          { charge: item.chargeId, amount: item.amountCents },
+          { idempotencyKey: `suitability:${caseId}:${item.invoiceId}` },
+        );
+        status = refundStatusFromProcessor(refund.status);
+        stripeRefundId = refund.id;
+      } catch {
+        status = "processor_failed";
+      }
+    }
+    const row = {
+      id: newId(),
+      caseId,
+      memberId: member.id,
+      invoiceId: item.invoiceId,
+      kind: item.kind,
+      amountCents: item.amountCents,
+      chargeId: item.chargeId,
+      status,
+      stripeRefundId,
+      createdAt: now,
+    };
+    await deps.store.saveRefundRequest(row);
+    refunds.push(row);
+  }
+  if (cancelStatus === "processor_canceled") {
+    await deps.store.saveMember({ ...member, status: "canceled", cancelAt: now });
+  }
+  await deps.store.addAuthAudit({ id: newId(), memberId: member.id, action: "suitability_failure_recorded", createdAt: now });
+  const completed = cancelStatus === "processor_canceled" && refunds.length > 0 && refunds.every((refund) => refund.status === "processor_succeeded");
+  return json({
+    ok: true,
+    duplicate: false,
+    minimumTermWaived: true,
+    cancelStatus,
+    refunds: refunds.map(publicRefund),
+    completed,
+    message: completed
+      ? "The processor confirmed the cancellation and each refund. No separate receipt was sent."
+      : "Suitability failure recorded by staff. The 3-month minimum does not apply. Future billing and refunds stay unconfirmed until the processor accepts them. Nothing here is a completed refund receipt.",
+  });
+}
+
+function publicRefund(refund: { invoiceId: string; amountCents: number; status: string }) {
+  return { invoiceId: refund.invoiceId, amountCents: refund.amountCents, status: refund.status, receipt: refund.status === "processor_succeeded" };
+}
+
+async function staffAppointment(body: Record<string, unknown>, deps: Deps): Promise<Response> {
+  const role = staffRole(deps.staffEmail, deps.env);
+  if (!role || !deps.staffEmail) return json({ ok: false, error: "staff_denied" }, 401);
+  const memberId = typeof body.memberId === "string" ? body.memberId : "";
+  const member = memberId ? await deps.store.findMemberById(memberId) : null;
+  if (!member) return json({ ok: false, error: "member_not_found" }, 404);
+  const parsed = appointmentInput(body);
+  if (!parsed.ok) return json({ ok: false, error: parsed.reason }, 400);
+  const now = deps.now().toISOString();
+  await deps.store.saveAppointment({
+    id: newId(),
+    memberId: member.id,
+    staffEmail: deps.staffEmail,
+    startsAt: parsed.appointment.startsAt,
+    timeZone: parsed.appointment.timeZone,
+    state: parsed.appointment.state,
+    note: typeof body.note === "string" ? body.note.trim() : "",
+    createdAt: now,
+    updatedAt: now,
+  });
+  await deps.store.addAuthAudit({ id: newId(), memberId: member.id, action: `appointment_${parsed.appointment.state}`, createdAt: now });
+  return json({
+    ok: true,
+    bookingUrl: null,
+    appointment: parsed.appointment,
+    messages: schedulingMessages(parsed.appointment),
+    message: "The visit was recorded by staff. No booking link was published, and no confirmation or reminder was sent.",
+  });
+}
+
 export async function handleHub(request: Request, deps: Deps): Promise<Response> {
   const role = staffRole(deps.staffEmail, deps.env);
   if (!role) return json({ ok: false, error: "staff_denied" }, 401);
@@ -1017,6 +1165,8 @@ export async function handleHub(request: Request, deps: Deps): Promise<Response>
   if (action === "note") return addNoteAction(body, deps);
   if (action === "usage") return usageAction(body, deps);
   if (action === "pause") return staffPause(body, deps);
+  if (action === "suitability-failure") return staffSuitability(body, deps);
+  if (action === "appointment") return staffAppointment(body, deps);
   if (action === "draft") return saveDraftAction(body, deps);
   if (action === "ghl-pull") return json(await pullGhl(deps));
   if (action === "alerts-drain") return json({ ok: true, ...(await drainAlerts(deps)) });
@@ -1263,7 +1413,7 @@ async function usageAction(body: Record<string, unknown>, deps: Deps): Promise<R
   const rolled = rollEntitlementYear(member, deps.now());
   if (rolled.rolled) await deps.store.saveMember({ ...member, ...rolled });
   const current = rolled.rolled ? { ...member, ...rolled } : member;
-  const decision = planUsage(current, kind, quantity);
+  const decision = planUsage(current, kind, quantity, deps.now());
   if (!decision.ok) return json({ ok: false, error: decision.reason }, 409);
   const result = await deps.store.recordUsage({
     memberId,

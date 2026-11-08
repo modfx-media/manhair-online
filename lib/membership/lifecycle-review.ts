@@ -66,8 +66,8 @@ function reviewEmail(email: DraftEmail): ReviewedEmail {
   if (email.template_id === "email_pause_approved" || email.template_id === "email_pause_request_acknowledgement") {
     blocks.add("pause_billing_unresolved");
   }
-  if (facing.includes("BOOKING_URL") || email.template_id.startsWith("email_fitting") || email.template_id.startsWith("email_nurture")) {
-    if (facing.includes("BOOKING") || email.cta.internal_placeholder?.includes("BOOKING")) blocks.add("booking_url_missing");
+  if (facing.includes("BOOKING_URL") || facing.includes("BOOKING")) {
+    blocks.add("public_booking_link_withheld");
   }
   const channel = email.sequence.includes("nurture") || email.template_id.includes("nurture") || email.template_id.includes("abandoned")
     ? "marketing"

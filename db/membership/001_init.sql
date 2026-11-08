@@ -25,11 +25,14 @@ CREATE TABLE IF NOT EXISTS membership_members (
   cancel_at timestamptz,
   pause_collection boolean NOT NULL DEFAULT false,
   attention text,
+  payment_grace_started_at timestamptz,
   terms_version text NOT NULL,
   last_status_event_created bigint NOT NULL DEFAULT 0,
   version integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE membership_members ADD COLUMN IF NOT EXISTS payment_grace_started_at timestamptz;
 
 -- Email is a contact field, not an account key. Drop any earlier unique index.
 DROP INDEX IF EXISTS membership_members_email_idx;
@@ -78,7 +81,50 @@ CREATE TABLE IF NOT EXISTS membership_invoices (
   kind text NOT NULL,
   status text NOT NULL,
   amount_paid integer NOT NULL,
-  amount_refunded integer NOT NULL DEFAULT 0
+  amount_refunded integer NOT NULL DEFAULT 0,
+  charge_id text
+);
+
+ALTER TABLE membership_invoices ADD COLUMN IF NOT EXISTS charge_id text;
+
+CREATE TABLE IF NOT EXISTS membership_suitability_cases (
+  id text PRIMARY KEY,
+  member_id text NOT NULL,
+  staff_email text NOT NULL,
+  staff_role text NOT NULL,
+  note text NOT NULL,
+  policy_version text NOT NULL,
+  minimum_term_waived boolean NOT NULL,
+  cancel_status text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS membership_suitability_member_idx
+  ON membership_suitability_cases (member_id);
+
+CREATE TABLE IF NOT EXISTS membership_appointments (
+  id text PRIMARY KEY,
+  member_id text NOT NULL,
+  staff_email text NOT NULL,
+  starts_at timestamptz NOT NULL,
+  time_zone text NOT NULL,
+  state text NOT NULL,
+  note text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS membership_refund_requests (
+  id text PRIMARY KEY,
+  case_id text NOT NULL,
+  member_id text NOT NULL,
+  invoice_id text NOT NULL,
+  kind text NOT NULL,
+  amount_cents integer NOT NULL,
+  charge_id text,
+  status text NOT NULL,
+  stripe_refund_id text,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS membership_ledger (

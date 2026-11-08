@@ -21,17 +21,19 @@ export const ADDON_POLICY = {
 };
 
 export const REFUND_POLICY = {
-  status: "unresolved" as const,
+  status: "suitability_exception" as const,
   summary:
-    "This application does not refund charges. Whether money already collected is refundable has not been decided.",
+    "If staff confirm a membership is unsuitable, the setup payment and collected membership charges are refunded and future billing is cancelled. The 3-month minimum does not block that case. The app does not decide suitability, and a refund is not shown as complete before the processor confirms it. Other refund reasons are not decided.",
 };
 
 export const PAUSE_POLICY_VERSION = "2026-11-07-void-collection-freeze-term";
 
 export const SCHEDULING = {
-  status: "not_connected" as const,
+  status: "manual" as const,
+  coordinator: "Griselda",
+  bookingUrl: null,
   summary:
-    "Studio scheduling is not connected. Griselda’s appointment system has not been identified. This app does not book a visit and does not confirm one.",
+    "After payment, Griselda arranges the visit manually. This site has no booking link and does not promise how soon she will reply. A confirmation exists only after staff record a real date, time, and time zone.",
 };
 
 export const FIRST_SYSTEM_LEAD = "8–12 weeks";

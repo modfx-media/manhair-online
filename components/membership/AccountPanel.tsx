@@ -114,6 +114,9 @@ export function AccountPanel({
           {member.maintenanceIncluded}. Pause days used {member.pauseDaysUsed} of 60.
         </p>
         <p>{member.paymentMethod}</p>
+        <p>
+          A failed monthly payment has 14 days before visits and new system orders are held. The membership is not cancelled, and an order already underway is not cancelled. Updating a card does not clear that hold. A verified payment does. Payment method update stays available.
+        </p>
         <p>{SCHEDULING.summary}</p>
       </section>
       <section>
