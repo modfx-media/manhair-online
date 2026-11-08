@@ -1,6 +1,6 @@
 # Membership production handoff
 
-The owner confirmed that ManHair charges go through the connected Stripe account `acct_1DhNFjGiafo5ImyE`. Charges and payouts are enabled, card payments are active, and there are no due requirements. The statement descriptor is `MODFXMEDIA, LLC`. Do not change that shared business profile. This pull request does not set `STRIPE_ACCOUNT_ID`, `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED`, or `MEMBERSHIP_PAYMENTS_LIVE` in any environment, and it does not create products, prices, portal configurations, or webhook endpoints. No sandbox context is available yet. Sales tax must be answered by the owner before any product is created. This checkout does not enable `automatic_tax`.
+The owner confirmed that ManHair charges go through the connected Stripe account `acct_1DhNFjGiafo5ImyE`. Charges and payouts are enabled, card payments are active, and there are no due requirements. The statement descriptor is `MODFXMEDIA, LLC`. Do not change that shared business profile. This pull request does not set `STRIPE_ACCOUNT_ID`, `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED`, or `MEMBERSHIP_PAYMENTS_LIVE` in any environment, and it does not create products, prices, portal configurations, or webhook endpoints. No sandbox context is available yet. The owner answered on November 7, 2026 that ManHair does not currently collect sales tax. Do not enable `automatic_tax`. Products can be created without tax once Stripe write access exists. They do not exist yet.
 
 ## What is in the branch
 
@@ -18,7 +18,7 @@ The marketing site, Payload admin, Cherry page, and consult modal are unchanged 
 
 - HighLevel searches for ManHair, Man, and Hair returned no locations. No location id is stored in this repo.
 - The owner has now confirmed merchant `acct_1DhNFjGiafo5ImyE` (statement descriptor `MODFXMEDIA, LLC`). Checkout still stays closed until the integration operator sets `STRIPE_ACCOUNT_ID` to that id and `MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED=true`, and the key's account matches. Live mode also needs `MEMBERSHIP_PAYMENTS_LIVE=true`. Those variables are not set by this code.
-- The confirmed account has no ManHair products, prices, portal configurations, or webhook endpoints. Do not create products until the owner says whether sales tax is collected.
+- The confirmed account has no ManHair products, prices, portal configurations, or webhook endpoints. Sales tax is answered: do not collect it and do not enable `automatic_tax`. Stripe write permission is still rejected, so this pull request does not create those products.
 - Vercel project `prj_KYNMITbRpNx4np9hRPZQzZuNG3fd` on team `team_FQDxgNtaJYX8DHFa0X5V7jiN` was not readable (`get_project` 404, `list_deployments` 403). There is no preview URL from this run. A GitHub preview deployment can appear only if that project’s integration builds the branch. Production builds still redirect `*.vercel.app` to `https://www.manhaironline.com`. Preview builds omit that redirect and send `X-Robots-Tag: noindex`.
 
 ## Variable names
@@ -36,7 +36,7 @@ Payments, all required before checkout will open:
 - `STRIPE_PRICE_ELITE` — $669 USD monthly
 - `STRIPE_PRICE_SETUP` — $495 USD one time
 
-One product per tier. Do not put the three tiers on one product. Do not turn on `automatic_tax` until a tax registration exists. This app does not enable it.
+One product per tier. Do not put the three tiers on one product. The owner said ManHair does not currently collect sales tax. Leave `automatic_tax` off. Do not add a tax registration for this launch.
 
 The app creates a Customer Portal session for the signed-in member's own Stripe customer id. The session configuration turns on invoice history and payment-method update, and turns off subscription cancel, subscription update, and customer update. `STRIPE_PORTAL_CONFIGURATION_ID` is no longer required. A missing processor customer id fails closed.
 
@@ -64,6 +64,9 @@ HighLevel, leave empty until the owner confirms the location:
 - `GHL_LOCATION_ID`
 - `GHL_PIPELINE_ID`
 - `GHL_PIPELINE_STAGE_ID` — required before an opportunity is created
+- `GHL_STAGE_MAP` — JSON object of hub stage name to that location's pipeline stage id. Without it, stage changes stay in the hub and are not described as synced.
+
+The separate ManHair HighLevel connection was approved but is not authenticated. Do not point these variables at a different agency location. Until that connection is authorized, the hub works locally and says HighLevel is not connected.
 - `GHL_WEBHOOK_SECRET` is not used. Inbound events must carry HighLevel's Ed25519 `X-GHL-Signature`. The public key is the one published in HighLevel's webhook guide. Do not put a shared secret in the URL.
 
 Pause:

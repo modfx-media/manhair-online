@@ -68,7 +68,7 @@ Payments fail closed. Live secret keys require `MEMBERSHIP_PAYMENTS_LIVE=true` a
 
 The 30-day split is the supported Checkout shape (one subscription, 30-day trial, one one-time setup price, `payment_method_collection: always`, no `payment_method_types`). It has not been executed in a ManHair Stripe sandbox. Readiness reports that. The webhook compares `amount_total` with the setup fee and flags a checkout that also collected the first month, or that collected nothing, instead of describing it as the intended schedule.
 
-Tax is not enabled. `automatic_tax` stays off until the owner has a registration and asks for it.
+The owner said ManHair does not currently collect sales tax. `automatic_tax` stays off.
 
 ## Access and privacy
 

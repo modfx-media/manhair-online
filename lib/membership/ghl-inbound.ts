@@ -1,7 +1,7 @@
 import { createPublicKey, verify } from "node:crypto";
 import { ghlMode, type GhlMode } from "./ghl";
 import type { AppEnv } from "./readiness";
-import type { DealRecord } from "./types";
+import { DEAL_STAGES, type DealRecord, type DealStage } from "./types";
 
 /** Published HighLevel Ed25519 key for X-GHL-Signature. Current contract after 2026-09-01. */
 export const GHL_ED25519_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
@@ -31,6 +31,7 @@ export type InboundLead = {
   locationId: string;
   contactId: string | null;
   opportunityId: string | null;
+  pipelineStageId: string | null;
   email: string;
   name: string;
   phone: string | null;
@@ -55,6 +56,7 @@ export function parseInbound(body: Record<string, unknown>): InboundLead | null 
     locationId,
     contactId: stringField(data.contactId) ?? stringField(data.id) ?? stringField(body.contactId),
     opportunityId: stringField(data.opportunityId) ?? (type.toLowerCase().includes("opportunity") ? stringField(data.id) : null),
+    pipelineStageId: stringField(data.pipelineStageId),
     email,
     name: name || email || "HighLevel lead",
     phone: stringField(data.phone),
@@ -77,11 +79,19 @@ export type MergeResult =
   | { action: "skip_location" | "ambiguous" | "unchanged" }
   | { action: "import" | "update" | "conflict"; deal: DealRecord; activity: string };
 
+export function stageIdToLocal(map: Record<string, string> | null, stageId: string | null): DealStage | null {
+  if (!map || !stageId) return null;
+  const match = Object.entries(map).find(([, id]) => id === stageId);
+  if (!match || !DEAL_STAGES.includes(match[0] as DealStage)) return null;
+  return match[0] as DealStage;
+}
+
 export function mergeInboundLead(input: {
   configuredLocation: string;
   remote: InboundLead;
   deals: DealRecord[];
   now: Date;
+  stageMap?: Record<string, string> | null;
 }): MergeResult {
   if (input.remote.locationId !== input.configuredLocation) return { action: "skip_location" };
   const byContact = input.remote.contactId
@@ -118,7 +128,8 @@ export function mergeInboundLead(input: {
   if (local.remoteUpdatedAt === input.remote.updatedAt && local.syncHash === inboundHash(input.remote)) {
     return { action: "unchanged" };
   }
-  const staffOwnsWorkflow = Boolean(local.staffEditedAt);
+  const staffIsNewer = Boolean(local.staffEditedAt) && new Date(local.staffEditedAt!).getTime() >= new Date(input.remote.updatedAt).getTime();
+  const mappedStage = stageIdToLocal(input.stageMap ?? null, input.remote.pipelineStageId);
   const deal: DealRecord = {
     ...local,
     name: input.remote.name || local.name,
@@ -129,17 +140,19 @@ export function mergeInboundLead(input: {
     locationId: input.configuredLocation,
     remoteUpdatedAt: input.remote.updatedAt,
     syncHash: inboundHash(input.remote),
-    syncStatus: staffOwnsWorkflow ? "conflict" : "updated",
-    stage: staffOwnsWorkflow ? local.stage : local.stage,
-    assignee: staffOwnsWorkflow ? local.assignee : local.assignee,
-    nextFollowUp: staffOwnsWorkflow ? local.nextFollowUp : local.nextFollowUp,
+    syncStatus: staffIsNewer ? "conflict" : mappedStage ? "updated" : "stage_map_missing",
+    stage: staffIsNewer || !mappedStage ? local.stage : mappedStage,
+    assignee: local.assignee,
+    nextFollowUp: local.nextFollowUp,
   };
   return {
-    action: staffOwnsWorkflow ? "conflict" : "update",
+    action: staffIsNewer ? "conflict" : "update",
     deal,
-    activity: staffOwnsWorkflow
-      ? "HighLevel changed this lead. Staff stage, assignee, and follow-up were kept."
-      : `Updated from HighLevel ${input.remote.type}.`,
+    activity: staffIsNewer
+      ? "HighLevel changed this lead. The newer staff stage, assignee, and follow-up were kept."
+      : mappedStage
+        ? `Stage updated from HighLevel to ${mappedStage}.`
+        : "HighLevel contact updated. Stage was not changed because GHL_STAGE_MAP is not set.",
   };
 }
 
@@ -170,7 +183,7 @@ export function readContactPage(body: unknown, locationId: string): { leads: Inb
       webhookId: `import_${id}`,
       timestamp: stringField(contact.dateUpdated) ?? new Date(0).toISOString(),
       locationId: foundLocation,
-      data: { ...contact, contactId: id, email },
+      data: { ...contact, contactId: id, email, pipelineStageId: stringField(contact.pipelineStageId) },
     });
     return parsed ? [parsed] : [];
   });
@@ -199,6 +212,7 @@ export function readOpportunityPage(body: unknown, locationId: string): { leads:
         email: stringField(contact.email) ?? stringField(opportunity.email) ?? "",
         name: stringField(opportunity.name) ?? "",
         phone: stringField(contact.phone),
+        pipelineStageId: stringField(opportunity.pipelineStageId),
       },
     });
     return parsed ? [parsed] : [];

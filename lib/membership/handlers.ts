@@ -3,7 +3,7 @@ import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches, safeAppOrigin, type PriceSnapshot } from "./checkout";
-import { syncHash, syncLead, ghlMode } from "./ghl";
+import { ghlMode, pushOpportunityStage, stageMap, syncHash, syncLead } from "./ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import {
   allowance,
@@ -999,6 +999,7 @@ async function applyInbound(deps: Deps, inbound: ReturnType<typeof parseInbound>
     remote: inbound,
     deals,
     now: deps.now(),
+    stageMap: stageMap(deps.env),
   });
   if (merged.action === "import" || merged.action === "update" || merged.action === "conflict") {
     await deps.store.saveDeal(merged.deal);
@@ -1056,6 +1057,8 @@ async function saveDealAction(body: Record<string, unknown>, deps: Deps): Promis
     deal.syncStatus = synced.status;
     deal.ghlContactId = synced.contactId ?? deal.ghlContactId;
     deal.ghlOpportunityId = synced.opportunityId ?? deal.ghlOpportunityId;
+    const stagePush = await pushOpportunityStage(deps.env, deal.ghlOpportunityId, deal.stage, deps.fetchImpl ?? fetch);
+    if (stagePush !== "not_connected") deal.syncStatus = stagePush === "pushed" ? synced.status : stagePush;
   }
   await deps.store.saveDeal(deal);
   await deps.store.addActivity({

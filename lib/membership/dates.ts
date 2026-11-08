@@ -72,6 +72,6 @@ export function billingDisclosure(start: Date, monthlyCents: number, setupCents:
     `The minimum term runs until ${formatStudio(timeline.minimumTermEndsAt)}. After that the plan is month to month. Cancellation online adds no fee. During the minimum, cancellation is scheduled for the end of the minimum rather than today.`,
     "This application does not issue refunds. A refund rule has not been approved.",
     MERCHANT.disclosure,
-    "Sales tax is not added by this checkout. Whether tax will be collected has not been decided.",
+    "ManHair does not currently collect sales tax. This checkout does not add tax.",
   ].join(" ");
 }

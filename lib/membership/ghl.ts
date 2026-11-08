@@ -42,6 +42,43 @@ export function chooseContact(
   return { action: "create" };
 }
 
+export function stageMap(env: AppEnv): Record<string, string> | null {
+  const raw = env.GHL_STAGE_MAP?.trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const entries = Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0);
+    return entries.length ? Object.fromEntries(entries.map(([key, value]) => [key, value.trim()])) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function pushOpportunityStage(
+  env: AppEnv,
+  opportunityId: string | null,
+  stage: string,
+  fetchImpl: typeof fetch,
+): Promise<"not_connected" | "stage_map_missing" | "pushed" | "push_failed"> {
+  if (ghlMode(env) === "off") return "not_connected";
+  const mapped = stageMap(env)?.[stage];
+  if (!opportunityId || !mapped) return "stage_map_missing";
+  const response = await fetchWithRetry(fetchImpl, `https://services.leadconnectorhq.com/opportunities/${encodeURIComponent(opportunityId)}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${env.GHL_API_TOKEN}`,
+      Version: "2021-07-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ locationId: env.GHL_LOCATION_ID, pipelineStageId: mapped }),
+  });
+  if (!response?.ok) return "push_failed";
+  const body = (await response.json().catch(() => ({}))) as { opportunity?: { locationId?: string } };
+  if (body.opportunity?.locationId && body.opportunity.locationId !== env.GHL_LOCATION_ID?.trim()) return "push_failed";
+  return "pushed";
+}
+
 export function syncHash(input: { stage: string; assignee: string; followUp: string }): string {
   return `${input.stage}|${input.assignee}|${input.followUp}`;
 }

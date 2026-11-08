@@ -80,6 +80,7 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
     <div className="grid gap-8">
       <section className="grid gap-2 rounded-md border border-ink-300 bg-ink-100 p-4 text-sm leading-6">
         <p>{data.freshness}</p>
+        <p>Stage and follow-up changes stay in this hub. They reach HighLevel only after the ManHair location is authorized. Another agency location is not used.</p>
         <button
           className="mh-btn mh-btn-ghost w-fit"
           type="button"
@@ -194,9 +195,9 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
                 await refresh();
               }}
             >
-              <label className="text-sm">
+              <label className="text-sm sm:col-span-3">
                 Stage
-                <select name="stage" defaultValue={deal.stage} className="mh-input mt-1">
+                <select name="stage" defaultValue={deal.stage} className="mh-input mt-1 min-h-11 text-base">
                   {data.stages.map((item) => (
                     <option key={item}>{item}</option>
                   ))}
@@ -211,13 +212,13 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
                   ))}
                 </select>
               </label>
-              <label className="text-sm">
+              <label className="text-sm sm:col-span-3">
                 Next follow-up
-                <input name="nextFollowUp" type="date" defaultValue={deal.nextFollowUp ?? ""} className="mh-input mt-1" />
+                <input name="nextFollowUp" type="date" defaultValue={deal.nextFollowUp ?? ""} className="mh-input mt-1 min-h-11 text-base" />
               </label>
               <div className="flex flex-wrap gap-2 sm:col-span-3">
-                <button className="mh-btn mh-btn-ghost w-fit" type="submit">
-                  Save deal
+                <button className="mh-btn mh-btn-primary min-h-11 w-full sm:w-fit" type="submit">
+                  Save stage and follow-up
                 </button>
                 <button
                   className="mh-btn mh-btn-ghost w-fit"

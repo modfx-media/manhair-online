@@ -51,7 +51,7 @@ There is no accessible Stripe sandbox for this account yet. Do not mark this sec
 
 After the owner authorizes a sandbox on `acct_1DhNFjGiafo5ImyE`:
 
-1. Answer whether ManHair collects sales tax before any product is created. This checkout does not enable `automatic_tax`.
+1. Sales tax is settled: ManHair does not currently collect it. Leave `automatic_tax` off. Create products only after Stripe write access exists.
 2. Create one product per tier and the setup price. None exist today.
 3. Put the price ids in the environment. Do not change the shared business profile or the statement descriptor `MODFXMEDIA, LLC`.
 4. Complete one Checkout in the sandbox.
