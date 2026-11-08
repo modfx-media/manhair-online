@@ -59,20 +59,20 @@ export function JoinForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-1 text-sm font-semibold text-ink-900">
           First name
-          <input name="firstName" required autoComplete="given-name" className="mh-input" />
+          <input name="firstName" required autoComplete="given-name" className="mh-input min-h-11 text-base" />
         </label>
         <label className="grid gap-1 text-sm font-semibold text-ink-900">
           Last name
-          <input name="lastName" required autoComplete="family-name" className="mh-input" />
+          <input name="lastName" required autoComplete="family-name" className="mh-input min-h-11 text-base" />
         </label>
       </div>
       <label className="grid gap-1 text-sm font-semibold text-ink-900">
         Email
-        <input name="email" type="email" required autoComplete="email" className="mh-input" />
+        <input name="email" type="email" required autoComplete="email" className="mh-input min-h-11 text-base" />
       </label>
       <label className="grid gap-1 text-sm font-semibold text-ink-900">
         Phone <span className="font-normal text-ink-600">(optional)</span>
-        <input name="phone" type="tel" autoComplete="tel" className="mh-input" />
+        <input name="phone" type="tel" autoComplete="tel" className="mh-input min-h-11 text-base" />
       </label>
       <label className="flex items-start gap-3 text-sm leading-6 text-ink-800">
         <input name="termsAccepted" type="checkbox" required className="mt-1" />

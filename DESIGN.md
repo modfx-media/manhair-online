@@ -1,0 +1,37 @@
+# ManHair membership pages
+
+Public membership and join pages use the existing studio identity. They are not a separate product theme.
+
+## Type and color
+
+- Body: Manrope, already loaded as `--font-sans`.
+- Display: Outfit, already loaded as `--font-display` through `.mh-display`.
+- Canvas `#FAF7F1`, secondary surface `#F5EFE3`, ink `#1A130E` and `#2A211A`.
+- Accent copper `#C9A24A`. Primary buttons keep the site’s red-to-copper control.
+- Prices use tabular figures. Body measure stays near 65 characters. Inputs stay at least 16px.
+
+## Hierarchy
+
+- One primary action on the membership page: “Start with Signature”. The same label repeats after the comparison.
+- Each tier has its own selector: “Select Essential”, “Select Signature”, or “Select Elite”.
+- Signature is the default when join is opened without a tier. The card says “Default”. It does not say the plan is the most popular.
+- Join is the review. The submit label is “Continue to secure checkout”. On this preview that control stays disabled because payments are not connected.
+
+## Facts on the page
+
+- $495 is due today and is credited toward the first system.
+- $449, $559, and $669 are the monthly amounts, first charged 30 days later, then each calendar month.
+- 13 visits a year, about every 4 weeks. That cadence is not the billing month.
+- Essential 4 systems and 9 maintenance visits. Signature 6 and 7. Elite 8 and 5, and only Elite mentions priority scheduling.
+- First system lead time is 8–12 weeks. Billing can start before the fitting.
+- Minimum term is 3 months, then month to month. The joined rate locks for 24 months. Cancellation during the minimum is scheduled for the end of the minimum and adds no fee.
+- Founding pricing is off and is not offered.
+- No sales tax is added at this checkout. Charges show as MODFXMEDIA, LLC.
+- Studio scheduling is not connected. The consultation request does not book a time.
+- A checkout return does not mean the payment succeeded. Only a verified processor event does.
+
+## Motion and targets
+
+- No entrance animation on these pages. Existing button color transitions stay.
+- Controls used to choose or continue are at least 44px tall.
+- Preview deployments show a review banner. They are not the live site and cannot take a real charge.

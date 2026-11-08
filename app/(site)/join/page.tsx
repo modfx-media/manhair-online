@@ -62,6 +62,10 @@ export default async function JoinPage({
           {blockers[0]?.publicMessage} Checkout cannot start.
         </p>
       ) : null}
+      <section className="rounded-md border border-ink-300 bg-ink-100 p-5 text-base leading-7">
+        <h2 className="font-display text-2xl tracking-[-0.02em]">After checkout</h2>
+        <p className="mt-3">Returning from the processor does not confirm a payment. A charge is recorded only after a verified processor event. The first system typically takes 8–12 weeks, and billing can begin before that fitting. Studio scheduling is not connected, so checkout does not book a visit.</p>
+      </section>
       <JoinForm
         tier={tier}
         paymentsReady={blockers.length === 0}
