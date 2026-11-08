@@ -40,7 +40,12 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return {
-      beforeFiles: [],
+      beforeFiles: [
+        {
+          source: "/stripe-sandbox-setup.json",
+          destination: "/api/membership/stripe-sandbox-setup/",
+        },
+      ],
       afterFiles: [],
       fallback: [
         {

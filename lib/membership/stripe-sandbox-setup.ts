@@ -47,16 +47,36 @@ export const SANDBOX_CATALOG: readonly CatalogItem[] = [
   },
 ];
 
-export type SetupDecision =
-  | { run: false; reason: "not_preview" | "wrong_branch" | "setup_not_requested" | "test_key_absent" }
-  | { run: true };
+export type SetupSkipReason = "not_preview" | "wrong_branch" | "setup_not_requested" | "test_key_absent" | "test_key_rejected";
+
+export type SetupDecision = { run: false; reason: SetupSkipReason } | { run: true };
+
+export type KeyShape = "absent" | "test" | "live" | "unrecognized";
+
+/** Removes wrapping quotes and whitespace. Does not log or return the key. */
+export function normalizedStripeKey(secret: string | undefined): string {
+  let key = secret?.trim() ?? "";
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim();
+  }
+  return key;
+}
+
+export function stripeKeyShape(secret: string | undefined): KeyShape {
+  const key = normalizedStripeKey(secret);
+  if (!key) return "absent";
+  if (key.startsWith("rk_test_") || key.startsWith("sk_test_")) return "test";
+  if (key.startsWith("rk_live_") || key.startsWith("sk_live_")) return "live";
+  return "unrecognized";
+}
 
 export function sandboxSetupDecision(env: Record<string, string | undefined>): SetupDecision {
   if (env.VERCEL_ENV !== "preview") return { run: false, reason: "not_preview" };
   if (env.VERCEL_GIT_COMMIT_REF !== SANDBOX_BRANCH) return { run: false, reason: "wrong_branch" };
   if (env.MEMBERSHIP_STRIPE_SETUP !== "apply") return { run: false, reason: "setup_not_requested" };
-  const key = env.STRIPE_SECRET_KEY?.trim() ?? "";
-  if (!key.startsWith("rk_test_") && !key.startsWith("sk_test_")) return { run: false, reason: "test_key_absent" };
+  const shape = stripeKeyShape(env.STRIPE_SECRET_KEY);
+  if (shape === "absent") return { run: false, reason: "test_key_absent" };
+  if (shape !== "test") return { run: false, reason: "test_key_rejected" };
   return { run: true };
 }
 
@@ -239,4 +259,14 @@ export async function runSandboxSetup(stripe: SandboxStripe): Promise<SandboxRep
     });
   }
   return report;
+}
+
+export async function previewSandboxBody(env: Record<string, string | undefined>, connect: () => SandboxStripe) {
+  const decision = sandboxSetupDecision(env);
+  const keyShape = stripeKeyShape(env.STRIPE_SECRET_KEY);
+  if (!decision.run) {
+    return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: false as const, reason: decision.reason, keyShape };
+  }
+  const report = await runSandboxSetup(connect());
+  return { scope: "stripe_sandbox_setup", phase: "runtime" as const, run: true as const, keyShape, ...report };
 }

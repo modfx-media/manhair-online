@@ -3,10 +3,12 @@ import { test } from "node:test";
 import {
   APPROVED_STRIPE_ACCOUNT,
   SANDBOX_CATALOG,
+  previewSandboxBody,
   priceDecision,
   redactStripeText,
   runSandboxSetup,
   sandboxSetupDecision,
+  stripeKeyShape,
   type SandboxPrice,
   type SandboxStripe,
 } from "../../lib/membership/stripe-sandbox-setup";
@@ -31,8 +33,26 @@ test("sandbox setup stays off outside the preview branch and without a test key"
   if (!production.run) assert.equal(production.reason, "not_preview");
   if (!otherBranch.run) assert.equal(otherBranch.reason, "wrong_branch");
   if (!unrequested.run) assert.equal(unrequested.reason, "setup_not_requested");
-  if (!liveKey.run) assert.equal(liveKey.reason, "test_key_absent");
+  if (!liveKey.run) assert.equal(liveKey.reason, "test_key_rejected");
+  assert.equal(stripeKeyShape(undefined), "absent");
+  assert.equal(stripeKeyShape('"rk_test_example"'), "test");
+  assert.equal(sandboxSetupDecision({ ...previewEnv, STRIPE_SECRET_KEY: "'rk_test_example'" }).run, true);
   assert.equal(sandboxSetupDecision(previewEnv).run, true);
+});
+
+test("runtime setup does not call Stripe or echo the key when the key is absent", async () => {
+  let called = false;
+  const secret = "rk_test_example_secret";
+  const skipped = await previewSandboxBody({ ...previewEnv, STRIPE_SECRET_KEY: undefined }, () => {
+    called = true;
+    throw new Error(secret);
+  });
+  assert.equal(called, false);
+  assert.equal(skipped.run, false);
+  if (!skipped.run) assert.equal(skipped.reason, "test_key_absent");
+  assert.equal(skipped.keyShape, "absent");
+  assert.equal(JSON.stringify(skipped).includes(secret), false);
+  assert.equal(JSON.stringify(skipped).includes("rk_test_"), false);
 });
 
 test("redaction removes keys and a live price is never accepted", () => {
