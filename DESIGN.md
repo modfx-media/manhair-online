@@ -22,7 +22,10 @@ Public membership and join pages use the existing studio identity. They are not 
 - $495 is due today and is credited toward the first system.
 - $449, $559, and $669 are the monthly amounts, first charged 30 days later, then each calendar month.
 - 13 visits a year, about every 4 weeks. That cadence is not the billing month.
-- Essential 4 systems and 9 maintenance visits. Signature 6 and 7. Elite 8 and 5, and only Elite mentions priority scheduling.
+- Essential is 4 hair systems and 9 maintenance visits. Signature is 6 and 7. Elite is 8 and 5, and only Elite includes priority booking. Each pair adds to 13 scheduled visits. The packages page and the join review both read `packageFact()`.
+- A hair system is a counted custom system. A maintenance visit is a studio visit that is not a new system. The page does not describe cut, color, adhesive, materials, or a replacement calendar.
+- Twelve monthly charges may be shown as $5,388, $6,708, and $8,028. That line excludes the $495 setup and is not an annual prepay.
+- An additional fitted system is $849 and an extra maintenance visit is $225. Checkout does not sell them.
 - First system lead time is 8–12 weeks. Billing can start before the fitting.
 - Minimum term is 3 months, then month to month. The joined rate locks for 24 months. Cancellation during the minimum is scheduled for the end of the minimum and adds no fee.
 - Founding pricing is off and is not offered.

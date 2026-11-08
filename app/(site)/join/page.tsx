@@ -3,6 +3,7 @@ import Link from "next/link";
 import { JoinForm } from "@/components/membership/JoinForm";
 import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { billingDisclosure, billingTimeline, formatStudio } from "@/lib/membership/dates";
+import { PackageReview } from "@/components/membership/PackageReview";
 import { TIERS, formatUsd, isTierId } from "@/lib/membership/offer";
 import { foundingConfig, paymentBlockers, setupCentsFor } from "@/lib/membership/readiness";
 
@@ -43,6 +44,9 @@ export default async function JoinPage({
             <dd className="mt-1 text-sm leading-6 text-ink-700">Scheduled {formatStudio(timeline.firstRecurringAt)}, then each calendar month. The first system typically takes 8–12 weeks and is not promised in those 30 days.</dd>
           </div>
         </dl>
+        <div className="mt-5">
+          <PackageReview id={tier} />
+        </div>
         <div className="mt-4 flex flex-wrap gap-2 text-sm">
           {(["essential", "signature", "elite"] as const).map((id) => (
             <Link key={id} href={`/join/?tier=${id}`} className={`rounded-full border px-3 py-2 ${id === tier ? "border-copper-500 bg-ink-100" : "border-ink-300"}`} aria-current={id === tier ? "page" : undefined}>
