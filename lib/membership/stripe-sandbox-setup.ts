@@ -122,33 +122,32 @@ export function sandboxSetupDecision(env: Record<string, string | undefined>): S
   return { run: true };
 }
 
-export function redactStripeText(value: string): string {
-  return value
-    .replace(/\b(?:rk|sk)_(?:test|live)_[A-Za-z0-9]+/g, "[redacted-key]")
-    .replace(/\bwhsec_[A-Za-z0-9]+/g, "[redacted-webhook]")
-    .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted-database]")
-    .slice(0, 300);
-}
-
 export type Probe = {
   resource: string;
   action: "read" | "write";
   ok: boolean;
   httpStatus: number | null;
   code: string | null;
-  message: string | null;
 };
 
+function allowlistedCode(value: unknown): string | null {
+  if (typeof value !== "string" || !/^[a-z0-9_]+$/i.test(value) || value.length > 80) return null;
+  return value;
+}
+
+function allowlistedStatus(value: unknown): number | null {
+  return typeof value === "number" && value >= 100 && value <= 599 ? value : null;
+}
+
+/** Provider text is dropped. Only our resource, the action, the HTTP status, and a token code remain. */
 export function probeFromError(resource: string, action: "read" | "write", error: unknown): Probe {
-  const record = error && typeof error === "object" ? (error as { statusCode?: number; code?: string; message?: string }) : {};
-  const message = redactStripeText(typeof record.message === "string" ? record.message : "stripe_error");
+  const record = error && typeof error === "object" ? (error as { statusCode?: number; code?: string }) : {};
   return {
     resource,
     action,
     ok: false,
-    httpStatus: typeof record.statusCode === "number" ? record.statusCode : null,
-    code: typeof record.code === "string" ? record.code : null,
-    message,
+    httpStatus: allowlistedStatus(record.statusCode),
+    code: allowlistedCode(record.code),
   };
 }
 
@@ -205,7 +204,7 @@ export function priceDecision(price: SandboxPrice, item: CatalogItem): "accept" 
 async function probe<T>(resource: string, action: "read" | "write", run: () => Promise<T>, probes: Probe[]): Promise<T | null> {
   try {
     const value = await run();
-    probes.push({ resource, action, ok: true, httpStatus: 200, code: null, message: null });
+    probes.push({ resource, action, ok: true, httpStatus: 200, code: null });
     return value;
   } catch (error) {
     probes.push(probeFromError(resource, action, error));
@@ -245,7 +244,7 @@ export async function runSandboxSetup(stripe: SandboxStripe): Promise<SandboxRep
   await probe("Webhook endpoints", "read", () => stripe.listWebhookEndpoints(), probes);
 
   const portals = await probe("Customer portal configurations", "read", () => stripe.listPortals(), probes);
-  const existingPortal = portals?.find((portal) => !portal.livemode && portal.sandbox && portal.featuresMatch) ?? null;
+  const existingPortal = portals?.find((portal) => !portal.livemode && portal.sandbox) ?? null;
   if (existingPortal) report.portalConfigurationId = existingPortal.id;
   else if (portals) {
     const created = await probe("Customer portal configurations", "write", () => stripe.createPortal(), probes);
@@ -273,7 +272,6 @@ export async function runSandboxSetup(stripe: SandboxStripe): Promise<SandboxRep
         ok: false,
         httpStatus: null,
         code: decision,
-        message: `${item.lookupKey} was not reused`,
       });
       continue;
     }
@@ -289,7 +287,6 @@ export async function runSandboxSetup(stripe: SandboxStripe): Promise<SandboxRep
         ok: false,
         httpStatus: null,
         code: "created_price_rejected",
-        message: `${item.lookupKey} did not match the published amount`,
       });
       continue;
     }

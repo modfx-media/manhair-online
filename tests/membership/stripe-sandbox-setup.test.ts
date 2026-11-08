@@ -5,7 +5,7 @@ import {
   SANDBOX_CATALOG,
   previewSandboxBody,
   priceDecision,
-  redactStripeText,
+  probeFromError,
   runSandboxSetup,
   sandboxSetupDecision,
   stripeKeyClass,
@@ -75,8 +75,35 @@ test("runtime setup does not call Stripe or echo the key when the key is absent"
   assert.equal(JSON.stringify(skipped).includes("rk_test_"), false);
 });
 
-test("redaction removes keys and a live price is never accepted", () => {
-  assert.equal(redactStripeText("rejected rk_test_abc123 and whsec_secret"), "rejected [redacted-key] and [redacted-webhook]");
+test("provider error text never leaves the setup report", async () => {
+  const leaked = "rk_test_hiddenwxyz1234";
+  const probe = probeFromError("Products", "write", Object.assign(new Error(`permission denied for ${leaked} suffix wxyz`), {
+    statusCode: 403,
+    code: "more_permissions_required",
+  }));
+  assert.equal(probe.resource, "Products");
+  assert.equal(probe.action, "write");
+  assert.equal(probe.httpStatus, 403);
+  assert.equal(probe.code, "more_permissions_required");
+  assert.equal("message" in probe, false);
+  const body = await previewSandboxBody(previewEnv, () => ({
+    async account() {
+      throw Object.assign(new Error(`bearer ${leaked}`), { statusCode: 403, code: "product_write extra" });
+    },
+    async listPrices() { return []; },
+    async listProducts() { return []; },
+    async createProduct() { return { id: "prod_x" }; },
+    async createPrice() { throw new Error(leaked); },
+    async listPortals() { return []; },
+    async createPortal() { return { id: "bpc_x" }; },
+    async listWebhookEndpoints() { return { count: 0 }; },
+    async listCustomers() { return { count: 0 }; },
+  }));
+  const encoded = JSON.stringify(probe) + JSON.stringify(body);
+  assert.equal(encoded.includes(leaked), false);
+  assert.equal(encoded.includes("wxyz"), false);
+  assert.equal(encoded.includes("permission denied"), false);
+  assert.equal(encoded.includes("message"), false);
   const live: SandboxPrice = {
     id: "price_live",
     lookupKey: SANDBOX_CATALOG[0]!.lookupKey,
