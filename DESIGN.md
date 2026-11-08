@@ -33,6 +33,15 @@ Public membership and join pages use the existing studio identity. They are not 
 - Studio scheduling is not connected. The consultation request does not book a time.
 - A checkout return does not mean the payment succeeded. Only a verified processor event does.
 
+## Phone and motion
+
+- The plan picker is a three-part radio group. All three plans stay on the page. Nothing is hidden behind a swipe.
+- A single bottom bar on small screens continues with the selected plan. The page keeps space beneath the last section so the bar does not cover it. Desktop does not use that bar.
+- Prices and terms are painted in their final state. They do not fade in.
+- A 2px copper line tracks scroll with `transform: scaleX` only. Pressed actions scale to 0.96 for 150ms.
+- `prefers-reduced-motion: reduce` hides that line and the picker jumps instead of smooth-scrolling.
+- The words and prices are in the server HTML. Motion is not required to read or choose a plan.
+
 ## Motion and targets
 
 - No entrance animation on these pages. Existing button color transitions stay.

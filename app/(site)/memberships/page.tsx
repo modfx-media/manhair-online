@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PlanStudio } from "@/components/membership/PlanStudio";
 import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { billingTimeline, formatStudio } from "@/lib/membership/dates";
 import { MERCHANT, SCHEDULING, formatUsd } from "@/lib/membership/offer";
-import { packageFacts, SHARED_PACKAGE, SYSTEM_VS_MAINTENANCE, VISIT_CADENCE } from "@/lib/membership/packages";
+import { PACKAGE_PAGE, packageFacts, SHARED_PACKAGE, SYSTEM_VS_MAINTENANCE, VISIT_CADENCE } from "@/lib/membership/packages";
 
 export const dynamic = "force-dynamic";
 
@@ -13,24 +14,23 @@ export const metadata: Metadata = {
     "Compare ManHair memberships. Essential, Signature, and Elite each include 13 studio visits a year. They differ by how many of those visits are hair systems.",
 };
 
-const PRIMARY = "Start with Signature";
-
 export default function MembershipsPage() {
   const plans = packageFacts();
   const firstMonthly = formatStudio(billingTimeline(new Date()).firstRecurringAt);
   return (
-    <div className="bg-ink-50 text-ink-900">
+    <div className="bg-ink-50 pb-28 text-ink-900 sm:pb-0">
       <section className="mx-auto grid max-w-6xl gap-8 px-5 py-14 md:px-8 md:py-20">
         <PreviewNotice />
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-700">Orange studio</p>
-        <h1 className="mh-display max-w-[18ch] text-balance text-[clamp(2.6rem,6vw,4.5rem)] leading-[1.08] tracking-[-0.02em]">
-          Same 13 visits. A different mix of systems.
+        <h1 className="mh-display max-w-[14ch] text-balance text-[clamp(2.6rem,6vw,4.5rem)] leading-[1.08] tracking-[-0.02em]">
+          {PACKAGE_PAGE.headline}
         </h1>
+        <p className="max-w-[65ch] text-pretty text-lg leading-relaxed text-ink-800">{PACKAGE_PAGE.subhead}</p>
         <p className="max-w-[65ch] text-pretty text-lg leading-relaxed text-ink-800">{SYSTEM_VS_MAINTENANCE}</p>
         <p className="max-w-[65ch] text-pretty text-lg leading-relaxed text-ink-800">{VISIT_CADENCE}</p>
         <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
           <Link href="/join/?tier=signature" className="mh-btn mh-btn-primary mh-btn-lg min-h-11">
-            {PRIMARY}
+            {PACKAGE_PAGE.primaryCta}
           </Link>
           <Link href="/consultation/" className="mh-btn mh-btn-ghost min-h-11">
             Request a consultation
@@ -38,39 +38,7 @@ export default function MembershipsPage() {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-6xl gap-5 px-5 pb-8 md:grid-cols-3 md:px-8">
-        {plans.map((plan) => (
-          <article
-            key={plan.id}
-            className={`flex flex-col rounded-md bg-white p-6 md:p-8 ${
-              plan.isDefault ? "order-first border-2 border-copper-500 md:order-none" : "border border-ink-300"
-            }`}
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-700">{plan.isDefault ? "Default" : "Plan"}</p>
-            <h2 className="mt-2 font-display text-4xl tracking-[-0.02em]">{plan.name}</h2>
-            <p className="mt-6 font-display text-6xl tabular-nums tracking-[-0.03em]">{formatUsd(plan.monthlyCents)}</p>
-            <p className="text-base leading-6 text-ink-800">per month, first charged 30 days after signup</p>
-            <dl className="mt-8 grid grid-cols-2 gap-4 border-y border-ink-300 py-5">
-              <div>
-                <dt className="text-sm leading-5 text-ink-700">Hair systems</dt>
-                <dd className="mt-1 font-display text-5xl tabular-nums">{plan.systems}</dd>
-                <dd className="text-sm">a year</dd>
-              </div>
-              <div>
-                <dt className="text-sm leading-5 text-ink-700">Maintenance visits</dt>
-                <dd className="mt-1 font-display text-5xl tabular-nums">{plan.maintenance}</dd>
-                <dd className="text-sm">a year</dd>
-              </div>
-            </dl>
-            <p className="mt-5 text-base font-semibold leading-7">{plan.sumLabel}.</p>
-            <p className="mt-2 text-base leading-7">{plan.difference}</p>
-            <p className="mt-3 text-sm leading-6 text-ink-700">{plan.annualNote}</p>
-            <Link href={`/join/?tier=${plan.id}`} className="mh-btn mh-btn-primary mt-8 min-h-11">
-              {plan.selectLabel}
-            </Link>
-          </article>
-        ))}
-      </section>
+      <PlanStudio plans={plans} />
 
       <section className="border-y border-ink-300 bg-ink-100" aria-labelledby="mix-heading">
         <div className="mx-auto grid max-w-6xl gap-8 px-5 py-12 md:px-8">
@@ -152,7 +120,7 @@ export default function MembershipsPage() {
           <p className="mt-2 text-base leading-7">No. It is twelve monthly charges added together, and it leaves out the setup. There is no annual discount.</p>
         </details>
         <Link href="/join/?tier=signature" className="mh-btn mh-btn-primary mh-btn-lg mt-4 min-h-11 w-fit">
-          {PRIMARY}
+          {PACKAGE_PAGE.primaryCta}
         </Link>
         <p className="text-sm leading-6 text-ink-700">
           Not ready to join? <Link className="underline" href="/consultation/">Request a consultation</Link>. That request does not start a payment or book a time.

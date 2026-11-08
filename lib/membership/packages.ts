@@ -37,6 +37,9 @@ export type PackageFact = {
   sumLabel: string;
   difference: string;
   annualNote: string;
+  choiceHeadline: string;
+  whyChoose: string[];
+  bestFor: string;
 };
 
 export function packageFact(id: TierId): PackageFact {
@@ -56,16 +59,48 @@ export function packageFact(id: TierId): PackageFact {
     priorityBooking: tier.priorityBooking,
     isDefault: tier.recommended,
     annualMonthlyChargesCents,
-    selectLabel: `Select ${tier.name}`,
+    selectLabel: `Choose ${tier.name}`,
+    choiceHeadline: packageHeadline(id),
     mixLabel: `${tier.systems} hair systems + ${tier.maintenance} maintenance visits a year`,
     sumLabel: `${tier.systems} + ${tier.maintenance} = ${visits} scheduled studio visits a year`,
     difference: packageDifference(id),
     annualNote: `Twelve monthly charges add up to ${formatUsd(annualMonthlyChargesCents)}. That figure does not include the ${formatUsd(SETUP_CENTS)} setup, and it is not a discounted annual plan.`,
+    whyChoose: packageWhy(id),
+    bestFor: packageBestFor(id),
   };
 }
 
 export function packageFacts(): PackageFact[] {
   return PACKAGE_ORDER.map(packageFact);
+}
+
+export const PACKAGE_PAGE = {
+  headline: "Your hair. Your terms.",
+  subhead: "Three plans. The same 13 visits a year. Pick the mix of new systems and the monthly price.",
+  primaryCta: "Choose Signature",
+} as const;
+
+export function packageHeadline(id: TierId): string {
+  if (id === "essential") return "Lower monthly price, fewer new systems.";
+  if (id === "signature") return "Our default pick.";
+  return "Most new systems, priority booking.";
+}
+
+export function packageWhy(id: TierId): string[] {
+  const tier = TIERS[id];
+  if (id === "essential") {
+    return ["Lowest monthly price of the three plans", "Same 13 visits a year as every other plan"];
+  }
+  if (id === "signature") {
+    return ["More new systems than Essential", `${tier.systems} systems plus ${tier.maintenance} maintenance visits`];
+  }
+  return ["Most new systems of any plan", "Priority booking. Not a guaranteed appointment."];
+}
+
+export function packageBestFor(id: TierId): string {
+  if (id === "essential") return "Best for those who want the lowest monthly cost and fewer new systems a year.";
+  if (id === "signature") return "Best for those who want more new systems a year without the top tier.";
+  return "Best for those who want the most new systems a year and priority booking.";
 }
 
 export function packageDifference(id: TierId): string {

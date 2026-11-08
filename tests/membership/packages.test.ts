@@ -23,8 +23,12 @@ test("package facts are the locked mix and do not invent a popularity claim", ()
     assert.equal(fact.visits, 13);
     assert.equal(fact.annualMonthlyChargesCents, fact.monthlyCents * 12);
     assert.match(fact.sumLabel, /13 scheduled studio visits/);
-    assert.doesNotMatch(`${fact.difference} ${fact.annualNote} ${fact.mixLabel}`, /most popular|most guys|french lace|unlimited|warranty|prepay/i);
+    assert.equal(fact.whyChoose.length, 2);
+    assert.doesNotMatch(`${fact.difference} ${fact.choiceHeadline} ${fact.whyChoose.join(" ")} ${fact.bestFor} ${fact.annualNote} ${fact.mixLabel}`, /most popular|most guys|french lace|unlimited|warranty|prepay|athlete|swimmer|first-timer|lifespan|durability|standard of care|fitting scheduled/i);
   }
+  assert.deepEqual(facts.map((fact) => fact.selectLabel), ["Choose Essential", "Choose Signature", "Choose Elite"]);
+  assert.match(facts[2]!.whyChoose.join(" "), /Priority booking/);
+  assert.doesNotMatch(facts[0]!.whyChoose.join(" ") + facts[1]!.whyChoose.join(" "), /Priority booking/);
   assert.match(facts[2]!.difference, /only priority booking/);
   assert.doesNotMatch(facts[0]!.difference, /priority booking is included/i);
   assert.equal(SHARED_PACKAGE.setupCents, 49500);
@@ -37,8 +41,11 @@ test("package facts are the locked mix and do not invent a popularity claim", ()
 test("membership and join pages render the shared package facts", () => {
   const memberships = readFileSync("app/(site)/memberships/page.tsx", "utf8");
   const join = readFileSync("app/(site)/join/page.tsx", "utf8");
+  const studio = readFileSync("components/membership/PlanStudio.tsx", "utf8");
   assert.match(memberships, /packageFacts\(/);
+  assert.match(memberships, /PlanStudio/);
+  assert.match(studio, /\/join\/\?tier=\$\{plan\.id\}/);
+  assert.match(studio, /prefers-reduced-motion: reduce/);
   assert.match(join, /PackageReview/);
-  assert.doesNotMatch(memberships + join, /Most guys|French lace|most popular/);
-  assert.match(memberships, /\/join\/\?tier=\$\{plan\.id\}/);
+  assert.doesNotMatch(memberships + join + studio, /Most guys|French lace|most popular|athlete|swimmer/);
 });

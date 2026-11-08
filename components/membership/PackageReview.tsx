@@ -24,9 +24,18 @@ export function PackageReview({ id }: { id: TierId }) {
           <dd className="text-sm leading-6">a year</dd>
         </div>
       </dl>
-      <p className="mt-4 text-base leading-7">{plan.mixLabel}.</p>
+      <p className="mt-4 text-base leading-7">{plan.choiceHeadline}</p>
+      <p className="mt-2 text-base leading-7">{plan.mixLabel}.</p>
       <p className="mt-2 text-base font-semibold leading-7">{plan.sumLabel}.</p>
       <p className="mt-2 text-base leading-7">{plan.difference}</p>
+      <h3 className="mt-4 text-sm font-semibold uppercase tracking-[0.12em] text-ink-700">Why this one</h3>
+      <ul className="mt-2 grid gap-2 text-base leading-7">
+        {plan.whyChoose.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+      <h3 className="mt-4 text-sm font-semibold uppercase tracking-[0.12em] text-ink-700">Best for</h3>
+      <p className="mt-2 text-base leading-7">{plan.bestFor}</p>
       <p className="mt-2 text-sm leading-6 text-ink-700">
         Monthly price {formatUsd(plan.monthlyCents)}. {plan.annualNote}
       </p>
