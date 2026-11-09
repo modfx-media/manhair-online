@@ -449,6 +449,63 @@ test("a paid checkout re-fetches the subscription when no status was stored", as
   assert.equal((await context.store.listAlerts()).filter((alert) => alert.kind === "setup_paid" && alert.audience === "customer").length, 1);
 });
 
+test("subscription retrieve stays bound to the Stripe resource", async () => {
+  const trialEnd = 1_700_000_000 + 30 * 86400;
+  class Subscriptions {
+    retrieved: string[] = [];
+    async update() {
+      return {};
+    }
+    async retrieve(id: string) {
+      return this._makeRequest(id);
+    }
+    _makeRequest(id: string) {
+      this.retrieved.push(id);
+      return { status: "trialing", cancel_at: null, pause_collection: null, trial_end: trialEnd, current_period_end: trialEnd };
+    }
+  }
+  const subscriptions = new Subscriptions();
+  const stripe = fakeStripe();
+  stripe.subscriptions = subscriptions;
+  const context = deps({
+    stripe,
+    constructEvent: (raw) => JSON.parse(raw),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+    }),
+    fetchImpl: async () => new Response("ok", { status: 200 }),
+  });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("bound@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("bound@example.com"))[0]!;
+  await context.store.saveMember({ ...member, stripeSubscriptionId: "sub_bound", stripeCustomerId: "cus_bound" });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_bound_invoice",
+      type: "invoice.paid",
+      livemode: false,
+      created: 41,
+      data: { object: {
+        id: "in_bound",
+        customer: "cus_bound",
+        amount_paid: 49500,
+        billing_reason: "subscription_create",
+        metadata: { member_id: member.id },
+        lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] },
+      } },
+    }),
+  }), context);
+  assert.equal(response.status, 200);
+  assert.deepEqual(subscriptions.retrieved, ["sub_bound"]);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.status, "trialing");
+  assert.equal(saved?.setupPaid, true);
+});
+
 test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
   const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
   await handleCheckout(checkoutRequest(checkoutBody()), context);

@@ -741,10 +741,9 @@ async function settlePaidCheckoutStatus(deps: Deps, memberId: string): Promise<v
     await deps.store.compareAndSave({ ...member, status: held, heldStripeStatus: null }, member.version);
     return;
   }
-  const retrieve = deps.stripe?.subscriptions.retrieve;
-  if (!retrieve || !member.stripeSubscriptionId) return;
+  if (!deps.stripe?.subscriptions.retrieve || !member.stripeSubscriptionId) return;
   try {
-    const subscription = await retrieve(member.stripeSubscriptionId);
+    const subscription = await deps.stripe.subscriptions.retrieve(member.stripeSubscriptionId);
     const mapped = mapStripeStatus(
       subscription.status,
       subscription.cancel_at ?? null,
