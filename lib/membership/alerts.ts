@@ -5,6 +5,7 @@ import type { AppEnv } from "./readiness";
 export const STRIPE_WEBHOOK_EVENTS = [
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
   "checkout.session.expired",
   "customer.subscription.created",
   "customer.subscription.updated",

@@ -163,6 +163,54 @@ test("unconfirmed and mismatched Stripe accounts do not open checkout", async ()
   assert.equal(mismatch.stripe.creates.length, 0);
 });
 
+for (const [type, attention] of [["charge.dispute.created", "dispute"], ["radar.early_fraud_warning.created", "fraud"]] as const) {
+  test(`${type} follows the charge customer and remains retryable after a lookup failure`, async () => {
+    const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+    await handleCheckout(checkoutRequest(checkoutBody()), context);
+    const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+    await context.store.saveMember({ ...member, stripeCustomerId: "cus_owner", setupPaid: true });
+    const event = { id: `evt_${attention}`, type, created: 1, livemode: false,
+      data: { object: { id: "risk_1", charge: "ch_1" } } };
+    const request = () => new Request("https://www.manhaironline.com/api/membership/webhook/", {
+      method: "POST", headers: { "stripe-signature": "test" }, body: JSON.stringify(event),
+    });
+    context.stripe.charges = { async retrieve() { throw new Error("temporary failure"); } };
+    assert.equal((await handleWebhook(request(), context)).status, 503);
+    assert.equal(await context.store.seenEvent(event.id), false);
+    context.stripe.charges = { async retrieve(id) { assert.equal(id, "ch_1"); return { customer: "cus_owner" }; } };
+    assert.equal((await handleWebhook(request(), context)).status, 200);
+    assert.equal((await context.store.findMemberById(member.id))?.attention, attention);
+    assert.equal(await context.store.seenEvent(event.id), true);
+  });
+}
+
+test("a live event cannot change test membership data", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id: "evt_wrong_mode", type: "invoice.paid", livemode: true, created: 1, data: { object: {} } }),
+  }), context);
+  assert.equal(response.status, 400);
+  assert.equal(await context.store.seenEvent("evt_wrong_mode"), false);
+});
+
+test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  await handleCheckout(checkoutRequest(checkoutBody()), context);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  const send = (id: string) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id, type: "checkout.session.async_payment_failed", livemode: false, created: 1,
+      data: { object: { client_reference_id: member.id } } }),
+  }), context);
+  assert.equal((await send("evt_failed_delayed")).status, 200);
+  assert.equal((await context.store.findMemberById(member.id))?.status, "checkout_failed");
+  assert.equal((await context.store.findMemberById(member.id))?.setupPaid, false);
+  await context.store.saveMember({ ...member, setupPaid: true, status: "active" });
+  assert.equal((await send("evt_stale_delayed")).status, 200);
+  assert.equal((await context.store.findMemberById(member.id))?.status, "active");
+});
+
 test("checkout does not require a consultation", async () => {
   const context = deps();
   assert.equal((await context.store.listDeals()).length, 0);

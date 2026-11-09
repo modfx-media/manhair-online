@@ -38,9 +38,10 @@ import {
   portalConfigurationId,
   sessionSecret,
   setupCentsFor,
+  stripeKeyMode,
   type AppEnv,
 } from "./readiness";
-import { mapStripeEvent, type StripeEventShape } from "./stripe-map";
+import { mapStripeEvent, resolveRiskCustomer, type StripeEventShape } from "./stripe-map";
 import { hashSecret, newId, newSecret, normalizeEmail, signToken, validEmail, verifyToken } from "./tokens";
 import type { DealRecord, MemberRecord, MembershipStore } from "./types";
 import { DEAL_STAGES, isSalesStage } from "./types";
@@ -69,6 +70,7 @@ export function portalConfigurationMatches(configuration: PortalConfigurationSna
 
 export type StripeLike = {
   accounts: { retrieveCurrent(): Promise<{ id: string }> };
+  charges?: { retrieve(id: string): Promise<{ customer: unknown }> };
   prices: { retrieve(id: string): Promise<PriceSnapshot> };
   checkout: {
     sessions: {
@@ -168,15 +170,15 @@ function toBilling(member: MemberRecord): MemberBilling {
 }
 
 async function memberFromEvent(store: MembershipStore, event: ReturnType<typeof mapStripeEvent>): Promise<MemberRecord | null> {
-  if ("memberId" in event && event.memberId) {
-    const byId = await store.findMemberById(event.memberId);
-    if (byId) return byId;
-  }
   if ("subscriptionId" in event && event.subscriptionId) {
     const bySub = await store.findMemberBySubscription(event.subscriptionId);
     if (bySub) return bySub;
   }
-  if ("customerId" in event && event.customerId) return store.findMemberByCustomer(event.customerId);
+  if ("customerId" in event && event.customerId) {
+    const byCustomer = await store.findMemberByCustomer(event.customerId);
+    if (byCustomer) return byCustomer;
+  }
+  if ("memberId" in event && event.memberId) return store.findMemberById(event.memberId);
   return null;
 }
 
@@ -848,6 +850,15 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     event = deps.constructEvent(raw, signature, secret);
   } catch {
     return json({ ok: false, error: "bad_signature" }, 400);
+  }
+  if (typeof event.livemode === "boolean" && event.livemode !== (stripeKeyMode(deps.env.STRIPE_SECRET_KEY) === "live")) {
+    return json({ ok: false, error: "webhook_mode_mismatch" }, 400);
+  }
+  try {
+    event = await resolveRiskCustomer(event, deps.stripe?.charges);
+  } catch {
+    // Leave the event unclaimed so Stripe can retry a failed API lookup.
+    return json({ ok: false, error: "risk_charge_lookup_failed" }, 503);
   }
   const claim = await deps.store.claimEvent(event.id, event.type);
   if (claim === "duplicate") return json({ ok: true, duplicate: true });

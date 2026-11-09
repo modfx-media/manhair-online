@@ -86,7 +86,7 @@ export type InternalEvent =
     }
   | {
       id: string;
-      type: "checkout.session.expired";
+      type: "checkout.session.expired" | "checkout.session.async_payment_failed";
       created: number;
       memberId: string | null;
       reservationId: string | null;
@@ -174,6 +174,14 @@ export function reduceBillingEvent(
 
   if (event.type === "checkout.session.expired") {
     return { ...emptyEffect(), founding: event.reservationId ? "release" : null };
+  }
+
+  if (event.type === "checkout.session.async_payment_failed") {
+    return {
+      ...emptyEffect(),
+      founding: member?.setupPaid ? null : event.reservationId ? "release" : null,
+      statusPatch: member && !member.setupPaid ? { status: "checkout_failed" } : null,
+    };
   }
 
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {

@@ -34,8 +34,27 @@ export type StripeEventShape = {
   id: string;
   type: string;
   created: number;
+  livemode?: boolean;
   data: { object: Record<string, unknown> };
 };
+
+/** Disputes and fraud warnings identify a charge, not a customer. */
+export async function resolveRiskCustomer(
+  event: StripeEventShape,
+  charges?: { retrieve(id: string): Promise<{ customer: unknown }> },
+): Promise<StripeEventShape> {
+  if (event.type !== "charge.dispute.created" && event.type !== "radar.early_fraud_warning.created") return event;
+  const object = event.data.object;
+  const charge = object.charge;
+  const expandedCustomer = charge && typeof charge === "object" && "customer" in charge ? idOf(charge.customer) : null;
+  let customer = expandedCustomer;
+  if (!customer) {
+    const chargeId = idOf(charge);
+    if (!chargeId || !charges) throw new Error("risk_charge_lookup_unavailable");
+    customer = idOf((await charges.retrieve(chargeId)).customer);
+  }
+  return { ...event, data: { object: { ...object, customer } } };
+}
 
 export function mapStripeEvent(event: StripeEventShape): InternalEvent {
   const object = event.data.object;
@@ -53,7 +72,7 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
       reservationId: metadata.founding_reservation_id || null,
     };
   }
-  if (event.type === "checkout.session.expired") {
+  if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
     return {
       id: event.id,
       type: event.type,
