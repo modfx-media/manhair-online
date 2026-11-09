@@ -10,6 +10,12 @@ test("lifecycle drafts stay disabled and block unresolved facts", () => {
   assert.equal(reviewed.emails.length, 19);
   assert.ok(reviewed.emails.every((email) => email.enabled === false && email.sendable === false));
   assert.ok(reviewed.emails.every((email) => email.blocks.includes("sender_not_configured")));
+  const welcome = reviewed.emails.find((email) => email.eventKey.startsWith("membership.setup_paid"));
+  assert.ok(welcome);
+  assert.equal(welcome?.eventKey.includes("setup_payment_verified"), false);
+  assert.ok(welcome?.blocks.includes("event_alias_canonicalized"));
+  const saved = reviewed.emails.find((email) => email.blocks.includes("unsupported_claim"));
+  assert.ok(saved);
   const receipt = reviewed.emails.find((email) => email.id === "email_payment_confirmation");
   assert.ok(receipt?.blocks.includes("receipt_dedup_unverified"));
   assert.ok(receipt?.blocks.includes("unresolved_placeholder"));

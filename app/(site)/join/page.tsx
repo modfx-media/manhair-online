@@ -68,7 +68,7 @@ export default async function JoinPage({
       ) : null}
       <section className="rounded-md border border-ink-300 bg-ink-100 p-5 text-base leading-7">
         <h2 className="font-display text-2xl tracking-[-0.02em]">After checkout</h2>
-        <p className="mt-3">Returning from the processor does not confirm a payment. A charge is recorded only after a verified processor event. The first system typically takes 8–12 weeks, and billing can begin before that fitting. Studio scheduling is not connected, so checkout does not book a visit.</p>
+        <p className="mt-3">You can pay before a consultation. A consultation request is not required, and it does not approve or block this checkout. Returning from the processor does not confirm a payment. A charge is recorded only after a verified processor event. The first system typically takes 8–12 weeks, and billing can begin before that fitting. Griselda arranges the visit manually after payment. There is no booking link here and no promised reply time. If staff later confirm the membership is unsuitable, the setup and collected membership charges are refunded and future billing is cancelled. The 3-month minimum does not block that case. This page does not make that decision, and it does not show a refund as complete before the processor confirms it.</p>
       </section>
       <JoinForm
         tier={tier}
@@ -77,7 +77,7 @@ export default async function JoinPage({
         blockedMessage={blockers[0]?.publicMessage ?? null}
         preview={process.env.VERCEL_ENV === "preview"}
         setupConsent={`${formatUsd(setup)} is charged today for Custom Design & First Fitting.`}
-        monthlyConsent={`I agree the first monthly charge of ${formatUsd(offer.monthlyCents)} is scheduled for ${formatStudio(timeline.firstRecurringAt)}, then each calendar month, until I cancel. The rate locks for 24 months. The minimum term is 3 months. During the minimum, cancellation is scheduled for the end of the minimum and adds no fee.`}
+        monthlyConsent={`I agree the first monthly charge of ${formatUsd(offer.monthlyCents)} is scheduled for ${formatStudio(timeline.firstRecurringAt)}, then each calendar month. The rate locks for 24 months. The minimum term is 3 months. A cancellation from the account page is a request and does not change billing until staff review it.`}
       />
     </main>
   );

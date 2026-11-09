@@ -15,6 +15,7 @@ type Snapshot = {
   messageTemplates?: Array<{ id: string; channel: string; enabled: false; sendable: false; blocks: string[] }>;
   freshness?: string;
   alerts?: Array<{ id: string; kind: string; audience: string; status: string; attempts: number; amountCents: number; memberId: string | null }>;
+  cancellationRequests?: Array<{ id: string; memberId: string | null; createdAt: string }>;
   assignees: string[];
   stages: DealStage[];
   stageCounts: Record<string, number>;
@@ -94,6 +95,67 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
           Pull HighLevel now
         </button>
         <p>{SCHEDULING.summary}</p>
+        <div>
+          <p className="font-semibold">Cancellation requests</p>
+          {(data.cancellationRequests ?? []).length === 0 ? (
+            <p>None recorded. A member request does not change billing.</p>
+          ) : (
+            <ul>
+              {(data.cancellationRequests ?? []).map((request) => (
+                <li key={request.id}>{request.createdAt} · member {request.memberId ?? "unknown"} · billing unchanged</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <form
+          className="mt-2 grid gap-2"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const result = await post("appointment", {
+              memberId: form.get("memberId"),
+              startsAt: form.get("startsAt"),
+              timeZone: form.get("timeZone"),
+              state: form.get("state"),
+              note: form.get("note"),
+            });
+            setNotice(result.message ?? result.error ?? "The visit was not recorded.");
+            await refresh();
+          }}
+        >
+          <p className="font-semibold">Record a visit Griselda arranged</p>
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="memberId" placeholder="Member id" required />
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="startsAt" type="datetime-local" required />
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="timeZone" defaultValue="America/Los_Angeles" required />
+          <select className="min-h-11 rounded-md border border-ink-300 px-3" name="state" defaultValue="scheduled">
+            <option value="scheduled">Scheduled</option>
+            <option value="updated">Updated</option>
+            <option value="canceled">Canceled</option>
+          </select>
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="note" placeholder="What was arranged" />
+          <button className="mh-btn mh-btn-ghost w-fit" type="submit">Save visit</button>
+        </form>
+        <form
+          className="mt-2 grid gap-2"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const result = await post("suitability-failure", {
+              memberId: form.get("memberId"),
+              confirmation: form.get("confirmation"),
+              note: form.get("note"),
+            });
+            setNotice(result.message ?? result.error ?? "The suitability request was not recorded.");
+            await refresh();
+          }}
+        >
+          <p className="font-semibold">Unsuitability request</p>
+          <p>This asks for a refund of collected charges and an end to future billing. It stays a request until the processor confirms each part. It is not a receipt.</p>
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="memberId" placeholder="Member id" required />
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="confirmation" defaultValue="refund-and-cancel" required />
+          <input className="min-h-11 rounded-md border border-ink-300 px-3" name="note" placeholder="What staff confirmed" required minLength={8} />
+          <button className="mh-btn mh-btn-ghost w-fit" type="submit">Record suitability request</button>
+        </form>
         <p>Messaging is {data.messaging}. Draft templates below are not approved copy and nothing is sent.</p>
         <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={() => void refresh()}>
           Refresh

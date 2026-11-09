@@ -1,9 +1,11 @@
 import type { MemberStatus } from "./billing";
+import { messageTransport } from "./message-holds";
 import type { AppEnv } from "./readiness";
 
 export const STRIPE_WEBHOOK_EVENTS = [
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
+  "checkout.session.async_payment_failed",
   "checkout.session.expired",
   "customer.subscription.created",
   "customer.subscription.updated",
@@ -19,7 +21,7 @@ export const STRIPE_WEBHOOK_PATH = "/api/membership/webhook/";
 
 export type AlertKind = "setup_paid" | "monthly_paid" | "invoice_failed" | "invoice_recovered" | "webhook_error";
 export type AlertAudience = "owner" | "customer";
-export type AlertStatus = "held" | "pending" | "sending" | "delivered" | "failed";
+export type AlertStatus = "held" | "pending" | "sending" | "delivered" | "failed" | "fake_recorded";
 
 export type AlertDraft = {
   dedupeKey: string;
@@ -48,11 +50,12 @@ export function ownerAlertsReady(env: AppEnv): boolean {
   );
 }
 
+/** Customer payment and order mail stays held. Sender flags do not approve the copy or the receipt check. */
 export function customerAlertsReady(env: AppEnv): boolean {
-  return (
+  const senderConfigured =
     env.MEMBERSHIP_CUSTOMER_ALERTS_SEND === "true" &&
-    Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM?.trim())
-  );
+    Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM?.trim());
+  return senderConfigured && false;
 }
 
 export function alertsForPayment(input: {
@@ -75,11 +78,12 @@ export function alertsForPayment(input: {
     kinds.push({ kind: "monthly_paid", amountCents: input.invoice.amountPaid, customer: true });
   }
   const nowIso = input.now.toISOString();
+  const transport = messageTransport(input.env);
   const drafts: AlertDraft[] = [];
   for (const item of kinds) {
     const audiences: AlertAudience[] = item.customer ? ["owner", "customer"] : ["owner"];
     for (const audience of audiences) {
-      const ready = audience === "owner" ? ownerAlertsReady(input.env) : customerAlertsReady(input.env);
+      const ownerCanAttempt = audience === "owner" && ownerAlertsReady(input.env) && (transport === "live" || transport === "fake");
       drafts.push({
         dedupeKey: `${input.eventId}:${item.kind}:${audience}`,
         sourceEventId: input.eventId,
@@ -87,8 +91,8 @@ export function alertsForPayment(input: {
         audience,
         memberId: input.memberId,
         amountCents: item.amountCents,
-        status: ready ? "pending" : "held",
-        nextAttemptAt: ready ? nowIso : null,
+        status: ownerCanAttempt ? "pending" : "held",
+        nextAttemptAt: ownerCanAttempt ? nowIso : null,
       });
     }
   }

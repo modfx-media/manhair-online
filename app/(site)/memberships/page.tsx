@@ -85,7 +85,7 @@ export default function MembershipsPage() {
             </div>
             <div>
               <dt className="font-semibold">Term</dt>
-              <dd>{SHARED_PACKAGE.minimumMonths}-month minimum, then month to month. The monthly rate you join at is locked for {SHARED_PACKAGE.rateLockMonths} months. During the minimum, cancellation is scheduled for the end of the minimum and adds no fee.</dd>
+              <dd>{SHARED_PACKAGE.minimumMonths}-month minimum, then month to month. The monthly rate you join at is locked for {SHARED_PACKAGE.rateLockMonths} months. Cancellation from the account page is a request. It does not change billing until staff review it.</dd>
             </div>
             <div>
               <dt className="font-semibold">Pause</dt>
@@ -99,7 +99,7 @@ export default function MembershipsPage() {
             <li>An additional fitted system is {formatUsd(SHARED_PACKAGE.extraSystemCents)}. An extra maintenance visit is {formatUsd(SHARED_PACKAGE.extraMaintenanceCents)}. Checkout does not sell either one.</li>
             <li>The $295 founding setup is off.</li>
             <li>This checkout does not add sales tax. That is the current practice, not a claim of a legal exemption. {MERCHANT.disclosure}</li>
-            <li>This application does not issue refunds. A refund rule has not been approved.</li>
+            <li>If staff confirm a membership is unsuitable, the setup and collected membership charges are refunded and future billing stops. The 3-month minimum does not block that. Other refund reasons are not decided, and this page does not refund anyone by itself.</li>
             <li>{SCHEDULING.summary}</li>
           </ul>
         </div>
@@ -123,7 +123,7 @@ export default function MembershipsPage() {
           {PACKAGE_PAGE.primaryCta}
         </Link>
         <p className="text-sm leading-6 text-ink-700">
-          Not ready to join? <Link className="underline" href="/consultation/">Request a consultation</Link>. That request does not start a payment or book a time.
+          A consultation is not required before you join or pay. Not ready to join? <Link className="underline" href="/consultation/">Request a consultation</Link>. That request does not start a payment, approve suitability, or book a time.
         </p>
       </section>
     </div>

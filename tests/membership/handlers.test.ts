@@ -129,6 +129,25 @@ test("duplicate checkout creates one processor session", async () => {
   assert.equal(other.status, 409);
 });
 
+test("a verified 30-day subscription clears a previous trial timing false alarm", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody()), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  await context.store.saveMember({ ...member, attention: "unexpected_trial", status: "needs_review", setupPaid: true });
+  const start = Math.floor(NOW.getTime() / 1000) + 15 * 60;
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id: "evt_confirmed_trial", type: "customer.subscription.created", created: start,
+      data: { object: { id: "sub_1", customer: "cus_1", status: "trialing",
+        metadata: { member_id: member.id }, trial_start: start, trial_end: start + 30 * 86400,
+        items: { data: [{ id: "si_1" }] } } } }),
+  }), context);
+  assert.equal(response.status, 200);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.attention, null);
+  assert.equal(saved?.status, "trialing");
+});
+
 test("unconfirmed and mismatched Stripe accounts do not open checkout", async () => {
   const unconfirmed = deps({ env: baseEnv({ MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED: "false" }) });
   const unconfirmedResponse = await handleCheckout(checkoutRequest(checkoutBody()), unconfirmed);
@@ -142,6 +161,86 @@ test("unconfirmed and mismatched Stripe accounts do not open checkout", async ()
   const mismatchResponse = await handleCheckout(checkoutRequest(checkoutBody()), mismatch);
   assert.equal(mismatchResponse.status, 503);
   assert.equal(mismatch.stripe.creates.length, 0);
+});
+
+for (const [type, attention] of [["charge.dispute.created", "dispute"], ["radar.early_fraud_warning.created", "fraud"]] as const) {
+  test(`${type} follows the charge customer and remains retryable after a lookup failure`, async () => {
+    const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+    await handleCheckout(checkoutRequest(checkoutBody()), context);
+    const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+    await context.store.saveMember({ ...member, stripeCustomerId: "cus_owner", setupPaid: true });
+    const event = { id: `evt_${attention}`, type, created: 1, livemode: false,
+      data: { object: { id: "risk_1", charge: "ch_1" } } };
+    const request = () => new Request("https://www.manhaironline.com/api/membership/webhook/", {
+      method: "POST", headers: { "stripe-signature": "test" }, body: JSON.stringify(event),
+    });
+    context.stripe.charges = { async retrieve() { throw new Error("temporary failure"); } };
+    assert.equal((await handleWebhook(request(), context)).status, 503);
+    assert.equal(await context.store.seenEvent(event.id), false);
+    context.stripe.charges = { async retrieve(id) { assert.equal(id, "ch_1"); return { customer: "cus_owner" }; } };
+    assert.equal((await handleWebhook(request(), context)).status, 200);
+    assert.equal((await context.store.findMemberById(member.id))?.attention, attention);
+    assert.equal(await context.store.seenEvent(event.id), true);
+  });
+}
+
+test("a live event cannot change test membership data", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id: "evt_wrong_mode", type: "invoice.paid", livemode: true, created: 1, data: { object: {} } }),
+  }), context);
+  assert.equal(response.status, 400);
+  assert.equal(await context.store.seenEvent("evt_wrong_mode"), false);
+});
+
+test("a setup invoice arriving before checkout uses subscription metadata even after a newer status", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  await handleCheckout(checkoutRequest(checkoutBody()), context);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  await context.store.saveMember({ ...member, status: "active", lastStatusEventCreated: 100 });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id: "evt_early_invoice", type: "invoice.paid", livemode: false, created: 99,
+      data: { object: { id: "in_setup_first", customer: "cus_before_checkout", amount_paid: 49500,
+        billing_reason: "subscription_create", metadata: {},
+        parent: { subscription_details: { subscription: "sub_before_checkout", metadata: { member_id: member.id } } },
+        lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] } } } }),
+  }), context);
+  assert.equal(response.status, 200);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.setupPaid, true);
+  assert.equal(saved?.status, "active");
+  const invoices = await context.store.listInvoices(member.id);
+  assert.equal(invoices[0]?.id, "in_setup_first");
+  assert.equal(invoices[0]?.amountPaid, 49500);
+});
+
+test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  await handleCheckout(checkoutRequest(checkoutBody()), context);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  const send = (id: string) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id, type: "checkout.session.async_payment_failed", livemode: false, created: 1,
+      data: { object: { client_reference_id: member.id } } }),
+  }), context);
+  assert.equal((await send("evt_failed_delayed")).status, 200);
+  assert.equal((await context.store.findMemberById(member.id))?.status, "checkout_failed");
+  assert.equal((await context.store.findMemberById(member.id))?.setupPaid, false);
+  await context.store.saveMember({ ...member, setupPaid: true, status: "active" });
+  assert.equal((await send("evt_stale_delayed")).status, 200);
+  assert.equal((await context.store.findMemberById(member.id))?.status, "active");
+});
+
+test("checkout does not require a consultation", async () => {
+  const context = deps();
+  assert.equal((await context.store.listDeals()).length, 0);
+  const response = await handleCheckout(checkoutRequest(checkoutBody()), context);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.equal(body.error, undefined);
 });
 
 test("missing consent is rejected and HighLevel is not called without a location", async () => {
@@ -245,7 +344,10 @@ test("cancellation and pause do not claim a processor change when blocked", asyn
     body: "{}",
   });
   const cancel = await handleAccountPost(request(), { ...context, stripe: null });
-  assert.equal(cancel.status, 503);
+  const cancelBody = await cancel.json();
+  assert.equal(cancel.status, 200);
+  assert.equal(cancelBody.applied, false);
+  assert.equal(cancelBody.billingChanged, false);
   const pause = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=pause", {
     method: "POST",
     headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", cookie: "mh_member_session=cookie-a", "content-type": "application/json" },
@@ -332,7 +434,7 @@ test("older webhook does not roll back a newer subscription status", async () =>
   assert.equal(saved?.status, "active");
 });
 
-test("minimum-term cancellation is scheduled and a local lead can be removed without CRM", async () => {
+test("self-serve cancellation is a request and a local lead can be removed without CRM", async () => {
   const context = deps({ staffEmail: "owner@manhaironline.com" });
   await context.store.saveMember(await seedMember(context.store));
   await context.store.createSession({ id: "sess_a", memberId: "mem_1", tokenHash: hashSecret("cookie-a"), expiresAt: "2026-12-01T00:00:00.000Z", active: true, returnUsed: true });
@@ -342,11 +444,12 @@ test("minimum-term cancellation is scheduled and a local lead can be removed wit
     body: "{}",
   }), context);
   assert.equal(cancel.status, 200);
-  const params = context.stripe.updates[0]?.params as { cancel_at?: number; cancel_at_period_end?: boolean };
-  assert.equal(params.cancel_at_period_end, undefined);
-  assert.equal(params.cancel_at, Math.floor(new Date("2027-02-07T19:00:00.000Z").getTime() / 1000));
+  const cancelBody = await cancel.json();
+  assert.equal(cancelBody.applied, false);
+  assert.equal(cancelBody.billingChanged, false);
+  assert.equal(context.stripe.updates.length, 0);
   const saved = await context.store.findMemberById("mem_1");
-  assert.equal(saved?.status, "cancel_scheduled");
+  assert.equal(saved?.status, "trialing");
   const created = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=deal", {
     method: "POST",
     headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
@@ -486,6 +589,19 @@ test("portal session uses the configured id and does not create a configuration"
   }));
   assert.equal(otherId.status, 503);
   assert.equal(creates, 0);
+});
+
+test("a paid member is not moved from Active Clients into a prospect stage", async () => {
+  const context = deps({ staffEmail: "owner@manhaironline.com" });
+  await context.store.saveMember(await seedMember(context.store, { setupPaid: true, status: "active" }));
+  const response = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/?action=deal", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ name: "Alex Rivera", email: "member@example.com", stage: "Phone Consult", memberId: "mem_1" }),
+  }), context);
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.error, "stage_regression");
 });
 
 test("messaging send is refused", async () => {

@@ -72,8 +72,9 @@ export function billingDisclosure(start: Date, monthlyCents: number, setupCents:
     "The 30 days before that charge are not unlimited free service.",
     "The first system is made to order and typically takes 8–12 weeks. That lead time is separate from the billing date. The system is not promised within 30 days.",
     `The rate of the tier you join is locked until ${formatStudio(timeline.rateLockEndsAt)}.`,
-    `The minimum term runs until ${formatStudio(timeline.minimumTermEndsAt)}. After that the plan is month to month. Cancellation online adds no fee. During the minimum, cancellation is scheduled for the end of the minimum rather than today.`,
-    "This application does not issue refunds. A refund rule has not been approved.",
+    `The minimum term runs until ${formatStudio(timeline.minimumTermEndsAt)}. After that the plan is month to month. An online cancellation is a request for staff review. It does not change billing by itself.`,
+    "A consultation is optional. You can join and pay before one, and a consultation request is not required to check out.",
+    "If the studio later confirms the membership is unsuitable, staff can refund the setup payment and collected membership charges and cancel future billing. The 3-month minimum does not block that case. This checkout does not decide suitability and does not refund or cancel on its own.",
     MERCHANT.disclosure,
     "ManHair does not currently collect sales tax. This checkout does not add tax.",
   ].join(" ");

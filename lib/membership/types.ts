@@ -26,6 +26,7 @@ export type MemberRecord = {
   cancelAt: string | null;
   pauseCollection: boolean;
   attention: Attention;
+  paymentGraceStartedAt?: string | null;
   termsVersion: string;
   lastStatusEventCreated: number;
   version: number;
@@ -48,6 +49,46 @@ export type InvoiceRecord = {
   status: "paid" | "failed";
   amountPaid: number;
   amountRefunded: number;
+  chargeId?: string | null;
+  failedAt?: string | null;
+  statusEventCreated?: number | null;
+};
+
+export type SuitabilityCaseRecord = {
+  id: string;
+  memberId: string;
+  staffEmail: string;
+  staffRole: "owner" | "coordinator";
+  note: string;
+  policyVersion: string;
+  minimumTermWaived: true;
+  cancelStatus: "not_sent" | "processor_pending" | "processor_canceled" | "processor_failed";
+  createdAt: string;
+};
+
+export type AppointmentRecord = {
+  id: string;
+  memberId: string;
+  staffEmail: string;
+  startsAt: string;
+  timeZone: string;
+  state: "scheduled" | "updated" | "canceled";
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RefundRequestRecord = {
+  id: string;
+  caseId: string;
+  memberId: string;
+  invoiceId: string;
+  kind: string;
+  amountCents: number;
+  chargeId: string | null;
+  status: "requested" | "processor_pending" | "processor_succeeded" | "processor_failed";
+  stripeRefundId: string | null;
+  createdAt: string;
 };
 
 export const SALES_STAGES = [
@@ -158,6 +199,14 @@ export interface MembershipStore {
   upsertInvoice(row: InvoiceRecord): Promise<void>;
   addRefund(invoiceId: string | null, cents: number): Promise<void>;
   listInvoices(memberId?: string): Promise<InvoiceRecord[]>;
+  saveSuitabilityCase(row: SuitabilityCaseRecord): Promise<void>;
+  findSuitabilityCase(memberId: string): Promise<SuitabilityCaseRecord | null>;
+  updateSuitabilityCancel(id: string, cancelStatus: SuitabilityCaseRecord["cancelStatus"]): Promise<void>;
+  saveRefundRequest(row: RefundRequestRecord): Promise<void>;
+  listRefundRequests(memberId: string): Promise<RefundRequestRecord[]>;
+  updateRefundRequest(id: string, patch: Pick<RefundRequestRecord, "status" | "stripeRefundId">): Promise<void>;
+  saveAppointment(row: AppointmentRecord): Promise<void>;
+  listAppointments(memberId: string): Promise<AppointmentRecord[]>;
   consumeRate(bucket: string, now: Date, limit: number, windowMs: number): Promise<boolean>;
   createSession(row: SessionRecord): Promise<void>;
   findSession(id: string): Promise<SessionRecord | null>;
@@ -169,6 +218,7 @@ export interface MembershipStore {
   getSyncState(): Promise<SyncState | null>;
   saveSyncState(row: SyncState): Promise<void>;
   addAuthAudit(row: AuthAuditRecord): Promise<void>;
+  listAuthAudits(memberId?: string): Promise<AuthAuditRecord[]>;
   enqueueAlert(row: AlertRecord): Promise<"created" | "duplicate">;
   listAlerts(): Promise<AlertRecord[]>;
   claimDueAlerts(now: Date, limit: number): Promise<AlertRecord[]>;

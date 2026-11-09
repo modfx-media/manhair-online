@@ -1,20 +1,49 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { staffRole, memberCanRead } from "../../lib/membership/access";
 import { assessCheckoutAmount, buildCheckoutParams, priceMatches } from "../../lib/membership/checkout";
 import { reduceBillingEvent, type MemberBilling } from "../../lib/membership/billing";
 import { APP_TIMEZONE, addMonths, billingTimeline, formatStudio } from "../../lib/membership/dates";
-import { chooseContact, ghlMode, planSync, syncLead } from "../../lib/membership/ghl";
+import { chooseContact, ghlErrorDisposition, ghlMode, paidMemberStageChange, planSync, syncLead } from "../../lib/membership/ghl";
 import { MANHAIR_GHL_LOCATION_ID, MANHAIR_LEGACY_PIPELINE_ID } from "../../lib/membership/manhair-ghl";
 import { planCancel, planPauseApply, planUsage, revenueReport, rollEntitlementYear, tierChangeParams } from "../../lib/membership/lifecycle";
 import { FOUNDING_SETUP_CENTS, SETUP_CENTS, TIERS } from "../../lib/membership/offer";
 import { foundingConfig, paymentBlockers, type AppEnv } from "../../lib/membership/readiness";
 import { FOUNDING_RESERVE_SQL, USAGE_SQL } from "../../lib/membership/sql-store";
 import { createMemoryStore } from "../../lib/membership/memory-store";
+import { mapStripeEvent } from "../../lib/membership/stripe-map";
 import { signToken, verifyToken } from "../../lib/membership/tokens";
 import type { MemberRecord } from "../../lib/membership/types";
 
 const NOW = new Date("2026-11-07T19:00:00.000Z");
+
+test("a checkout completed later still has a valid 30-day processor trial", () => {
+  const trialStart = Math.floor(NOW.getTime() / 1000) + 15 * 60;
+  const event = (days: number) => mapStripeEvent({
+    id: `evt_trial_${days}`,
+    type: "customer.subscription.created",
+    created: trialStart,
+    data: { object: {
+      id: "sub_1", customer: "cus_1", status: "trialing",
+      metadata: { member_id: "mem_1" },
+      trial_start: trialStart, trial_end: trialStart + days * 86400,
+      items: { data: [{ id: "si_1" }] },
+    } },
+  });
+  const paid = member({ setupPaid: true });
+  const effect = reduceBillingEvent(paid, event(30), new Set());
+  assert.equal(effect.statusPatch?.status, "trialing");
+  assert.equal(effect.attention, null);
+  assert.equal(effect.statusPatch?.recurringStartAt, new Date((trialStart + 30 * 86400) * 1000).toISOString());
+  const wrong = reduceBillingEvent(paid, event(29), new Set());
+  assert.equal(wrong.statusPatch?.status, "needs_review");
+  assert.equal(wrong.attention, "unexpected_trial");
+  const corrected = reduceBillingEvent(member({ attention: "unexpected_trial" }), event(30), new Set());
+  assert.equal(corrected.statusPatch?.attention, null);
+  const fraud = reduceBillingEvent(member({ attention: "fraud" }), event(30), new Set());
+  assert.equal(fraud.statusPatch?.attention, "fraud");
+});
 
 function env(extra: AppEnv = {}): AppEnv {
   return {
@@ -231,6 +260,30 @@ test("HighLevel stays off for the wrong tenant and does not guess among duplicat
     chooseContact("loc_real", [{ id: "1", locationId: "loc_other", email: "a@example.com" }], "a@example.com").action,
     "create",
   );
+  assert.equal(paidMemberStageChange(true, "Phone Consult"), "keep_active_client");
+  assert.equal(paidMemberStageChange(true, "Active Clients"), "allow");
+  assert.equal(paidMemberStageChange(false, "New Leads"), "allow");
+  assert.equal(ghlErrorDisposition(403, "WORKFLOW_API_NOT_ENABLED_FOR_LOCATION"), "stop_availability");
+  assert.equal(ghlErrorDisposition(403, null), "stop");
+  assert.equal(ghlErrorDisposition(500, null), "retry");
+  const schema = readFileSync(new URL("../../db/membership/001_init.sql", import.meta.url), "utf8");
+  assert.equal(/^\s*drop\s+/im.test(schema), false);
+});
+
+test("a workflow availability 403 is not retried", async () => {
+  let calls = 0;
+  const result = await syncLead({ GHL_API_TOKEN: "token", GHL_LOCATION_ID: MANHAIR_GHL_LOCATION_ID }, {
+    email: "a@example.com",
+    phone: null,
+    firstName: "A",
+    lastName: "B",
+    dealId: "deal",
+  }, async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ code: "WORKFLOW_API_NOT_ENABLED_FOR_LOCATION" }), { status: 403 });
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, "push_failed");
 });
 
 test("return tokens expire and atomic SQL keeps a cap and an idempotency key", () => {

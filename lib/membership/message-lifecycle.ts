@@ -79,11 +79,35 @@ export type LifecycleFact = {
 
 export type Suppression = {
   marketingConsent: boolean;
+  marketingSmsConsent?: boolean;
   unsubscribed: boolean;
   dnd: boolean;
+  emailDnd?: boolean;
+  smsDnd?: boolean;
+  smsStop?: boolean;
+  emailBounced?: boolean;
+  emailComplaint?: boolean;
   converted: boolean;
   signupStarted: boolean;
 };
+
+export const CANONICAL_SETUP_PAID = "membership.setup_paid";
+
+/** One internal name for setup payment. The lifecycle alias is not a second welcome. */
+export function canonicalEvent(name: string): string {
+  return name.replaceAll("membership.setup_payment_verified", CANONICAL_SETUP_PAID);
+}
+
+/** Channel DND blocks that channel even when the global DND flag is false. */
+export function channelSuppressed(channel: "email" | "sms", suppression: Suppression): string | null {
+  if (suppression.dnd) return "dnd";
+  if (channel === "email" && (suppression.emailDnd || suppression.emailBounced || suppression.emailComplaint || suppression.unsubscribed)) {
+    return "email_dnd";
+  }
+  if (channel === "sms" && (suppression.smsDnd || suppression.smsStop)) return "sms_dnd";
+  if (channel === "sms" && suppression.marketingSmsConsent !== true) return "no_sms_consent";
+  return null;
+}
 
 export type MessagePlan = {
   dedupeKey: string;
@@ -117,6 +141,9 @@ export function planMessages(fact: LifecycleFact, suppression: Suppression): Mes
     if (template.channel === "transactional" && !fact.occurredAt) {
       return held(fact, template.id, "suppressed", "missing_verified_timestamp");
     }
+    if (suppression.emailDnd || suppression.emailBounced || suppression.emailComplaint) {
+      return held(fact, template.id, "suppressed", "email_dnd");
+    }
     if (template.channel === "marketing") {
       if (suppression.dnd) return held(fact, template.id, "suppressed", "dnd");
       if (suppression.unsubscribed || !suppression.marketingConsent) return held(fact, template.id, "suppressed", "no_marketing_consent");
@@ -129,7 +156,7 @@ export function planMessages(fact: LifecycleFact, suppression: Suppression): Mes
 function held(fact: LifecycleFact, templateId: string, status: MessagePlanStatus, reason: string): MessagePlan {
   const template = MESSAGE_TEMPLATES.find((item) => item.id === templateId);
   return {
-    dedupeKey: `${fact.eventId}:${templateId}:${template?.version ?? MESSAGE_TEMPLATE_VERSION}`,
+    dedupeKey: `${fact.eventId}:${canonicalEvent(templateId)}:${template?.version ?? MESSAGE_TEMPLATE_VERSION}`,
     templateId,
     templateVersion: template?.version ?? MESSAGE_TEMPLATE_VERSION,
     channel: template?.channel ?? "transactional",

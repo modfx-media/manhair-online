@@ -1,4 +1,5 @@
 import draftJson from "../../manhair-lifecycle/lifecycle.json";
+import { canonicalEvent } from "./message-lifecycle";
 
 type DraftEmail = {
   template_id: string;
@@ -37,7 +38,7 @@ export type ReviewedEmail = {
 };
 
 const TOKEN = /\{\{[A-Z0-9_]+\}\}/;
-const FORBIDDEN = [/most guys/i, /most popular/i, /saved progress/i, /uninterrupted service/i, /limited spots/i];
+const FORBIDDEN = [/most guys/i, /most popular/i, /saved progress/i, /selected plan is saved/i, /uninterrupted service/i, /limited spots/i];
 
 export function reviewLifecycle(draft: LifecycleDraft): { ok: true; emails: ReviewedEmail[]; missingFacts: string[]; publicPageIds: string[] } | { ok: false; error: string } {
   if (draft.schema_version !== "1.0") return { ok: false, error: "schema_version" };
@@ -66,16 +67,17 @@ function reviewEmail(email: DraftEmail): ReviewedEmail {
   if (email.template_id === "email_pause_approved" || email.template_id === "email_pause_request_acknowledgement") {
     blocks.add("pause_billing_unresolved");
   }
-  if (facing.includes("BOOKING_URL") || email.template_id.startsWith("email_fitting") || email.template_id.startsWith("email_nurture")) {
-    if (facing.includes("BOOKING") || email.cta.internal_placeholder?.includes("BOOKING")) blocks.add("booking_url_missing");
+  if (facing.includes("BOOKING_URL") || facing.includes("BOOKING")) {
+    blocks.add("public_booking_link_withheld");
   }
+  if (email.event_key.includes("setup_payment_verified")) blocks.add("event_alias_canonicalized");
   const channel = email.sequence.includes("nurture") || email.template_id.includes("nurture") || email.template_id.includes("abandoned")
     ? "marketing"
     : "transactional";
   if (channel === "marketing") blocks.add("marketing_held_until_consent");
   return {
     id: email.template_id,
-    eventKey: email.event_key,
+    eventKey: canonicalEvent(email.event_key),
     channel,
     enabled: false,
     sendable: false,

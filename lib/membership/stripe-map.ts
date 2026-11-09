@@ -34,8 +34,27 @@ export type StripeEventShape = {
   id: string;
   type: string;
   created: number;
+  livemode?: boolean;
   data: { object: Record<string, unknown> };
 };
+
+/** Disputes and fraud warnings identify a charge, not a customer. */
+export async function resolveRiskCustomer(
+  event: StripeEventShape,
+  charges?: { retrieve(id: string): Promise<{ customer: unknown }> },
+): Promise<StripeEventShape> {
+  if (event.type !== "charge.dispute.created" && event.type !== "radar.early_fraud_warning.created") return event;
+  const object = event.data.object;
+  const charge = object.charge;
+  const expandedCustomer = charge && typeof charge === "object" && "customer" in charge ? idOf(charge.customer) : null;
+  let customer = expandedCustomer;
+  if (!customer) {
+    const chargeId = idOf(charge);
+    if (!chargeId || !charges) throw new Error("risk_charge_lookup_unavailable");
+    customer = idOf((await charges.retrieve(chargeId)).customer);
+  }
+  return { ...event, data: { object: { ...object, customer } } };
+}
 
 export function mapStripeEvent(event: StripeEventShape): InternalEvent {
   const object = event.data.object;
@@ -53,7 +72,7 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
       reservationId: metadata.founding_reservation_id || null,
     };
   }
-  if (event.type === "checkout.session.expired") {
+  if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
     return {
       id: event.id,
       type: event.type,
@@ -79,6 +98,7 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
       subscriptionId: typeof object.id === "string" ? object.id : "",
       subscriptionItemId: typeof first?.id === "string" ? first.id : null,
       status: event.type === "customer.subscription.deleted" ? "canceled" : typeof object.status === "string" ? object.status : "incomplete",
+      trialStart: typeof object.trial_start === "number" ? object.trial_start : null,
       trialEnd: typeof object.trial_end === "number" ? object.trial_end : null,
       cancelAt: typeof object.cancel_at === "number" ? object.cancel_at : null,
       pauseResumesAt: typeof pause?.resumes_at === "number" ? pause.resumes_at : null,
@@ -86,7 +106,8 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
   }
   if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
     const lineList = linesOf(object);
-    const subscriptionId = lineList.length
+    const parent = object.parent as { subscription_details?: { subscription?: unknown; metadata?: Record<string, string> } } | undefined;
+    const subscriptionId = idOf(parent?.subscription_details?.subscription) ?? idOf(object.subscription) ?? (lineList.length
       ? idOf((object.lines as { data?: Array<{ subscription?: unknown }> } | undefined)?.data?.[0]?.subscription) ??
         idOf(
           (
@@ -94,12 +115,12 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
               .data?.[0]?.parent
           )?.subscription_item_details?.subscription,
         )
-      : null;
+      : null);
     return {
       id: event.id,
       type: event.type,
       created: event.created,
-      memberId: metadata.member_id ?? null,
+      memberId: parent?.subscription_details?.metadata?.member_id ?? metadata.member_id ?? null,
       customerId: idOf(object.customer),
       subscriptionId,
       invoiceId: typeof object.id === "string" ? object.id : event.id,

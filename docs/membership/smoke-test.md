@@ -62,7 +62,7 @@ After the owner authorizes a sandbox on `acct_1DhNFjGiafo5ImyE`:
 9. Fail a renewal and then pay it. Confirm `invoice_failed` and `invoice_recovered` rows.
 10. Open the portal as that member and confirm it cannot cancel the subscription.
 
-Stripe’s own customer receipts are a setting on the confirmed account, separate from this app’s owner alerts. Do not turn on customer emails from this app until `MEMBERSHIP_CUSTOMER_ALERTS_SEND=true` and the sender is approved. That flag is not set.
+Stripe’s own customer receipts are a setting on the confirmed account. This app keeps customer email and text held until the receipt setting, sender, and copy are reviewed. `MEMBERSHIP_CUSTOMER_ALERTS_SEND` does not send them. Owner mail is sent only when `MEMBERSHIP_MESSAGE_TRANSPORT=live` and the owner sender is set. `fake` records a row and does not call the provider.
 
 ## Migration check
 
@@ -71,5 +71,5 @@ Stripe’s own customer receipts are a setting on the confirmed account, separat
 Apply later, from a machine that already has the ManHair database URL:
 
 ```bash
-MEMBERSHIP_MIGRATE_CONFIRM=apply npm run membership:migrate
+MEMBERSHIP_MIGRATE_CONFIRM=apply MEMBERSHIP_MIGRATE_RESTORE_POINT=2026-11-08T16:00:00Z npm run membership:migrate
 ```

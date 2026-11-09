@@ -30,7 +30,9 @@ Public membership and join pages use the existing studio identity. They are not 
 - Minimum term is 3 months, then month to month. The joined rate locks for 24 months. Cancellation during the minimum is scheduled for the end of the minimum and adds no fee.
 - Founding pricing is off and is not offered.
 - No sales tax is added at this checkout. Charges show as MODFXMEDIA, LLC.
-- Studio scheduling is not connected. The consultation request does not book a time.
+- A consultation is optional. Members can join and pay before one. The consultation request does not approve or block checkout.
+- If staff confirm a membership is unsuitable, collected setup and membership charges are refunded and future billing is cancelled. The 3-month minimum does not block that case. Checkout does not decide suitability or show a refund as complete before the processor confirms it.
+- After payment, Griselda arranges visits manually. There is no public booking link and no promised reply time. Confirmation and reminder messages stay held until staff record a real date, time, and time zone, and until sender, content, recipient, and consent are approved.
 - A checkout return does not mean the payment succeeded. Only a verified processor event does.
 
 ## Phone and motion

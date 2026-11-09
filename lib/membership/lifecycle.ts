@@ -1,4 +1,5 @@
 import { addDays, addMonths } from "./dates";
+import { paymentServiceHold } from "./payment-grace";
 import type { MemberStatus } from "./billing";
 import { MAX_PAUSE_DAYS, PAUSE_POLICY_VERSION, TIERS, type TierId } from "./offer";
 
@@ -12,6 +13,7 @@ export type UsageMember = {
   maintenanceUsed: number;
   pauseCollection: boolean;
   entitlementYearEndsAt: string;
+  paymentGraceStartedAt?: string | null;
 };
 
 export function allowance(tier: TierId, kind: UsageKind): number {
@@ -22,9 +24,11 @@ export function planUsage(
   member: UsageMember,
   kind: UsageKind,
   quantity: number,
-): { ok: true } | { ok: false; reason: "paused" | "inactive" | "quantity" | "exceeds" } {
+  now = new Date(),
+): { ok: true } | { ok: false; reason: "paused" | "inactive" | "quantity" | "exceeds" | "payment_hold" } {
   if (!Number.isInteger(quantity) || quantity < 1) return { ok: false, reason: "quantity" };
   if (member.pauseCollection || member.status === "paused") return { ok: false, reason: "paused" };
+  if (paymentServiceHold(member.paymentGraceStartedAt, now) === "held") return { ok: false, reason: "payment_hold" };
   if (!["trialing", "active", "past_due", "cancel_scheduled"].includes(member.status)) {
     return { ok: false, reason: "inactive" };
   }
