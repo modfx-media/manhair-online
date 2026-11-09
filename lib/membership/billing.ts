@@ -213,6 +213,7 @@ export function reduceBillingEvent(
     let attention: Attention = null;
     let setupPaid = false;
     if (verdict === "setup_only" && event.paymentStatus === "paid") setupPaid = true;
+    if (event.paymentStatus === "unpaid" || event.paymentStatus === "no_payment_required") setupPaid = false;
     if (verdict === "setup_and_recurring") attention = "recurring_charged_at_checkout";
     if (verdict === "zero") attention = "setup_not_collected";
     if (verdict === "unexpected") attention = "unexpected_checkout_amount";
@@ -236,7 +237,11 @@ export function reduceBillingEvent(
     const charges = stripeChargePatch(event);
     if (stale) return { ...emptyEffect(), staleStatus: true, statusPatch: charges };
     const paused = event.pauseResumesAt !== null;
-    const status = mapStripeStatus(event.status, event.cancelAt, paused);
+    const mapped = mapStripeStatus(event.status, event.cancelAt, paused);
+    // ACH and other delayed methods can open a subscription before the setup payment clears.
+    // Leave the member in checkout until async_payment_succeeded marks the setup paid.
+    const awaitingSetup = !member.setupPaid && (member.status === "checkout_open" || member.status === "checkout_failed");
+    const status = awaitingSetup && mapped !== "canceled" ? member.status : mapped;
     let attention: Attention = member.attention;
     if (event.trialStart && event.trialEnd) {
       // Checkout can remain open for 30 minutes. Stripe starts the trial when

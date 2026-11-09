@@ -216,6 +216,98 @@ test("a setup invoice arriving before checkout uses subscription metadata even a
   assert.equal(invoices[0]?.amountPaid, 49500);
 });
 
+test("an unpaid checkout completion waits for async success and a failure alerts staff", async () => {
+  const context = deps({
+    constructEvent: (raw) => JSON.parse(raw),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_OWNER_ALERTS_SEND: "true",
+      MEMBERSHIP_STAFF_ALERT_EMAILS: "justin@modfxmedia.com",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+    }),
+    fetchImpl: async () => new Response("ok", { status: 200 }),
+  });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("ach@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("ach@example.com"))[0]!;
+  const send = (id: string, type: string, object: Record<string, unknown>) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id, type, livemode: false, created: 30, data: { object } }),
+  }), context);
+  assert.equal((await send("evt_ach_open", "checkout.session.completed", {
+    client_reference_id: member.id,
+    customer: "cus_ach",
+    subscription: "sub_ach",
+    amount_total: 49500,
+    payment_status: "unpaid",
+  })).status, 200);
+  const waiting = await context.store.findMemberById(member.id);
+  assert.equal(waiting?.setupPaid, false);
+  assert.notEqual(waiting?.status, "active");
+  assert.equal((await context.store.listDeals()).find((deal) => deal.memberId === member.id)?.stage, "New Leads");
+  assert.equal((await context.store.listAlerts()).some((alert) => alert.kind === "setup_paid"), false);
+  assert.equal((await send("evt_ach_paid", "checkout.session.async_payment_succeeded", {
+    client_reference_id: member.id,
+    customer: "cus_ach",
+    subscription: "sub_ach",
+    amount_total: 49500,
+    payment_status: "paid",
+  })).status, 200);
+  const paid = await context.store.findMemberById(member.id);
+  assert.equal(paid?.setupPaid, true);
+  assert.equal((await context.store.listDeals()).find((deal) => deal.memberId === member.id)?.stage, "Active Clients");
+  const other = deps({ constructEvent: (raw) => JSON.parse(raw), env: context.env, fetchImpl: context.fetchImpl });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("ach-fail@example.com")), other)).status, 200);
+  const failedMember = (await other.store.listMembersByEmail("ach-fail@example.com"))[0]!;
+  assert.equal((await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_ach_fail",
+      type: "checkout.session.async_payment_failed",
+      livemode: false,
+      created: 31,
+      data: { object: { client_reference_id: failedMember.id, payment_status: "unpaid" } },
+    }),
+  }), other)).status, 200);
+  assert.equal((await other.store.findMemberById(failedMember.id))?.status, "checkout_failed");
+  assert.equal((await other.store.findMemberById(failedMember.id))?.setupPaid, false);
+  assert.equal((await other.store.listAlerts()).some((alert) => alert.kind === "webhook_error" && alert.audience === "owner"), true);
+});
+
+test("checkout session failures log the Stripe error and keep the customer message", async () => {
+  const lines: string[] = [];
+  const original = console.info;
+  console.info = (message?: unknown) => {
+    lines.push(String(message));
+  };
+  try {
+    const stripe = fakeStripe();
+    stripe.checkout.sessions.create = async () => {
+      const error = new Error("The payment_method_types parameter is no longer supported. member@example.com");
+      Object.assign(error, { type: "invalid_request_error", code: "parameter_unknown" });
+      throw error;
+    };
+    const context = deps({ stripe });
+    const response = await handleCheckout(checkoutRequest(checkoutBody("log@example.com")), context);
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.equal(body.error, "processor_error");
+    assert.match(body.message, /No payment was taken/);
+    assert.doesNotMatch(body.message, /payment_method_types/);
+    const logged = lines.map((line) => JSON.parse(line)).find((row) => row.event === "checkout_session_failed");
+    assert.equal(logged.stripeType, "invalid_request_error");
+    assert.equal(logged.stripeCode, "parameter_unknown");
+    assert.match(logged.stripeMessage, /payment_method_types/);
+    assert.doesNotMatch(logged.stripeMessage, /member@example.com/);
+    assert.equal(logged.memberId, (await context.store.listMembersByEmail("log@example.com"))[0]?.id);
+  } finally {
+    console.info = original;
+  }
+});
+
 test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
   const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
   await handleCheckout(checkoutRequest(checkoutBody()), context);

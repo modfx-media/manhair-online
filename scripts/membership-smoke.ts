@@ -25,7 +25,10 @@ check(
 check("merchant disclosure", MERCHANT.statementDescriptor === "MANHAIR", MERCHANT.disclosure);
 check(
   "stripe events",
-  STRIPE_WEBHOOK_EVENTS.includes("invoice.paid") && STRIPE_WEBHOOK_EVENTS.includes("invoice.payment_failed"),
+  STRIPE_WEBHOOK_EVENTS.includes("invoice.paid") &&
+    STRIPE_WEBHOOK_EVENTS.includes("invoice.payment_failed") &&
+    STRIPE_WEBHOOK_EVENTS.includes("checkout.session.async_payment_succeeded") &&
+    STRIPE_WEBHOOK_EVENTS.includes("checkout.session.async_payment_failed"),
   `${STRIPE_WEBHOOK_PATH} listens for ${STRIPE_WEBHOOK_EVENTS.join(", ")}`,
 );
 
@@ -105,8 +108,8 @@ const checkout = await handleCheckout(
   deps,
 );
 const checkoutBody = await checkout.json();
-const params = creates[0] as { mode?: string; subscription_data?: { trial_period_days?: number }; line_items?: unknown[]; payment_method_types?: string[] };
-check("hosted checkout", checkout.status === 200 && params?.mode === "subscription" && params.subscription_data?.trial_period_days === 30 && params.line_items?.length === 2 && params.payment_method_types?.length === 1 && params.payment_method_types[0] === "card", checkoutBody.url ?? checkoutBody.error ?? "no url");
+const params = creates[0] as { mode?: string; subscription_data?: { trial_period_days?: number }; line_items?: unknown[] };
+check("hosted checkout", checkout.status === 200 && params?.mode === "subscription" && params.subscription_data?.trial_period_days === 30 && params.line_items?.length === 2 && !("payment_method_types" in (params ?? {})), checkoutBody.url ?? checkoutBody.error ?? "no url");
 
 const isolated = await handleAccountGet(new Request("https://www.manhaironline.com/account/?email=smoke@example.com"), deps);
 check("auth isolation", isolated.status === 401, "email query does not open an account");

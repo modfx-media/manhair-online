@@ -567,11 +567,28 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     });
   } catch (error) {
     if (isMembershipSchemaMissing(error)) return storageNotReady();
+    logCheckoutFailure(member.id, error);
     if (reservationId) await deps.store.setFoundingStatus(reservationId, "released");
     member.status = "checkout_failed";
     await deps.store.saveMember(member);
-    return json({ ok: false, error: "processor_error" }, 502);
+    return json({ ok: false, error: "processor_error", message: "Card checkout could not be opened. No payment was taken." }, 502);
   }
+}
+
+function logCheckoutFailure(memberId: string, error: unknown): void {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const raw = record.raw && typeof record.raw === "object" ? record.raw as Record<string, unknown> : {};
+  const message = String(record.message ?? raw.message ?? "unknown")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .slice(0, 300);
+  console.info(JSON.stringify({
+    scope: "membership",
+    event: "checkout_session_failed",
+    memberId,
+    stripeType: String(record.type ?? raw.type ?? "unknown"),
+    stripeCode: String(record.code ?? raw.code ?? "unknown"),
+    stripeMessage: message,
+  }));
 }
 
 export async function handleReturn(request: Request, deps: Deps): Promise<Response> {
@@ -1212,6 +1229,15 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
       await enqueueStaffAlert(deps, staffNoticeDraft({
         eventId: event.id,
         kind: "fraud_warning",
+        memberId: member.id,
+        now: deps.now(),
+        env: deps.env,
+      }));
+    }
+    if (internal.type === "checkout.session.async_payment_failed" && member) {
+      await enqueueStaffAlert(deps, staffNoticeDraft({
+        eventId: event.id,
+        kind: "webhook_error",
         memberId: member.id,
         now: deps.now(),
         env: deps.env,

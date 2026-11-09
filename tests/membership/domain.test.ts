@@ -48,6 +48,26 @@ test("a checkout completed later still has a valid 30-day processor trial", () =
   assert.equal(fraud.statusPatch?.attention, "fraud");
 });
 
+test("an unpaid checkout completion does not mark the setup paid", () => {
+  const unpaid = mapStripeEvent({
+    id: "evt_ach_unpaid",
+    type: "checkout.session.completed",
+    created: 20,
+    data: { object: { client_reference_id: "mem_1", customer: "cus_1", amount_total: 49500, payment_status: "unpaid" } },
+  });
+  const effect = reduceBillingEvent(member({ status: "checkout_open", setupPaid: false }), unpaid, new Set());
+  assert.equal(effect.statusPatch?.setupPaid, false);
+  assert.equal(effect.statusPatch?.status, "checkout_open");
+  const earlySub = mapStripeEvent({
+    id: "evt_sub_before_pay",
+    type: "customer.subscription.updated",
+    created: 21,
+    data: { object: { id: "sub_1", customer: "cus_1", status: "active", metadata: { member_id: "mem_1" }, items: { data: [{ id: "si_1" }] } } },
+  });
+  const held = reduceBillingEvent(member({ status: "checkout_open", setupPaid: false }), earlySub, new Set());
+  assert.equal(held.statusPatch?.status, "checkout_open");
+});
+
 test("a deleted subscription with cancel_at ends instead of staying cancel_scheduled", () => {
   const deleted = mapStripeEvent({
     id: "evt_deleted_cancel_at",
@@ -204,7 +224,7 @@ test("founding stays off and rejects an expanded cap", () => {
   assert.equal(open.enabled && open.cap, 25);
 });
 
-test("checkout params are one subscription with a 30 day trial and card payments only", () => {
+test("checkout params are one subscription with a 30 day trial and dashboard payment methods", () => {
   const built = buildCheckoutParams({
     env: env(),
     memberId: "mem_1",
@@ -222,7 +242,7 @@ test("checkout params are one subscription with a 30 day trial and card payments
   assert.equal(built.params.subscription_data.trial_period_days, 30);
   assert.equal(built.params.line_items.length, 2);
   assert.equal(built.params.payment_method_collection, "always");
-  assert.deepEqual(built.params.payment_method_types, ["card"]);
+  assert.equal("payment_method_types" in built.params, false);
   const submit = built.params.custom_text.submit.message;
   const expectedSubmit = checkoutSubmitMessage({
     setupCents: 49500,
