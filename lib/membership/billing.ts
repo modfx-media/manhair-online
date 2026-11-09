@@ -1,5 +1,5 @@
 import { assessCheckoutAmount } from "./checkout";
-import type { TierId } from "./offer";
+import { TRIAL_DAYS, type TierId } from "./offer";
 
 export type MemberStatus =
   | "checkout_open"
@@ -100,6 +100,7 @@ export type InternalEvent =
       subscriptionId: string;
       subscriptionItemId: string | null;
       status: string;
+      trialStart?: number | null;
       trialEnd: number | null;
       cancelAt: number | null;
       pauseResumesAt: number | null;
@@ -205,10 +206,18 @@ export function reduceBillingEvent(
     const paused = event.pauseResumesAt !== null;
     const status = mapStripeStatus(event.status, event.cancelAt, paused);
     let attention: Attention = member.attention;
-    if (event.trialEnd && member.recurringStartAt) {
+    if (event.trialStart && event.trialEnd) {
+      // Checkout can remain open for 30 minutes. Stripe starts the trial when
+      // payment completes, so validate its actual duration, not the estimate
+      // made when the customer first opened Checkout.
+      if (event.trialEnd - event.trialStart !== TRIAL_DAYS * 24 * 60 * 60) {
+        attention = "unexpected_trial";
+      } else if (attention === "unexpected_trial") {
+        attention = null;
+      }
+    } else if (event.trialEnd && member.recurringStartAt) {
       const expected = new Date(member.recurringStartAt).getTime();
-      const actual = event.trialEnd * 1000;
-      if (Math.abs(actual - expected) > 2 * 60 * 1000) attention = "unexpected_trial";
+      if (Math.abs(event.trialEnd * 1000 - expected) > 2 * 60 * 1000) attention = "unexpected_trial";
     }
     return {
       ...emptyEffect(),

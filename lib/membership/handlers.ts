@@ -866,7 +866,9 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
       const next = {
         ...member,
         ...effect.statusPatch,
-        attention: effect.attention ?? effect.statusPatch?.attention ?? member.attention,
+        attention: effect.attention ?? (effect.statusPatch && "attention" in effect.statusPatch
+          ? effect.statusPatch.attention ?? null
+          : member.attention),
         version: member.version,
       };
       const saved = await deps.store.compareAndSave(next, member.version);

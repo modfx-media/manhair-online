@@ -129,6 +129,25 @@ test("duplicate checkout creates one processor session", async () => {
   assert.equal(other.status, 409);
 });
 
+test("a verified 30-day subscription clears a previous trial timing false alarm", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody()), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  await context.store.saveMember({ ...member, attention: "unexpected_trial", status: "needs_review", setupPaid: true });
+  const start = Math.floor(NOW.getTime() / 1000) + 15 * 60;
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id: "evt_confirmed_trial", type: "customer.subscription.created", created: start,
+      data: { object: { id: "sub_1", customer: "cus_1", status: "trialing",
+        metadata: { member_id: member.id }, trial_start: start, trial_end: start + 30 * 86400,
+        items: { data: [{ id: "si_1" }] } } } }),
+  }), context);
+  assert.equal(response.status, 200);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.attention, null);
+  assert.equal(saved?.status, "trialing");
+});
+
 test("unconfirmed and mismatched Stripe accounts do not open checkout", async () => {
   const unconfirmed = deps({ env: baseEnv({ MEMBERSHIP_STRIPE_ACCOUNT_CONFIRMED: "false" }) });
   const unconfirmedResponse = await handleCheckout(checkoutRequest(checkoutBody()), unconfirmed);

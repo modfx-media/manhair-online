@@ -79,6 +79,7 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
       subscriptionId: typeof object.id === "string" ? object.id : "",
       subscriptionItemId: typeof first?.id === "string" ? first.id : null,
       status: event.type === "customer.subscription.deleted" ? "canceled" : typeof object.status === "string" ? object.status : "incomplete",
+      trialStart: typeof object.trial_start === "number" ? object.trial_start : null,
       trialEnd: typeof object.trial_end === "number" ? object.trial_end : null,
       cancelAt: typeof object.cancel_at === "number" ? object.cancel_at : null,
       pauseResumesAt: typeof pause?.resumes_at === "number" ? pause.resumes_at : null,
