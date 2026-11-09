@@ -257,7 +257,7 @@ export function reduceBillingEvent(
     const stale = event.created < member.lastStatusEventCreated;
     return {
       ...emptyEffect(),
-      staleStatus: stale,
+      staleStatus: stale && event.type === "invoice.payment_failed",
       invoice: {
         id: event.invoiceId,
         memberId: member.id,
@@ -266,13 +266,11 @@ export function reduceBillingEvent(
         amountPaid: event.type === "invoice.paid" ? event.amountPaid : 0,
         amountRefunded: 0,
       },
-      statusPatch: stale
-        ? null
-        : event.type === "invoice.payment_failed"
+      statusPatch: event.type === "invoice.paid" && kind === "setup"
+        ? { setupPaid: true }
+        : event.type === "invoice.payment_failed" && !stale
           ? { status: "past_due", lastStatusEventCreated: event.created }
-          : kind === "setup"
-            ? { setupPaid: true }
-            : null,
+          : null,
     };
   }
 
