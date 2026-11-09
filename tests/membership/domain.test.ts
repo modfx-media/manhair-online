@@ -12,10 +12,38 @@ import { FOUNDING_SETUP_CENTS, SETUP_CENTS, TIERS } from "../../lib/membership/o
 import { foundingConfig, paymentBlockers, type AppEnv } from "../../lib/membership/readiness";
 import { FOUNDING_RESERVE_SQL, USAGE_SQL } from "../../lib/membership/sql-store";
 import { createMemoryStore } from "../../lib/membership/memory-store";
+import { mapStripeEvent } from "../../lib/membership/stripe-map";
 import { signToken, verifyToken } from "../../lib/membership/tokens";
 import type { MemberRecord } from "../../lib/membership/types";
 
 const NOW = new Date("2026-11-07T19:00:00.000Z");
+
+test("a checkout completed later still has a valid 30-day processor trial", () => {
+  const trialStart = Math.floor(NOW.getTime() / 1000) + 15 * 60;
+  const event = (days: number) => mapStripeEvent({
+    id: `evt_trial_${days}`,
+    type: "customer.subscription.created",
+    created: trialStart,
+    data: { object: {
+      id: "sub_1", customer: "cus_1", status: "trialing",
+      metadata: { member_id: "mem_1" },
+      trial_start: trialStart, trial_end: trialStart + days * 86400,
+      items: { data: [{ id: "si_1" }] },
+    } },
+  });
+  const paid = member({ setupPaid: true });
+  const effect = reduceBillingEvent(paid, event(30), new Set());
+  assert.equal(effect.statusPatch?.status, "trialing");
+  assert.equal(effect.attention, null);
+  assert.equal(effect.statusPatch?.recurringStartAt, new Date((trialStart + 30 * 86400) * 1000).toISOString());
+  const wrong = reduceBillingEvent(paid, event(29), new Set());
+  assert.equal(wrong.statusPatch?.status, "needs_review");
+  assert.equal(wrong.attention, "unexpected_trial");
+  const corrected = reduceBillingEvent(member({ attention: "unexpected_trial" }), event(30), new Set());
+  assert.equal(corrected.statusPatch?.attention, null);
+  const fraud = reduceBillingEvent(member({ attention: "fraud" }), event(30), new Set());
+  assert.equal(fraud.statusPatch?.attention, "fraud");
+});
 
 function env(extra: AppEnv = {}): AppEnv {
   return {

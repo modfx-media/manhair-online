@@ -1,5 +1,5 @@
 import { assessCheckoutAmount } from "./checkout";
-import type { TierId } from "./offer";
+import { TRIAL_DAYS, type TierId } from "./offer";
 
 export type MemberStatus =
   | "checkout_open"
@@ -86,7 +86,7 @@ export type InternalEvent =
     }
   | {
       id: string;
-      type: "checkout.session.expired";
+      type: "checkout.session.expired" | "checkout.session.async_payment_failed";
       created: number;
       memberId: string | null;
       reservationId: string | null;
@@ -100,6 +100,7 @@ export type InternalEvent =
       subscriptionId: string;
       subscriptionItemId: string | null;
       status: string;
+      trialStart?: number | null;
       trialEnd: number | null;
       cancelAt: number | null;
       pauseResumesAt: number | null;
@@ -175,6 +176,14 @@ export function reduceBillingEvent(
     return { ...emptyEffect(), founding: event.reservationId ? "release" : null };
   }
 
+  if (event.type === "checkout.session.async_payment_failed") {
+    return {
+      ...emptyEffect(),
+      founding: member?.setupPaid ? null : event.reservationId ? "release" : null,
+      statusPatch: member && !member.setupPaid ? { status: "checkout_failed" } : null,
+    };
+  }
+
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     if (!member) return { ...emptyEffect(), unmapped: true };
     const verdict = assessCheckoutAmount(event.amountTotal, member.setupCents, member.monthlyCents);
@@ -205,10 +214,18 @@ export function reduceBillingEvent(
     const paused = event.pauseResumesAt !== null;
     const status = mapStripeStatus(event.status, event.cancelAt, paused);
     let attention: Attention = member.attention;
-    if (event.trialEnd && member.recurringStartAt) {
+    if (event.trialStart && event.trialEnd) {
+      // Checkout can remain open for 30 minutes. Stripe starts the trial when
+      // payment completes, so validate its actual duration, not the estimate
+      // made when the customer first opened Checkout.
+      if (event.trialEnd - event.trialStart !== TRIAL_DAYS * 24 * 60 * 60) {
+        attention = "unexpected_trial";
+      } else if (attention === "unexpected_trial") {
+        attention = null;
+      }
+    } else if (event.trialEnd && member.recurringStartAt) {
       const expected = new Date(member.recurringStartAt).getTime();
-      const actual = event.trialEnd * 1000;
-      if (Math.abs(actual - expected) > 2 * 60 * 1000) attention = "unexpected_trial";
+      if (Math.abs(event.trialEnd * 1000 - expected) > 2 * 60 * 1000) attention = "unexpected_trial";
     }
     return {
       ...emptyEffect(),
