@@ -110,7 +110,15 @@ Events to subscribe:
 - `charge.dispute.created`
 - `radar.early_fraud_warning.created`
 
-Alert drain cron: `GET` or `POST` `/api/membership/alerts/run/` with `Authorization: Bearer $CRON_SECRET`. It retries pending rows only. It does not send held alerts.
+Alert drain cron: `GET` or `POST` `/api/membership/alerts/run/` with `Authorization: Bearer $CRON_SECRET`. It retries pending alert rows and runs the phase-1 lifecycle schedule. It does not send held alerts. Scheduled mail stays off until `MEMBERSHIP_LIFECYCLE_SEND=true` and `MEMBERSHIP_LIFECYCLE_PHASE1=true`.
+
+Keep Stripe's automatic receipt emails off so `monthly_receipt_email` is the only receipt. Set `MEMBERSHIP_STRIPE_RECEIPTS=true` only if those Stripe receipts are turned on and ours should be suppressed.
+
+Lifecycle mail is sent from `ManHair <info@manhaironline.com>` with reply-to `info@manhaironline.com`. Staff mail goes to `MEMBERSHIP_STAFF_ALERT_EMAILS`. `billing_portal_url` is `https://www.manhaironline.com/account/billing/`, which signs the member in and opens a fresh portal session. Do not put a raw Stripe portal URL in a template.
+
+SMS uses the GoHighLevel Conversations API for location `jv4grExvok7omWurc4PE` from `+19045268500`. Set either `GHL_API_TOKEN` or `GHL_PRIVATE_TOKEN` (the same private integration token). Leave `MEMBERSHIP_SMS_SEND` unset until quiet hours, consent, and the sending number are confirmed. Quiet hours are 9:00 AM to 8:00 PM Pacific unless a member time zone is stored.
+
+Apply `db/membership/005_lifecycle_messages.sql` with the other membership migrations before turning lifecycle mail on. Phase 2 templates stay disabled.
 
 ## Database
 

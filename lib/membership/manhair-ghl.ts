@@ -23,7 +23,7 @@ export type GhlTarget =
   | { ok: true; locationId: string; pipelineId: string; stageMap: Record<SalesStage, string>; token: string };
 
 export function resolveGhlTarget(env: AppEnv): GhlTarget {
-  const token = env.GHL_API_TOKEN?.trim() ?? "";
+  const token = env.GHL_API_TOKEN?.trim() || env.GHL_PRIVATE_TOKEN?.trim() || "";
   if (!token) return { ok: false, reason: "no_token" };
   const requestedLocation = env.GHL_LOCATION_ID?.trim();
   if (requestedLocation && requestedLocation !== MANHAIR_GHL_LOCATION_ID) return { ok: false, reason: "wrong_location" };

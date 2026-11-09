@@ -66,6 +66,7 @@ function mapMember(row: Row): MemberRecord {
     pauseCollection: bool(row.pause_collection),
     attention: (text(row.attention) as Attention) ?? null,
     paymentGraceStartedAt: text(row.payment_grace_started_at),
+    pauseResumeAt: text(row.pause_resume_at),
     termsVersion: requiredText(row.terms_version),
     lastStatusEventCreated: num(row.last_status_event_created),
     version: num(row.version),
@@ -157,7 +158,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           stripe_subscription_id, stripe_subscription_item_id, monthly_cents, setup_cents,
           setup_paid, recurring_start_at, next_charge_at, charge_at_source, minimum_term_ends_at, rate_lock_ends_at,
           entitlement_year_ends_at, systems_used, maintenance_used, pause_days_used,
-          cancel_at, pause_collection, attention, payment_grace_started_at, terms_version, last_status_event_created, version, created_at
+          cancel_at, pause_collection, attention, payment_grace_started_at, pause_resume_at, terms_version, last_status_event_created, version, created_at
         ) VALUES (
           ${member.id}, ${member.email}, ${member.phone}, ${member.firstName}, ${member.lastName},
           ${member.tier}, ${member.status}, ${member.stripeCustomerId}, ${member.stripeSubscriptionId},
@@ -165,7 +166,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           ${member.setupPaid}, ${member.recurringStartAt}, ${member.nextChargeAt ?? null}, ${member.chargeAtSource ?? null}, ${member.minimumTermEndsAt},
           ${member.rateLockEndsAt}, ${member.entitlementYearEndsAt}, ${member.systemsUsed},
           ${member.maintenanceUsed}, ${member.pauseDaysUsed}, ${member.cancelAt},
-          ${member.pauseCollection}, ${member.attention}, ${member.paymentGraceStartedAt ?? null}, ${member.termsVersion}, ${member.lastStatusEventCreated},
+          ${member.pauseCollection}, ${member.attention}, ${member.paymentGraceStartedAt ?? null}, ${member.pauseResumeAt ?? null}, ${member.termsVersion}, ${member.lastStatusEventCreated},
           ${member.version}, ${member.createdAt}
         )
         ON CONFLICT (id) DO UPDATE SET
@@ -194,6 +195,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           pause_collection = EXCLUDED.pause_collection,
           attention = EXCLUDED.attention,
           payment_grace_started_at = EXCLUDED.payment_grace_started_at,
+          pause_resume_at = EXCLUDED.pause_resume_at,
           terms_version = EXCLUDED.terms_version,
           last_status_event_created = EXCLUDED.last_status_event_created,
           version = EXCLUDED.version
@@ -220,6 +222,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           pause_collection = ${member.pauseCollection},
           attention = ${member.attention},
           payment_grace_started_at = ${member.paymentGraceStartedAt ?? null},
+          pause_resume_at = ${member.pauseResumeAt ?? null},
           last_status_event_created = ${member.lastStatusEventCreated},
           version = ${expectedVersion + 1}
         WHERE id = ${member.id} AND version = ${expectedVersion}
@@ -314,10 +317,12 @@ export function createSqlStore(connectionString: string): MembershipStore {
     async upsertInvoice(row) {
       await sql`
         INSERT INTO membership_invoices (
-          id, member_id, kind, status, amount_paid, amount_refunded, charge_id, failed_at, status_event_created
+          id, member_id, kind, status, amount_paid, amount_refunded, charge_id, failed_at, status_event_created,
+          amount_due, hosted_invoice_url, card_last4, paid_at
         ) VALUES (
           ${row.id}, ${row.memberId}, ${row.kind}, ${row.status}, ${row.amountPaid}, ${row.amountRefunded},
-          ${row.chargeId ?? null}, ${row.failedAt ?? null}, ${row.statusEventCreated ?? null}
+          ${row.chargeId ?? null}, ${row.failedAt ?? null}, ${row.statusEventCreated ?? null},
+          ${row.amountDue ?? null}, ${row.hostedInvoiceUrl ?? null}, ${row.cardLast4 ?? null}, ${row.paidAt ?? null}
         )
         ON CONFLICT (id) DO UPDATE SET
           status = EXCLUDED.status,
@@ -325,7 +330,11 @@ export function createSqlStore(connectionString: string): MembershipStore {
           kind = EXCLUDED.kind,
           charge_id = COALESCE(EXCLUDED.charge_id, membership_invoices.charge_id),
           failed_at = COALESCE(membership_invoices.failed_at, EXCLUDED.failed_at),
-          status_event_created = EXCLUDED.status_event_created
+          status_event_created = EXCLUDED.status_event_created,
+          amount_due = COALESCE(EXCLUDED.amount_due, membership_invoices.amount_due),
+          hosted_invoice_url = COALESCE(EXCLUDED.hosted_invoice_url, membership_invoices.hosted_invoice_url),
+          card_last4 = COALESCE(EXCLUDED.card_last4, membership_invoices.card_last4),
+          paid_at = COALESCE(EXCLUDED.paid_at, membership_invoices.paid_at)
       `;
     },
     async addRefund(_invoiceId, cents) {
@@ -454,6 +463,10 @@ export function createSqlStore(connectionString: string): MembershipStore {
           chargeId: text(record.charge_id),
           failedAt: text(record.failed_at),
           statusEventCreated: record.status_event_created == null ? null : num(record.status_event_created),
+          amountDue: record.amount_due == null ? null : num(record.amount_due),
+          hostedInvoiceUrl: text(record.hosted_invoice_url),
+          cardLast4: text(record.card_last4),
+          paidAt: text(record.paid_at),
         };
       });
     },
@@ -713,9 +726,12 @@ export function createSqlStore(connectionString: string): MembershipStore {
     },
     async savePauseRequest(row) {
       await sql`
-        INSERT INTO membership_pause_requests (id, member_id, days, status, policy_version, created_at)
-        VALUES (${row.id}, ${row.memberId}, ${row.days}, ${row.status}, ${row.policyVersion}, ${row.createdAt})
-        ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status
+        INSERT INTO membership_pause_requests (id, member_id, days, status, policy_version, created_at, resume_at, decline_reason)
+        VALUES (${row.id}, ${row.memberId}, ${row.days}, ${row.status}, ${row.policyVersion}, ${row.createdAt}, ${row.resumeAt ?? null}, ${row.declineReason ?? null})
+        ON CONFLICT (id) DO UPDATE SET
+          status = EXCLUDED.status,
+          resume_at = COALESCE(EXCLUDED.resume_at, membership_pause_requests.resume_at),
+          decline_reason = COALESCE(EXCLUDED.decline_reason, membership_pause_requests.decline_reason)
       `;
     },
     async listPauseRequests(memberId) {
@@ -731,6 +747,8 @@ export function createSqlStore(connectionString: string): MembershipStore {
           status: requiredText(record.status) as PauseRequestRecord["status"],
           policyVersion: requiredText(record.policy_version),
           createdAt: requiredText(record.created_at),
+          resumeAt: text(record.resume_at),
+          declineReason: text(record.decline_reason),
         };
       });
     },
@@ -767,6 +785,68 @@ export function createSqlStore(connectionString: string): MembershipStore {
         };
       });
     },
+    async recordLifecycleMessage(row) {
+      const inserted = await sql`
+        INSERT INTO membership_messages (
+          id, dedupe_key, member_id, template_id, channel, cycle_key, status, recipient, subject, text_body, html_body, error, created_at
+        ) VALUES (
+          ${row.id}, ${row.dedupeKey}, ${row.memberId}, ${row.templateId}, ${row.channel}, ${row.cycleKey},
+          ${row.status}, ${row.recipient}, ${row.subject}, ${row.textBody}, ${row.htmlBody}, ${row.error}, ${row.createdAt}
+        )
+        ON CONFLICT (dedupe_key) DO NOTHING
+        RETURNING id
+      `;
+      return inserted.length === 1 ? "created" : "duplicate";
+    },
+    async findLifecycleMessage(dedupeKey) {
+      const rows = await sql`SELECT * FROM membership_messages WHERE dedupe_key = ${dedupeKey} LIMIT 1`;
+      const record = rows[0] as Row | undefined;
+      return record ? mapLifecycle(record) : null;
+    },
+    async updateLifecycleMessage(id, patch) {
+      if (patch.status) await sql`UPDATE membership_messages SET status = ${patch.status} WHERE id = ${id}`;
+      if ("error" in patch) await sql`UPDATE membership_messages SET error = ${patch.error ?? null} WHERE id = ${id}`;
+    },
+    async listLifecycleMessages() {
+      const rows = await sql`SELECT * FROM membership_messages ORDER BY created_at`;
+      return rows.map((row) => mapLifecycle(row as Row));
+    },
+    async saveEventFacts(eventId, facts) {
+      const encoded = JSON.stringify(facts);
+      await sql`
+        INSERT INTO membership_event_facts (event_id, facts) VALUES (${eventId}, ${encoded})
+        ON CONFLICT (event_id) DO UPDATE SET facts = EXCLUDED.facts
+      `;
+    },
+    async getEventFacts(eventId) {
+      const rows = await sql`SELECT facts FROM membership_event_facts WHERE event_id = ${eventId} LIMIT 1`;
+      const raw = text((rows[0] as Row | undefined)?.facts);
+      if (!raw) return {};
+      try {
+        const parsed = JSON.parse(raw) as Record<string, string>;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    },
+  };
+}
+
+function mapLifecycle(record: Row) {
+  return {
+    id: requiredText(record.id),
+    dedupeKey: requiredText(record.dedupe_key),
+    memberId: text(record.member_id),
+    templateId: requiredText(record.template_id),
+    channel: requiredText(record.channel) as "email" | "sms",
+    cycleKey: requiredText(record.cycle_key),
+    status: requiredText(record.status) as "queued" | "sent" | "held" | "failed" | "fake" | "skipped",
+    recipient: requiredText(record.recipient),
+    subject: requiredText(record.subject),
+    textBody: requiredText(record.text_body),
+    htmlBody: requiredText(record.html_body),
+    error: text(record.error),
+    createdAt: requiredText(record.created_at),
   };
 }
 
@@ -893,6 +973,12 @@ export function unavailableStore(): MembershipStore {
     recordUsage: async () => "rejected",
     saveDraft: fail,
     listDrafts: async () => [],
+    recordLifecycleMessage: fail,
+    findLifecycleMessage: async () => null,
+    updateLifecycleMessage: fail,
+    listLifecycleMessages: async () => [],
+    saveEventFacts: fail,
+    getEventFacts: async () => ({}),
   };
 }
 

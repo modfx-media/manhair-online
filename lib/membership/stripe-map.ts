@@ -1,4 +1,5 @@
 import { linePriceId, type InternalEvent } from "./billing";
+import { formatStudioDay } from "./email-copy";
 
 function idOf(value: unknown): string | null {
   if (typeof value === "string") return value;
@@ -60,6 +61,53 @@ export async function resolveRiskCustomer(
     customer = idOf((await charges.retrieve(chargeId)).customer);
   }
   return { ...event, data: { object: { ...object, customer } } };
+}
+
+export function invoiceCopyFacts(object: Record<string, unknown>): Record<string, string> {
+  const transitions = object.status_transitions as { paid_at?: number } | undefined;
+  const charge = object.charge;
+  let last4 = "";
+  if (charge && typeof charge === "object" && "payment_method_details" in charge) {
+    const details = charge.payment_method_details as { card?: { last4?: string } } | undefined;
+    if (typeof details?.card?.last4 === "string") last4 = details.card.last4;
+  }
+  const paidAt = typeof transitions?.paid_at === "number" ? new Date(transitions.paid_at * 1000).toISOString() : "";
+  const amountDue = typeof object.amount_due === "number" ? String(object.amount_due) : "";
+  const hosted = typeof object.hosted_invoice_url === "string" ? object.hosted_invoice_url : "";
+  const failedAt = typeof object.created === "number" ? new Date(object.created * 1000) : null;
+  return {
+    amount_due_cents: amountDue,
+    hosted_invoice_url: hosted,
+    card_last4: last4,
+    paid_at: paidAt,
+    failed_amount: amountDue ? formatCents(Number(amountDue)) : "",
+    payment_amount: typeof object.amount_paid === "number" ? formatCents(object.amount_paid) : "",
+    payment_date: paidAt ? formatStudioDay(new Date(paidAt)) : "",
+    failed_payment_date: failedAt ? formatStudioDay(failedAt) : "",
+    invoice_url: hosted,
+    card_last4_display: last4,
+  };
+}
+
+export function disputeCopyFacts(object: Record<string, unknown>): Record<string, string> {
+  const evidence = object.evidence_details as { due_by?: number } | undefined;
+  const chargeId = idOf(object.charge);
+  const disputeId = typeof object.id === "string" ? object.id : "";
+  return {
+    dispute_amount: typeof object.amount === "number" ? formatCents(object.amount) : "",
+    dispute_reason: typeof object.reason === "string" ? object.reason.replaceAll("_", " ") : "",
+    dispute_evidence_due_date: typeof evidence?.due_by === "number" ? formatStudioDay(new Date(evidence.due_by * 1000)) : "",
+    stripe_dashboard_url: chargeId
+      ? `https://dashboard.stripe.com/payments/${chargeId}`
+      : disputeId
+        ? `https://dashboard.stripe.com/disputes/${disputeId}`
+        : "",
+    event_id: disputeId,
+  };
+}
+
+function formatCents(cents: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
 export function mapStripeEvent(event: StripeEventShape): InternalEvent {

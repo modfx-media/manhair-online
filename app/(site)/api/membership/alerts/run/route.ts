@@ -1,4 +1,5 @@
 import { drainAlerts } from "@/lib/membership/handlers";
+import { runDueLifecycle } from "@/lib/membership/lifecycle-send";
 import { runtimeDeps } from "@/lib/membership/runtime";
 
 export const runtime = "nodejs";
@@ -10,11 +11,13 @@ async function run(request: Request) {
   if (!secret || header !== `Bearer ${secret}`) {
     return Response.json({ ok: false, error: "cron_unauthorized" }, { status: 401 });
   }
-  const result = await drainAlerts(runtimeDeps());
+  const deps = runtimeDeps();
+  const result = await drainAlerts(deps);
   if (result.unavailable) {
     return Response.json({ ok: false, error: "database_not_configured" }, { status: 503 });
   }
-  return Response.json({ ok: true, ...result });
+  const lifecycle = await runDueLifecycle(deps);
+  return Response.json({ ok: true, ...result, lifecycle });
 }
 
 export function GET(request: Request) {

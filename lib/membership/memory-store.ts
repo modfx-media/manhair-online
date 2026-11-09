@@ -10,6 +10,7 @@ import type {
   EventClaim,
   AppointmentRecord,
   InvoiceRecord,
+  LifecycleMessage,
   MemberRecord,
   MembershipStore,
   NoteRecord,
@@ -36,6 +37,8 @@ export function createMemoryStore(): MembershipStore {
   const activity: ActivityRecord[] = [];
   const pauses: PauseRequestRecord[] = [];
   const drafts: DraftRecord[] = [];
+  const lifecycle: LifecycleMessage[] = [];
+  const facts = new Map<string, Record<string, string>>();
   const recoveries = new Map<string, RecoveryRecord>();
   const staffLinks = new Map<string, StaffLinkRecord>();
   const staffSessions = new Map<string, StaffSessionRecord>();
@@ -308,6 +311,27 @@ export function createMemoryStore(): MembershipStore {
     },
     async listDrafts(dealId) {
       return drafts.filter((item) => item.dealId === dealId);
+    },
+    async recordLifecycleMessage(row) {
+      if (lifecycle.some((item) => item.dedupeKey === row.dedupeKey)) return "duplicate";
+      lifecycle.push(row);
+      return "created";
+    },
+    async findLifecycleMessage(dedupeKey) {
+      return lifecycle.find((item) => item.dedupeKey === dedupeKey) ?? null;
+    },
+    async updateLifecycleMessage(id, patch) {
+      const row = lifecycle.find((item) => item.id === id);
+      if (row) Object.assign(row, patch);
+    },
+    async listLifecycleMessages() {
+      return lifecycle.map((item) => ({ ...item }));
+    },
+    async saveEventFacts(eventId, value) {
+      facts.set(eventId, value);
+    },
+    async getEventFacts(eventId) {
+      return { ...(facts.get(eventId) ?? {}) };
     },
   };
 }

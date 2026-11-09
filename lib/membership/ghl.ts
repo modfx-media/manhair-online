@@ -1,5 +1,6 @@
 import { GHL_MEMBERSHIP_TAGS, type MembershipGhlPayload } from "./ghl-profile";
 import { resolveGhlTarget } from "./manhair-ghl";
+import { smsWindowOpen } from "./sms-window";
 import type { AppEnv } from "./readiness";
 
 const REJECTED_LOCATIONS = new Set(["", "default", "0", "null", "undefined", "manhair", "test"]);
@@ -267,16 +268,20 @@ export async function pushMembershipProfile(
   return "pushed";
 }
 
-/** Texts go out through HighLevel from the location's default number. No from-number is sent. */
+/** Texts go out through HighLevel Conversations from the studio number. Off unless MEMBERSHIP_SMS_SEND=true. */
+export const GHL_SMS_FROM = "+19045268500";
+
 export async function sendLocationSms(
   env: AppEnv,
   contactId: string | null,
   message: string,
   fetchImpl: typeof fetch,
   consented: boolean,
+  now: Date = new Date(),
 ): Promise<{ sent: boolean; reason: string }> {
   if (!consented) return { sent: false, reason: "no_sms_consent" };
   if (env.MEMBERSHIP_SMS_SEND !== "true") return { sent: false, reason: "sms_disabled" };
+  if (!smsWindowOpen(now)) return { sent: false, reason: "quiet_hours" };
   const target = resolveGhlTarget(env);
   if (!target.ok) return { sent: false, reason: "not_connected" };
   if (!contactId) return { sent: false, reason: "no_contact" };
@@ -286,8 +291,9 @@ export async function sendLocationSms(
       Authorization: `Bearer ${target.token}`,
       Version: "2021-07-28",
       "Content-Type": "application/json",
+      LocationId: target.locationId,
     },
-    body: JSON.stringify({ type: "SMS", contactId, message }),
+    body: JSON.stringify({ type: "SMS", contactId, message, fromNumber: GHL_SMS_FROM }),
   });
   if (!response?.ok) return { sent: false, reason: "push_failed" };
   return { sent: true, reason: "sent" };

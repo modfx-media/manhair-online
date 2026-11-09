@@ -201,11 +201,13 @@ test("the setup confirmation names MANHAIR, the studio address, and the member r
   assert.match(payload.text ?? "", /\$559/);
   assert.match(payload.text ?? "", /Dec 8, 2026/);
   assert.doesNotMatch(payload.text ?? "", /Dec 9, 2026/);
-  assert.match(payload.text ?? "", /Griselda/);
-  assert.match(payload.text ?? "", /unsuitable/);
+  assert.match(payload.text ?? "", /someone from our team/);
+  assert.match(payload.text ?? "", /isn't the right fit/);
   assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/account\//);
   assert.doesNotMatch(payload.text ?? "", /Unsubscribe/i);
-  assert.match(payload.html ?? "", /You're in, Alex/);
+  assert.doesNotMatch(payload.text ?? "", /Griselda/);
+  assert.match(payload.html ?? "", /Welcome to ManHair/);
+  assert.match(payload.html ?? "", /Alex/);
   assert.doesNotMatch(payload.html ?? "", /Unsubscribe/i);
 });
 
@@ -272,12 +274,12 @@ test("a staff alert names the member and links to the hub", async () => {
       return new Response("sent", { status: 200 });
     },
   } as Deps);
-  assert.equal(payload.subject, "New ManHair member: Alex Rivera – Signature");
+  assert.equal(payload.subject, "New member: Alex Rivera, Signature");
   assert.match(payload.text ?? "", /member@example.com/);
   assert.match(payload.text ?? "", /\+1 \(904\) 555-0100/);
   assert.match(payload.text ?? "", /\$495/);
   assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/hub\//);
-  assert.match(payload.text ?? "", /Dec 8, 2026/);
+  assert.match(payload.text ?? "", /Dec 7, 2026/);
   assert.doesNotMatch(payload.text ?? "", /Dec 9, 2026/);
 });
 

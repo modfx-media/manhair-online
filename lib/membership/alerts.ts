@@ -29,7 +29,8 @@ export type AlertKind =
   | "pause_requested"
   | "cancellation_requested"
   | "refund_requested"
-  | "dispute";
+  | "dispute"
+  | "fraud_warning";
 export type AlertAudience = "owner" | "customer";
 export type AlertStatus = "held" | "pending" | "sending" | "delivered" | "failed" | "fake_recorded";
 
