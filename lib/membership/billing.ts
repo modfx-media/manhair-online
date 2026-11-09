@@ -168,12 +168,13 @@ function stripeChargePatch(event: {
 }
 
 function mapStripeStatus(status: string, cancelAt: number | null, paused: boolean): MemberStatus {
+  if (status === "canceled") return "canceled";
   if (paused) return "paused";
   if (cancelAt) return "cancel_scheduled";
   if (status === "trialing") return "trialing";
   if (status === "active") return "active";
   if (status === "past_due") return "past_due";
-  if (status === "canceled" || status === "incomplete_expired" || status === "unpaid") return "canceled";
+  if (status === "incomplete_expired" || status === "unpaid") return "canceled";
   if (status === "incomplete") return "needs_review";
   return "needs_review";
 }

@@ -810,13 +810,100 @@ test("readiness reports the real email and SMS flags", async () => {
       MEMBERSHIP_SMS_SEND: "true",
     }),
   }));
+  assert.equal(offBody.payments, "ready");
+  assert.equal(offBody.legalReview, "ready");
   const onBody = await on.json();
+  assert.equal(onBody.payments, "ready");
+  assert.equal(onBody.legalReview, "ready");
   assert.deepEqual(onBody.messaging, {
     confirmationEmail: "enabled",
     lifecycleEmail: "enabled",
     staffAlerts: "enabled",
     sms: "enabled",
   });
+});
+
+test("a scheduled cancellation and a deleted subscription send once", async () => {
+  const sent: string[] = [];
+  const context = deps({
+    constructEvent: (payload) => JSON.parse(payload),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_LIFECYCLE_SEND: "true",
+      MEMBERSHIP_LIFECYCLE_PHASE1: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+      MEMBERSHIP_SMS_SEND: "true",
+      GHL_API_TOKEN: "token",
+    }),
+    fetchImpl: async (input, init) => {
+      sent.push(`${String(input)} ${String(init?.body ?? "")}`);
+      return new Response("ok", { status: 200 });
+    },
+  });
+  await context.store.saveMember(await seedMember(context.store, { setupPaid: true, status: "active", phone: "9045550100" }));
+  await context.store.addConsent({
+    id: "con_cancel",
+    memberId: "mem_1",
+    termsVersion: "2026-11-07",
+    termsAcceptedAt: NOW.toISOString(),
+    autorenewAcceptedAt: NOW.toISOString(),
+    marketingEmail: false,
+    smsConsent: true,
+    smsConsentText: "yes",
+    smsConsentAt: NOW.toISOString(),
+    smsConsentVersion: "2026-11-09-tcpa",
+  });
+  await context.store.saveDeal({
+    id: "deal_cancel",
+    memberId: "mem_1",
+    name: "Alex Rivera",
+    email: "member@example.com",
+    phone: "9045550100",
+    stage: "Active Clients",
+    assignee: "",
+    nextFollowUp: null,
+    ghlContactId: "contact_cancel",
+    ghlOpportunityId: null,
+    syncStatus: "pushed",
+    syncHash: "",
+    locationId: null,
+    remoteUpdatedAt: null,
+    staffEditedAt: null,
+  });
+  const schedule = JSON.stringify({
+    id: "evt_cancel_sched",
+    type: "customer.subscription.updated",
+    created: 50,
+    data: { object: { id: "sub_1", customer: "cus_1", status: "active", cancel_at: 1_800_000_000, items: { data: [{ id: "si_1" }] } } },
+  });
+  const post = (body: string) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "t=1" },
+    body,
+  }), context);
+  assert.equal((await post(schedule)).status, 200);
+  assert.equal((await context.store.findMemberById("mem_1"))?.status, "cancel_scheduled");
+  const scheduled = await context.store.listLifecycleMessages();
+  assert.equal(scheduled.filter((row) => row.templateId === "cancellation_scheduled_email" && row.status === "sent").length, 1);
+  assert.equal(scheduled.filter((row) => row.templateId === "cancellation_scheduled_sms" && row.status === "sent").length, 1);
+  assert.match(sent.find((line) => line.includes("/conversations/messages")) ?? "", /"type":"SMS"/);
+  assert.equal((await post(schedule)).status, 200);
+  assert.equal((await context.store.listLifecycleMessages()).length, scheduled.length);
+  const deleted = JSON.stringify({
+    id: "evt_deleted",
+    type: "customer.subscription.deleted",
+    created: 60,
+    data: { object: { id: "sub_1", customer: "cus_1", status: "canceled", cancel_at: 1_800_000_000, items: { data: [{ id: "si_1" }] } } },
+  });
+  assert.equal((await post(deleted)).status, 200);
+  assert.equal((await context.store.findMemberById("mem_1"))?.status, "canceled");
+  const ended = await context.store.listLifecycleMessages();
+  assert.equal(ended.filter((row) => row.templateId === "membership_ended_email" && row.status === "sent").length, 1);
+  const again = JSON.stringify({ ...JSON.parse(deleted), id: "evt_deleted_again" });
+  assert.equal((await post(again)).status, 200);
+  assert.equal((await context.store.listLifecycleMessages()).filter((row) => row.templateId === "membership_ended_email").length, 1);
 });
 
 test("messaging send is refused", async () => {

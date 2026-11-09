@@ -48,6 +48,30 @@ test("a checkout completed later still has a valid 30-day processor trial", () =
   assert.equal(fraud.statusPatch?.attention, "fraud");
 });
 
+test("a deleted subscription with cancel_at ends instead of staying cancel_scheduled", () => {
+  const deleted = mapStripeEvent({
+    id: "evt_deleted_cancel_at",
+    type: "customer.subscription.deleted",
+    created: 200,
+    data: {
+      object: {
+        id: "sub_1",
+        customer: "cus_1",
+        status: "canceled",
+        cancel_at: 1_800_000_000,
+        metadata: { member_id: "mem_1" },
+        items: { data: [{ id: "si_1" }] },
+      },
+    },
+  });
+  assert.equal(deleted.type, "customer.subscription.updated");
+  if (deleted.type !== "customer.subscription.updated") return;
+  assert.equal(deleted.status, "canceled");
+  assert.equal(deleted.cancelAt, 1_800_000_000);
+  const effect = reduceBillingEvent(member({ setupPaid: true, status: "cancel_scheduled" }), deleted, new Set());
+  assert.equal(effect.statusPatch?.status, "canceled");
+});
+
 test("an evening Pacific trial end is the previous calendar day from UTC", () => {
   // Dec 8, 2026 8:44 PM PST. UTC is already Dec 9.
   const trialEnd = Math.floor(Date.parse("2026-12-09T04:44:00.000Z") / 1000);
@@ -180,7 +204,7 @@ test("founding stays off and rejects an expanded cap", () => {
   assert.equal(open.enabled && open.cap, 25);
 });
 
-test("checkout params are one subscription with a 30 day trial and no card types", () => {
+test("checkout params are one subscription with a 30 day trial and card payments only", () => {
   const built = buildCheckoutParams({
     env: env(),
     memberId: "mem_1",
@@ -198,7 +222,7 @@ test("checkout params are one subscription with a 30 day trial and no card types
   assert.equal(built.params.subscription_data.trial_period_days, 30);
   assert.equal(built.params.line_items.length, 2);
   assert.equal(built.params.payment_method_collection, "always");
-  assert.equal("payment_method_types" in built.params, false);
+  assert.deepEqual(built.params.payment_method_types, ["card"]);
   const submit = built.params.custom_text.submit.message;
   const expectedSubmit = checkoutSubmitMessage({
     setupCents: 49500,

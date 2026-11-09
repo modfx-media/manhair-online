@@ -7,7 +7,7 @@ import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, checkoutPaymentView, isSameOrigin, priceMatches, publicCheckoutOrigin, safeAppOrigin, type PriceSnapshot } from "./checkout";
 import { ghlMode, paidMemberStageChange, pushMembershipProfile, pushOpportunityStage, sendLocationSms, syncHash, syncLead } from "./ghl";
-import { postMembershipEmail, renderAlertCatalog, runDueLifecycle, sendCatalogMessage } from "./lifecycle-send";
+import { SUBSCRIPTION_LIFECYCLE_TEMPLATES, postMembershipEmail, renderAlertCatalog, runDueLifecycle, sendCatalogMessage } from "./lifecycle-send";
 import { formatAppointmentWhen, memberMergeVars } from "./lifecycle-vars";
 import { disputeCopyFacts, invoiceCopyFacts } from "./stripe-map";
 import { membershipGhlPayload, type MembershipGhlInput } from "./ghl-profile";
@@ -191,7 +191,7 @@ async function memberFromEvent(store: MembershipStore, event: ReturnType<typeof 
 export async function handleReadiness(deps: Deps): Promise<Response> {
   const founding = foundingConfig(deps.env);
   return json({
-    payments: paymentBlockers(deps.env).length === 0 ? "blocked_until_account_lookup" : "blocked",
+    payments: paymentBlockers(deps.env).length === 0 ? "ready" : "blocked",
     paymentBlockers: paymentBlockers(deps.env).map((blocker) => blocker.operatorMessage),
     portal: paymentBlockers(deps.env).length === 0 ? "billing_only_when_customer_exists" : "not_configured",
     recoveryEmail: recoveryEmailReady(deps.env) ? "enabled" : "not_configured",
@@ -201,7 +201,7 @@ export async function handleReadiness(deps: Deps): Promise<Response> {
     messaging: messagingStatus(deps.env),
     database: databaseReady(deps.env) ? "configured" : "missing",
     sandboxTimelineConfirmed: CHECKOUT_TIMELINE_SANDBOX_CONFIRMED,
-    legalReview: "pending",
+    legalReview: paymentBlockers(deps.env).length === 0 ? "ready" : "pending",
   });
 }
 
@@ -691,6 +691,28 @@ export async function handleAccountPost(request: Request, deps: Deps): Promise<R
   if (action === "tier") return changeTier(member, body, deps);
   if (action === "portal") return openPortal(member, deps, origin);
   return json({ ok: false, error: "unknown_action" }, 404);
+}
+
+async function notifySubscriptionLifecycle(
+  deps: Deps,
+  member: MemberRecord,
+  previousStatus: MemberRecord["status"] | null,
+  stripeType: string,
+): Promise<void> {
+  if (member.status === "cancel_scheduled" && previousStatus !== "cancel_scheduled") {
+    const cycle = member.cancelAt ?? member.id;
+    for (const templateId of SUBSCRIPTION_LIFECYCLE_TEMPLATES.cancel_scheduled) {
+      await notifyLifecycle(deps, member, templateId, `${templateId}:${member.id}:${cycle}`);
+    }
+  }
+  if (stripeType === "customer.subscription.deleted" && member.status === "canceled" && previousStatus !== "canceled") {
+    const suitability = await deps.store.findSuitabilityCase(member.id);
+    if (suitability) return;
+    const cycle = member.stripeSubscriptionId ?? member.id;
+    for (const templateId of SUBSCRIPTION_LIFECYCLE_TEMPLATES.ended) {
+      await notifyLifecycle(deps, member, templateId, `${templateId}:${member.id}:${cycle}`);
+    }
+  }
 }
 
 async function notifyLifecycle(
@@ -1194,6 +1216,10 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
         now: deps.now(),
         env: deps.env,
       }));
+    }
+    if (member && internal.type === "customer.subscription.updated") {
+      const fresh = await deps.store.findMemberById(member.id);
+      if (fresh) await notifySubscriptionLifecycle(deps, fresh, previousStatus, event.type);
     }
     const paidNow = Boolean(effect.statusPatch && "setupPaid" in effect.statusPatch && effect.statusPatch.setupPaid);
     if (member && (paidNow || effect.invoice)) {

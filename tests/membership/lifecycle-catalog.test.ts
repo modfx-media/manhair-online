@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import { phase1Templates, renderLifecycleTemplate, templateMaySend } from "../../lib/membership/lifecycle-render";
 import { dueLifecycleSends } from "../../lib/membership/lifecycle-schedule";
@@ -68,7 +70,7 @@ const FIXTURE: Record<string, string> = {
 test("every phase-1 template renders with no unresolved variables", () => {
   const templates = phase1Templates();
   assert.equal(templates.length, 68);
-  const dir = "/opt/cursor/artifacts/lifecycle";
+  const dir = path.join(process.env.MEMBERSHIP_ARTIFACT_DIR || path.join(tmpdir(), "manhair-membership-artifacts"), "lifecycle");
   mkdirSync(dir, { recursive: true });
   for (const template of templates) {
     const rendered = renderLifecycleTemplate(template.id, FIXTURE, {});

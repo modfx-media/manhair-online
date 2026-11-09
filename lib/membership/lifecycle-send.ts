@@ -28,6 +28,12 @@ export function alertTemplateId(kind: AlertKind, audience: AlertAudience): strin
   return ALERT_TEMPLATES[kind]?.[audience] ?? null;
 }
 
+/** Customer mail for a Stripe cancellation that is actually scheduled or finished. */
+export const SUBSCRIPTION_LIFECYCLE_TEMPLATES = {
+  cancel_scheduled: ["cancellation_scheduled_email", "cancellation_scheduled_sms"],
+  ended: ["membership_ended_email"],
+} as const;
+
 export type SendDeps = {
   env: AppEnv;
   store: MembershipStore;

@@ -39,6 +39,8 @@ export type CheckoutParams = {
   success_url: string;
   cancel_url: string;
   payment_method_collection: "always";
+  /** Card only. Apple Pay and Google Pay still ride on the card wallet. */
+  payment_method_types: ["card"];
   custom_text: { submit: { message: string } };
   expires_at: number;
   integration_identifier: string;
@@ -141,6 +143,7 @@ export function buildCheckoutParams(input: {
     success_url: `${input.origin}/api/membership/return/?token=${encodeURIComponent(input.returnToken)}`,
     cancel_url: `${input.origin}/join/?tier=${input.tier}&checkout=cancelled`,
     payment_method_collection: "always",
+    payment_method_types: ["card"],
     custom_text: { submit: { message: disclosure } },
     expires_at: Math.floor(input.now.getTime() / 1000) + 30 * 60,
     integration_identifier: integrationIdentifier(),
@@ -184,7 +187,9 @@ export function assertSingleSubscription(params: CheckoutParams): void {
     throw new Error("trial must be 30 days");
   }
   if (params.line_items.length !== 2) throw new Error("expected one recurring price and one setup price");
-  if ("payment_method_types" in params) throw new Error("payment_method_types is not allowed");
+  if (params.payment_method_types.length !== 1 || params.payment_method_types[0] !== "card") {
+    throw new Error("membership checkout accepts cards only");
+  }
 }
 
 export function safeAppOrigin(request: Request, env: AppEnv): string {

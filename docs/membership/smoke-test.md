@@ -14,7 +14,7 @@ npm test
 
 - Setup is due at the checkout instant, the first membership charge is 30 days later, and the next charge is one calendar month after that.
 - Checkout copy says charges show as MODFXMEDIA, LLC and that this app does not change the shared Stripe profile.
-- Hosted Checkout is one subscription, `trial_period_days` 30, one setup price, and no `payment_method_types`.
+- Hosted Checkout is one subscription, `trial_period_days` 30, one setup price, and `payment_method_types: ['card']`. Apple Pay and Google Pay still come through the card wallet.
 - An email query does not open `/account/`.
 - A signed `invoice.paid` webhook is accepted once and the replay is duplicate.
 - Setup-paid alerts are stored as `held` for the owner and the customer. The drain delivers nothing while sender and recipient flags are off.
