@@ -169,4 +169,6 @@ export function sessionSecret(env: AppEnv): string | null {
   return env.MEMBERSHIP_SESSION_SECRET?.trim() || env.PAYLOAD_SECRET?.trim() || null;
 }
 
-export const CHECKOUT_TIMELINE_SANDBOX_CONFIRMED = false;
+// Hosted Checkout and two test-clock renewals verified on 2026-11-09 UTC.
+// See docs/membership/launch-readiness-2026-11-08.md for scope and remaining gates.
+export const CHECKOUT_TIMELINE_SANDBOX_CONFIRMED = true;
