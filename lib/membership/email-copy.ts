@@ -170,12 +170,13 @@ export function staffAlertMessage(input: {
 }): MailMessage {
   const plan = input.plan || "No plan yet";
   const subject = (STAFF_SUBJECT[input.kind] ?? ((name: string) => `ManHair ${input.kind.replaceAll("_", " ")}: ${name}`))(input.name || "Unknown", plan);
+  const phone = input.phone?.trim() ? input.phone.trim() : "not provided";
   const lines = [
     subject,
     "",
     `Name: ${input.name || "Unknown"}`,
     `Email: ${input.email || "Unknown"}`,
-    `Phone: ${input.phone || "None"}`,
+    `Phone: ${phone}`,
     `Plan: ${plan}`,
     `Amount: ${formatUsd(input.amountCents)}`,
     `Event: ${input.kind.replaceAll("_", " ")}`,
@@ -188,7 +189,7 @@ export function staffAlertMessage(input: {
     <div style="max-width:560px;margin:0 auto;padding:24px;">
       <p style="letter-spacing:.14em;text-transform:uppercase;font-size:12px;color:#8a6a32;">ManHair studio</p>
       <h1 style="font-size:22px;">${escapeHtml(subject)}</h1>
-      <p>Name: ${escapeHtml(input.name || "Unknown")}<br>Email: ${escapeHtml(input.email || "Unknown")}<br>Phone: ${escapeHtml(input.phone || "None")}<br>Plan: ${escapeHtml(plan)}<br>Amount: ${escapeHtml(formatUsd(input.amountCents))}<br>Event: ${escapeHtml(input.kind.replaceAll("_", " "))}<br>Time: ${escapeHtml(formatStudioTime(input.occurredAt))}</p>
+      <p>Name: ${escapeHtml(input.name || "Unknown")}<br>Email: ${escapeHtml(input.email || "Unknown")}<br>Phone: ${escapeHtml(phone)}<br>Plan: ${escapeHtml(plan)}<br>Amount: ${escapeHtml(formatUsd(input.amountCents))}<br>Event: ${escapeHtml(input.kind.replaceAll("_", " "))}<br>Time: ${escapeHtml(formatStudioTime(input.occurredAt))}</p>
       <p><a href="${escapeHtml(input.hubUrl)}">Open the studio hub</a></p>
     </div>
   </body></html>`;

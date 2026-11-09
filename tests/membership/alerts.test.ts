@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { alertAfterFailure, alertsForPayment, ownerAlertsReady } from "../../lib/membership/alerts";
+import { staffAlertMessage } from "../../lib/membership/email-copy";
 import { drainAlerts, type Deps } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
 import { newId } from "../../lib/membership/tokens";
@@ -278,4 +279,21 @@ test("a staff alert names the member and links to the hub", async () => {
   assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/hub\//);
   assert.match(payload.text ?? "", /Dec 8, 2026/);
   assert.doesNotMatch(payload.text ?? "", /Dec 9, 2026/);
+});
+
+test("a missing phone is labeled not provided", () => {
+  const message = staffAlertMessage({
+    kind: "consultation_requested",
+    name: "Ari Cole",
+    email: "ari@example.com",
+    phone: null,
+    plan: null,
+    amountCents: 0,
+    occurredAt: now,
+    hubUrl: "https://www.manhaironline.com/hub/",
+  });
+  assert.match(message.text, /Phone: not provided/);
+  assert.match(message.html, /Phone: not provided/);
+  assert.doesNotMatch(message.text, /Phone: None/);
+  assert.doesNotMatch(message.html, /Phone: None/);
 });
