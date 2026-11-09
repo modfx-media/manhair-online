@@ -33,15 +33,15 @@ export const SITE = {
 
 export const CONTACT = {
   studio: {
-    label: "Orange, CA Studio",
-    streetLine1: "Old Towne Orange",
-    streetLine2: "Orange, CA 92866",
-    streetAddress: "Old Towne Orange",
-    addressLocality: "Orange",
+    label: "Lake Forest Studio",
+    streetLine1: "20 Heron",
+    streetLine2: "Lake Forest, CA 92630",
+    streetAddress: "20 Heron",
+    addressLocality: "Lake Forest",
     addressRegion: "CA",
-    postalCode: "92866",
-    phone: "(904) 526-8500",
-    phoneHref: "tel:1-904-526-8500",
+    postalCode: "92630",
+    phone: "+1 (904) 526-8500",
+    phoneHref: "tel:+19045268500",
     region: "CA",
   },
   email: "info@manhaironline.com",

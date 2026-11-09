@@ -1,5 +1,5 @@
 import draftJson from "../../manhair-lifecycle/lifecycle.json";
-import { canonicalEvent } from "./message-lifecycle";
+import { canonicalEvent, eventNamesAligned } from "./lifecycle-events";
 
 type DraftEmail = {
   template_id: string;
@@ -70,7 +70,8 @@ function reviewEmail(email: DraftEmail): ReviewedEmail {
   if (facing.includes("BOOKING_URL") || facing.includes("BOOKING")) {
     blocks.add("public_booking_link_withheld");
   }
-  if (email.event_key.includes("setup_payment_verified")) blocks.add("event_alias_canonicalized");
+  if (canonicalEvent(email.event_key) !== email.event_key) blocks.add("event_alias_canonicalized");
+  if (!eventNamesAligned(email.event_key)) blocks.add("event_name_unaligned");
   const channel = email.sequence.includes("nurture") || email.template_id.includes("nurture") || email.template_id.includes("abandoned")
     ? "marketing"
     : "transactional";

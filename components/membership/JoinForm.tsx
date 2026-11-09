@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { SMS_CONSENT_TEXT } from "@/lib/membership/business";
 import { TERMS_VERSION, type TierId } from "@/lib/membership/offer";
+import { trackBeginCheckout } from "@/components/membership/track-client";
 
 export function JoinForm({
   tier,
+  tierName,
+  setupCents,
   paymentsReady,
   foundingOpen,
   blockedMessage,
@@ -14,6 +18,8 @@ export function JoinForm({
   preview,
 }: {
   tier: TierId;
+  tierName: string;
+  setupCents: number;
   paymentsReady: boolean;
   foundingOpen: boolean;
   blockedMessage: string | null;
@@ -43,11 +49,13 @@ export function JoinForm({
         autorenewAccepted: form.get("autorenewAccepted") === "on",
         founding: form.get("founding") === "on",
         marketingConsent: form.get("marketingConsent") === "on",
+        smsConsent: form.get("smsConsent") === "on",
       }),
     });
     const body = (await response.json()) as { ok?: boolean; url?: string; message?: string; error?: string };
     setPending(false);
     if (body.ok && body.url) {
+      trackBeginCheckout({ tier, tierName, value: setupCents / 100 });
       window.location.assign(body.url);
       return;
     }
@@ -87,6 +95,10 @@ export function JoinForm({
       <label className="flex items-start gap-3 text-sm leading-6 text-ink-800">
         <input name="autorenewAccepted" type="checkbox" required className="mt-1 size-4" />
         <span>{monthlyConsent}</span>
+      </label>
+      <label className="flex items-start gap-3 text-sm leading-6 text-ink-800">
+        <input name="smsConsent" type="checkbox" className="mt-1 size-4" />
+        <span>{SMS_CONSENT_TEXT}</span>
       </label>
       <label className="flex items-start gap-3 text-sm leading-6 text-ink-800">
         <input name="marketingConsent" type="checkbox" className="mt-1 size-4" />

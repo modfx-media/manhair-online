@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { HubConsole } from "@/components/membership/HubConsole";
+import { HubSignIn } from "@/components/membership/HubSignIn";
 import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { staffRole } from "@/lib/membership/access";
 import { handleHub } from "@/lib/membership/handlers";
@@ -41,15 +41,9 @@ export default async function HubPage() {
       <main className="mx-auto grid max-w-xl gap-4 px-5 py-16">
         <PreviewNotice />
         <h1 className="mh-display text-4xl">Studio hub</h1>
-        <p className="text-sm leading-7 text-ink-800">
-          This page is for the owner and the studio coordinator. A hidden address is not access. Sign in with your own
-          Payload account, and that email has to be on the server allowlist.
-        </p>
-        {staff.authError ? <p className="mt-3 text-sm text-red-800">{staff.authError}</p> : null}
-        <Link className="mh-btn mh-btn-primary mt-6" href="/admin/">
-          Staff sign-in
-        </Link>
-        <p className="mt-6 text-sm leading-7 text-ink-700">{SCHEDULING.summary}</p>
+        <HubSignIn />
+        {staff.authError ? <p className="text-sm text-red-800">{staff.authError}</p> : null}
+        <p className="text-sm leading-7 text-ink-700">{SCHEDULING.summary}</p>
       </main>
     );
   }

@@ -9,6 +9,8 @@ import { chooseContact, ghlErrorDisposition, ghlMode, paidMemberStageChange, pla
 import { MANHAIR_GHL_LOCATION_ID, MANHAIR_LEGACY_PIPELINE_ID } from "../../lib/membership/manhair-ghl";
 import { planCancel, planPauseApply, planUsage, revenueReport, rollEntitlementYear, tierChangeParams } from "../../lib/membership/lifecycle";
 import { FOUNDING_SETUP_CENTS, SETUP_CENTS, TIERS } from "../../lib/membership/offer";
+import { businessIdentity } from "../../lib/membership/business";
+import { payloadOwner } from "../../collections/access";
 import { foundingConfig, paymentBlockers, type AppEnv } from "../../lib/membership/readiness";
 import { FOUNDING_RESERVE_SQL, USAGE_SQL } from "../../lib/membership/sql-store";
 import { createMemoryStore } from "../../lib/membership/memory-store";
@@ -224,12 +226,30 @@ test("staff deny by default and member isolation", () => {
   );
   assert.equal(memberCanRead("mem_1", "mem_2"), false);
   assert.equal(memberCanRead("mem_1", "mem_1"), true);
+  assert.equal(businessIdentity({}).publicPhone, "+1 (904) 526-8500");
+  assert.equal(businessIdentity({}).supportEmail, "info@manhaironline.com");
+  assert.equal(businessIdentity({}).publicAddress, "20 Heron, Lake Forest, CA 92630");
+  const previousOwner = process.env.MEMBERSHIP_OWNER_EMAILS;
+  const previousCoordinator = process.env.MEMBERSHIP_COORDINATOR_EMAILS;
+  process.env.MEMBERSHIP_OWNER_EMAILS = "owner@manhaironline.com";
+  process.env.MEMBERSHIP_COORDINATOR_EMAILS = "griselda@manhaironline.com";
+  try {
+    assert.equal(payloadOwner({ req: { user: { email: "owner@manhaironline.com" } } } as never), true);
+    assert.equal(payloadOwner({ req: { user: { email: "griselda@manhaironline.com" } } } as never), false);
+    assert.equal(payloadOwner({ req: { user: null } } as never), false);
+  } finally {
+    if (previousOwner === undefined) delete process.env.MEMBERSHIP_OWNER_EMAILS;
+    else process.env.MEMBERSHIP_OWNER_EMAILS = previousOwner;
+    if (previousCoordinator === undefined) delete process.env.MEMBERSHIP_COORDINATOR_EMAILS;
+    else process.env.MEMBERSHIP_COORDINATOR_EMAILS = previousCoordinator;
+  }
 });
 
 test("HighLevel stays off for the wrong tenant and does not guess among duplicates", async () => {
   assert.equal(APP_TIMEZONE, "America/Los_Angeles");
   assert.notEqual(APP_TIMEZONE, "America/New_York");
   assert.match(formatStudio(NOW), /Pacific Time/);
+  assert.doesNotMatch(formatStudio(NOW), /\d:\d{2}/);
   assert.equal(ghlMode({}), "off");
   assert.equal(ghlMode({ GHL_API_TOKEN: "token" }), "contacts_and_opportunities");
   assert.equal(ghlMode({ GHL_API_TOKEN: "token", GHL_LOCATION_ID: "default" }), "off");

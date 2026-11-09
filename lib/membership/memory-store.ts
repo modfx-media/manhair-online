@@ -1,6 +1,6 @@
 import { normalizeEmail } from "./tokens";
 import type { AlertRecord } from "./alerts";
-import type { AuthAuditRecord, RecoveryRecord, SyncState } from "./types";
+import type { AuthAuditRecord, RecoveryRecord, StaffLinkRecord, StaffSessionRecord, SyncState } from "./types";
 import type {
   ActivityRecord,
   CheckoutRecord,
@@ -37,6 +37,8 @@ export function createMemoryStore(): MembershipStore {
   const pauses: PauseRequestRecord[] = [];
   const drafts: DraftRecord[] = [];
   const recoveries = new Map<string, RecoveryRecord>();
+  const staffLinks = new Map<string, StaffLinkRecord>();
+  const staffSessions = new Map<string, StaffSessionRecord>();
   const audits: AuthAuditRecord[] = [];
   const alerts = new Map<string, AlertRecord>();
   let syncState: SyncState | null = null;
@@ -80,6 +82,9 @@ export function createMemoryStore(): MembershipStore {
     },
     async addConsent(consent) {
       consents.push(consent);
+    },
+    async listConsents(memberId) {
+      return consents.filter((item) => item.memberId === memberId);
     },
     async reserveFounding(input) {
       const now = Date.now();
@@ -149,7 +154,7 @@ export function createMemoryStore(): MembershipStore {
       else refundRequests.push(row);
     },
     async listRefundRequests(memberId) {
-      return refundRequests.filter((item) => item.memberId === memberId);
+      return refundRequests.filter((item) => !memberId || item.memberId === memberId);
     },
     async updateRefundRequest(id, patch) {
       const row = refundRequests.find((item) => item.id === id);
@@ -202,6 +207,22 @@ export function createMemoryStore(): MembershipStore {
       if (!row || row.used || new Date(row.expiresAt).getTime() <= now.getTime()) return null;
       row.used = true;
       return row.memberId;
+    },
+    async saveStaffLink(row) {
+      staffLinks.set(row.tokenHash, row);
+    },
+    async consumeStaffLink(tokenHash, now) {
+      const row = staffLinks.get(tokenHash);
+      if (!row || row.used || new Date(row.expiresAt).getTime() <= now.getTime()) return null;
+      row.used = true;
+      return row.email;
+    },
+    async saveStaffSession(row) {
+      staffSessions.set(row.tokenHash, row);
+    },
+    async findStaffSession(tokenHash) {
+      const row = staffSessions.get(tokenHash);
+      return row ? { ...row } : null;
     },
     async getSyncState() {
       return syncState;

@@ -1,9 +1,14 @@
 /**
  * Held message plans. Template bodies are not approved copy.
  * Nothing in this module sends mail or enrolls a HighLevel workflow.
+ * Event names come from lifecycle-events.ts, the same list the catalog uses.
  */
 
-export const MESSAGE_TEMPLATE_VERSION = "2026-11-08.1";
+import { LIFECYCLE_EVENTS, canonicalEvent, type LifecycleEventName } from "./lifecycle-events";
+
+export { canonicalEvent };
+
+export const MESSAGE_TEMPLATE_VERSION = "2026-11-09.1";
 
 export type MessageChannel = "transactional" | "marketing";
 export type MessagePlanStatus = "held" | "suppressed";
@@ -24,7 +29,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     version: MESSAGE_TEMPLATE_VERSION,
     channel: "marketing",
     copyStatus: "awaiting_owner_copy",
-    entersOn: "consultation_stored",
+    entersOn: LIFECYCLE_EVENTS.consultation,
     exitsOn: ["converted", "unsubscribed", "dnd", "signup_started"],
   },
   {
@@ -32,7 +37,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     version: MESSAGE_TEMPLATE_VERSION,
     channel: "marketing",
     copyStatus: "awaiting_owner_copy",
-    entersOn: "consultation_stored",
+    entersOn: LIFECYCLE_EVENTS.consultation,
     exitsOn: ["converted", "unsubscribed", "dnd", "signup_started"],
   },
   {
@@ -40,7 +45,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     version: MESSAGE_TEMPLATE_VERSION,
     channel: "transactional",
     copyStatus: "awaiting_owner_copy",
-    entersOn: "stripe_setup_paid",
+    entersOn: LIFECYCLE_EVENTS.setupPaid,
     exitsOn: [],
   },
   {
@@ -48,7 +53,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     version: MESSAGE_TEMPLATE_VERSION,
     channel: "transactional",
     copyStatus: "awaiting_owner_copy",
-    entersOn: "stripe_recurring_timestamp",
+    entersOn: LIFECYCLE_EVENTS.invoiceUpcoming,
     exitsOn: ["unsubscribed_not_applicable"],
   },
   {
@@ -56,7 +61,7 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     version: MESSAGE_TEMPLATE_VERSION,
     channel: "transactional",
     copyStatus: "awaiting_owner_copy",
-    entersOn: "stripe_invoice_failed",
+    entersOn: LIFECYCLE_EVENTS.invoicePaymentFailed,
     exitsOn: [],
   },
   {
@@ -64,14 +69,22 @@ export const MESSAGE_TEMPLATES: readonly MessageTemplate[] = [
     version: MESSAGE_TEMPLATE_VERSION,
     channel: "transactional",
     copyStatus: "awaiting_owner_copy",
-    entersOn: "staff_verified_fitting_at",
+    entersOn: LIFECYCLE_EVENTS.fittingCompleted,
     exitsOn: [],
+  },
+  {
+    id: "member.pause.requested",
+    version: MESSAGE_TEMPLATE_VERSION,
+    channel: "transactional",
+    copyStatus: "awaiting_owner_copy",
+    entersOn: LIFECYCLE_EVENTS.pauseSubmitted,
+    exitsOn: [LIFECYCLE_EVENTS.pauseApproved],
   },
 ] as const;
 
 export type LifecycleFact = {
   eventId: string;
-  type: "consultation_stored" | "signup_started" | "stripe_setup_paid" | "stripe_invoice_failed" | "stripe_recurring_timestamp" | "staff_verified_fitting_at";
+  type: LifecycleEventName;
   occurredAt: string | null;
   memberId: string | null;
   email: string;
@@ -91,12 +104,7 @@ export type Suppression = {
   signupStarted: boolean;
 };
 
-export const CANONICAL_SETUP_PAID = "membership.setup_paid";
-
-/** One internal name for setup payment. The lifecycle alias is not a second welcome. */
-export function canonicalEvent(name: string): string {
-  return name.replaceAll("membership.setup_payment_verified", CANONICAL_SETUP_PAID);
-}
+export const CANONICAL_SETUP_PAID = LIFECYCLE_EVENTS.setupPaid;
 
 /** Channel DND blocks that channel even when the global DND flag is false. */
 export function channelSuppressed(channel: "email" | "sms", suppression: Suppression): string | null {
@@ -122,17 +130,18 @@ export type MessagePlan = {
   send: false;
 };
 
-const TEMPLATE_BY_EVENT: Record<LifecycleFact["type"], string[]> = {
-  consultation_stored: ["lead.consult.received", "lead.nurture.sequence"],
-  signup_started: [],
-  stripe_setup_paid: ["member.setup.confirmed"],
-  stripe_invoice_failed: ["member.payment.failed"],
-  stripe_recurring_timestamp: ["member.recurring.scheduled"],
-  staff_verified_fitting_at: ["member.fitting.milestone"],
+const TEMPLATE_BY_EVENT: Partial<Record<LifecycleEventName, string[]>> = {
+  [LIFECYCLE_EVENTS.consultation]: ["lead.consult.received", "lead.nurture.sequence"],
+  [LIFECYCLE_EVENTS.signupStarted]: [],
+  [LIFECYCLE_EVENTS.setupPaid]: ["member.setup.confirmed"],
+  [LIFECYCLE_EVENTS.invoicePaymentFailed]: ["member.payment.failed"],
+  [LIFECYCLE_EVENTS.invoiceUpcoming]: ["member.recurring.scheduled"],
+  [LIFECYCLE_EVENTS.fittingCompleted]: ["member.fitting.milestone"],
+  [LIFECYCLE_EVENTS.pauseSubmitted]: ["member.pause.requested"],
 };
 
 export function planMessages(fact: LifecycleFact, suppression: Suppression): MessagePlan[] {
-  const ids = TEMPLATE_BY_EVENT[fact.type];
+  const ids = TEMPLATE_BY_EVENT[fact.type] ?? [];
   return ids.map((templateId) => {
     const template = MESSAGE_TEMPLATES.find((item) => item.id === templateId);
     if (!template) {

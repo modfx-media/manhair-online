@@ -16,6 +16,8 @@ type Snapshot = {
   freshness?: string;
   alerts?: Array<{ id: string; kind: string; audience: string; status: string; attempts: number; amountCents: number; memberId: string | null }>;
   cancellationRequests?: Array<{ id: string; memberId: string | null; createdAt: string }>;
+  pauseRequests?: Array<{ id: string; memberId: string; days: number; status: string; createdAt: string }>;
+  refundRequests?: Array<{ id: string; memberId: string; amountCents: number; status: string; createdAt: string }>;
   assignees: string[];
   stages: DealStage[];
   stageCounts: Record<string, number>;
@@ -78,8 +80,20 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
     });
   }, [assignee, data.deals, overdueOnly, stage]);
 
+  const heldAlerts = (data.alerts ?? []).filter((alert) => alert.status === "held");
   return (
     <div className="grid gap-8">
+      <section role="status" className="grid gap-2 rounded-md border border-ink-300 bg-white p-4 text-sm leading-6">
+        <h2 className="font-display text-2xl">Held staff alerts ({heldAlerts.length})</h2>
+        <p>These are saved and were not sent. They stay held until staff recipients and the email transport are configured. Nothing in this list is discarded.</p>
+        {heldAlerts.length === 0 ? <p>No held alerts.</p> : (
+          <ul>
+            {heldAlerts.map((alert) => (
+              <li key={alert.id}>{alert.kind} · {alert.audience} · held · member {alert.memberId ?? "unmapped"}</li>
+            ))}
+          </ul>
+        )}
+      </section>
       <section className="grid gap-2 rounded-md border border-ink-300 bg-ink-100 p-4 text-sm leading-6">
         <p>{data.freshness}</p>
         <p>Stage and follow-up changes stay in this hub. They reach HighLevel only after the ManHair location is authorized. Another agency location is not used.</p>
@@ -96,6 +110,14 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
         </button>
         <p>{SCHEDULING.summary}</p>
         <div>
+          <p className="font-semibold">Pause requests</p>
+          {(data.pauseRequests ?? []).length === 0 ? <p>None recorded. A member request does not change billing.</p> : (
+            <ul>
+              {(data.pauseRequests ?? []).map((request) => (
+                <li key={request.id}>{request.createdAt} · member {request.memberId} · {request.days} days · {request.status}</li>
+              ))}
+            </ul>
+          )}
           <p className="font-semibold">Cancellation requests</p>
           {(data.cancellationRequests ?? []).length === 0 ? (
             <p>None recorded. A member request does not change billing.</p>
@@ -103,6 +125,14 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
             <ul>
               {(data.cancellationRequests ?? []).map((request) => (
                 <li key={request.id}>{request.createdAt} · member {request.memberId ?? "unknown"} · billing unchanged</li>
+              ))}
+            </ul>
+          )}
+          <p className="font-semibold">Refund requests</p>
+          {(data.refundRequests ?? []).length === 0 ? <p>None recorded. A request is not a completed refund.</p> : (
+            <ul>
+              {(data.refundRequests ?? []).map((request) => (
+                <li key={request.id}>{request.createdAt} · member {request.memberId} · {formatUsd(request.amountCents)} · {request.status}</li>
               ))}
             </ul>
           )}

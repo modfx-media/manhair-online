@@ -8,7 +8,7 @@ import { IntroSplash } from "@/components/IntroSplash";
 import { JsonLd } from "@/components/JsonLd";
 import { BookingModal } from "@/components/BookingModal";
 import { DeferredWidgets } from "@/components/DeferredWidgets";
-import { SITE, SOCIAL } from "@/lib/site";
+import { CONTACT, SITE, SOCIAL } from "@/lib/site";
 import { DEFAULT_OG } from "@/lib/seo/meta";
 import { getDisplayedGoogleReviews } from "@/lib/google-reviews";
 import { isFiveStarReview } from "@/lib/reviews";
@@ -93,8 +93,17 @@ const SITE_GRAPH = {
     {
       "@type": "Organization",
       "@id": `${SITE.origin}/#organization`,
-      name: SITE.orgName,
+      name: "ManHair",
       url: `${SITE.origin}/`,
+      email: CONTACT.email,
+      address: {
+        "@type": "PostalAddress",
+        streetAddress: CONTACT.studio.streetAddress,
+        addressLocality: CONTACT.studio.addressLocality,
+        addressRegion: CONTACT.studio.addressRegion,
+        postalCode: CONTACT.studio.postalCode,
+        addressCountry: "US",
+      },
       logo: {
         "@type": "ImageObject",
         inLanguage: "en-US",

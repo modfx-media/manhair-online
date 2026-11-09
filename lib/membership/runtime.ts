@@ -1,9 +1,9 @@
-import { headers } from "next/headers";
-import { getPayload } from "payload";
-import config from "@payload-config";
+import { cookies } from "next/headers";
+import { staffRole } from "./access";
 import type { Deps } from "./handlers";
 import { createStripeClient } from "./stripe-client";
 import { getMembershipStore } from "./sql-store";
+import { hashSecret } from "./tokens";
 import type { StripeEventShape } from "./stripe-map";
 
 export function runtimeDeps(staffEmail: string | null = null): Deps {
@@ -23,15 +23,15 @@ export function runtimeDeps(staffEmail: string | null = null): Deps {
   };
 }
 
+/** Hub identity is the emailed staff session, not a Payload admin login. */
 export async function currentStaffEmail(): Promise<{ email: string | null; authError: string | null }> {
-  if (!process.env.DATABASE_URL || !process.env.PAYLOAD_SECRET) {
-    return { email: null, authError: "Staff sign-in needs DATABASE_URL and PAYLOAD_SECRET." };
-  }
+  const raw = (await cookies()).get("mh_staff_session")?.value;
+  if (!raw) return { email: null, authError: null };
   try {
-    const payload = await getPayload({ config });
-    const { user } = await payload.auth({ headers: await headers() });
-    const email = user && typeof user.email === "string" ? user.email : null;
-    return { email, authError: null };
+    const session = await getMembershipStore(process.env).findStaffSession(hashSecret(decodeURIComponent(raw)));
+    if (!session || new Date(session.expiresAt).getTime() <= Date.now()) return { email: null, authError: null };
+    if (!staffRole(session.email, process.env)) return { email: null, authError: null };
+    return { email: session.email, authError: null };
   } catch {
     return { email: null, authError: "Staff sign-in could not be checked." };
   }

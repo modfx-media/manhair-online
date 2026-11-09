@@ -1,5 +1,5 @@
 import type { GlobalConfig } from "payload";
-import { authenticated } from "../collections/access";
+import { payloadOwner } from "../collections/access";
 
 const draftGlobals = {
   drafts: {
@@ -12,7 +12,7 @@ export const Header: GlobalConfig = {
   slug: "header",
   access: {
     read: () => true,
-    update: authenticated,
+    update: payloadOwner,
   },
   fields: [
     {
@@ -35,7 +35,7 @@ export const Footer: GlobalConfig = {
   slug: "footer",
   access: {
     read: () => true,
-    update: authenticated,
+    update: payloadOwner,
   },
   fields: [
     {
@@ -59,7 +59,7 @@ export const SiteSettings: GlobalConfig = {
   label: "Site Settings",
   access: {
     read: () => true,
-    update: authenticated,
+    update: payloadOwner,
   },
   fields: [
     {

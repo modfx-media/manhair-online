@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import type { AlertRecord } from "./alerts";
@@ -223,10 +223,34 @@ export function createSqlStore(connectionString: string): MembershipStore {
     },
     async addConsent(consent) {
       await sql`
-        INSERT INTO membership_consents (id, member_id, terms_version, terms_accepted_at, autorenew_accepted_at)
-        VALUES (${consent.id}, ${consent.memberId}, ${consent.termsVersion}, ${consent.termsAcceptedAt}, ${consent.autorenewAcceptedAt})
+        INSERT INTO membership_consents (
+          id, member_id, terms_version, terms_accepted_at, autorenew_accepted_at,
+          marketing_email, sms_consent, sms_consent_text, sms_consent_at, sms_consent_version
+        )
+        VALUES (
+          ${consent.id}, ${consent.memberId}, ${consent.termsVersion}, ${consent.termsAcceptedAt}, ${consent.autorenewAcceptedAt},
+          ${consent.marketingEmail}, ${consent.smsConsent}, ${consent.smsConsentText}, ${consent.smsConsentAt}, ${consent.smsConsentVersion}
+        )
         ON CONFLICT (id) DO NOTHING
       `;
+    },
+    async listConsents(memberId) {
+      const rows = await sql`SELECT * FROM membership_consents WHERE member_id = ${memberId} ORDER BY terms_accepted_at`;
+      return rows.map((row) => {
+        const record = row as Row;
+        return {
+          id: requiredText(record.id),
+          memberId: requiredText(record.member_id),
+          termsVersion: requiredText(record.terms_version),
+          termsAcceptedAt: requiredText(record.terms_accepted_at),
+          autorenewAcceptedAt: requiredText(record.autorenew_accepted_at),
+          marketingEmail: record.marketing_email === true,
+          smsConsent: record.sms_consent === true,
+          smsConsentText: text(record.sms_consent_text),
+          smsConsentAt: text(record.sms_consent_at),
+          smsConsentVersion: text(record.sms_consent_version),
+        };
+      });
     },
     async reserveFounding(input) {
       const rows = await sql.query(FOUNDING_RESERVE_SQL, [input.id, input.memberId, input.expiresAt, input.cap]);
@@ -349,7 +373,9 @@ export function createSqlStore(connectionString: string): MembershipStore {
       `;
     },
     async listRefundRequests(memberId) {
-      const rows = await sql`SELECT * FROM membership_refund_requests WHERE member_id = ${memberId} ORDER BY created_at`;
+      const rows = memberId
+        ? await sql`SELECT * FROM membership_refund_requests WHERE member_id = ${memberId} ORDER BY created_at`
+        : await sql`SELECT * FROM membership_refund_requests ORDER BY created_at`;
       return rows.map((row) => {
         const record = row as Row;
         return {
@@ -483,6 +509,42 @@ export function createSqlStore(connectionString: string): MembershipStore {
         RETURNING member_id
       `;
       return text((rows[0] as Row | undefined)?.member_id);
+    },
+    async saveStaffLink(row) {
+      await sql`
+        INSERT INTO membership_staff_links (token_hash, email, expires_at, used)
+        VALUES (${row.tokenHash}, ${row.email}, ${row.expiresAt}, ${row.used})
+        ON CONFLICT (token_hash) DO NOTHING
+      `;
+    },
+    async consumeStaffLink(tokenHash, now) {
+      const rows = await sql`
+        UPDATE membership_staff_links
+        SET used = true
+        WHERE token_hash = ${tokenHash} AND used = false AND expires_at > ${now.toISOString()}::timestamptz
+        RETURNING email
+      `;
+      return text((rows[0] as Row | undefined)?.email);
+    },
+    async saveStaffSession(row) {
+      await sql`
+        INSERT INTO membership_staff_sessions (token_hash, email, role, expires_at)
+        VALUES (${row.tokenHash}, ${row.email}, ${row.role}, ${row.expiresAt})
+        ON CONFLICT (token_hash) DO NOTHING
+      `;
+    },
+    async findStaffSession(tokenHash) {
+      const rows = await sql`SELECT * FROM membership_staff_sessions WHERE token_hash = ${tokenHash} LIMIT 1`;
+      const row = rows[0] as Row | undefined;
+      if (!row) return null;
+      const role = requiredText(row.role);
+      if (role !== "owner" && role !== "coordinator") return null;
+      return {
+        tokenHash: requiredText(row.token_hash),
+        email: requiredText(row.email),
+        role,
+        expiresAt: requiredText(row.expires_at),
+      };
     },
     async getSyncState() {
       const rows = await sql`SELECT * FROM membership_sync_state ORDER BY pulled_at DESC NULLS LAST LIMIT 1`;
@@ -751,7 +813,12 @@ function mapDeal(row: Row): DealRecord {
 }
 
 export function loadMembershipSchema(): string {
-  return readFileSync(path.join(process.cwd(), "db/membership/001_init.sql"), "utf8");
+  const dir = path.join(process.cwd(), "db/membership");
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((name) => readFileSync(path.join(dir, name), "utf8"))
+    .join("\n");
 }
 
 export function unavailableStore(): MembershipStore {
@@ -770,6 +837,7 @@ export function unavailableStore(): MembershipStore {
     saveMember: fail,
     compareAndSave: fail,
     addConsent: fail,
+    listConsents: async () => [],
     reserveFounding: fail,
     setFoundingStatus: fail,
     getCheckout: async () => null,
@@ -796,6 +864,10 @@ export function unavailableStore(): MembershipStore {
     deleteSessionByHash: fail,
     saveRecovery: fail,
     consumeRecovery: async () => null,
+    saveStaffLink: fail,
+    consumeStaffLink: async () => null,
+    saveStaffSession: fail,
+    findStaffSession: async () => null,
     getSyncState: async () => null,
     saveSyncState: fail,
     addAuthAudit: fail,

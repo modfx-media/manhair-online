@@ -44,6 +44,7 @@ export function billingTimeline(start: Date): BillingTimeline {
   };
 }
 
+/** Calendar date in the studio zone. Charge dates do not include the page-load clock time. */
 export function formatStudio(date: Date): string {
   const datePart = new Intl.DateTimeFormat("en-US", {
     timeZone: APP_TIMEZONE,
@@ -51,13 +52,7 @@ export function formatStudio(date: Date): string {
     month: "long",
     day: "numeric",
   }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-US", {
-    timeZone: APP_TIMEZONE,
-    hour: "numeric",
-    minute: "2-digit",
-    hourCycle: "h12",
-  }).format(date);
-  return `${datePart}, ${timePart} Pacific Time`;
+  return `${datePart}, Pacific Time`;
 }
 
 export function billingDisclosure(start: Date, monthlyCents: number, setupCents: number): string {
@@ -74,8 +69,9 @@ export function billingDisclosure(start: Date, monthlyCents: number, setupCents:
     `The rate of the tier you join is locked until ${formatStudio(timeline.rateLockEndsAt)}.`,
     `The minimum term runs until ${formatStudio(timeline.minimumTermEndsAt)}. After that the plan is month to month. An online cancellation is a request for staff review. It does not change billing by itself.`,
     "A consultation is optional. You can join and pay before one, and a consultation request is not required to check out.",
-    "If the studio later confirms the membership is unsuitable, staff can refund the setup payment and collected membership charges and cancel future billing. The 3-month minimum does not block that case. This checkout does not decide suitability and does not refund or cancel on its own.",
+    "You can join and pay before a consultation. If that consultation finds the membership unsuitable, the setup payment and any membership charges already collected are refunded and future billing is cancelled. The 3-month minimum does not block that refund.",
+    "A failed monthly payment has 14 days before visits and new system orders are held. The membership stays open, and an order already underway is not cancelled.",
+    "Griselda arranges visits manually. This checkout has no booking link.",
     MERCHANT.disclosure,
-    "ManHair does not currently collect sales tax. This checkout does not add tax.",
   ].join(" ");
 }

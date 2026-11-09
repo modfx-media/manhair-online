@@ -23,7 +23,7 @@ export const ADDON_POLICY = {
 export const REFUND_POLICY = {
   status: "suitability_exception" as const,
   summary:
-    "If staff confirm a membership is unsuitable, the setup payment and collected membership charges are refunded and future billing is cancelled. The 3-month minimum does not block that case. The app does not decide suitability, and a refund is not shown as complete before the processor confirms it. Other refund reasons are not decided.",
+    "You can join and pay before a consultation. If that consultation finds the membership unsuitable, the setup payment and any membership charges already collected are refunded and future billing is cancelled. The 3-month minimum does not block that refund. A refund is complete when the card processor confirms it.",
 };
 
 export const PAUSE_POLICY_VERSION = "2026-11-07-void-collection-freeze-term";
@@ -38,11 +38,10 @@ export const SCHEDULING = {
 
 export const FIRST_SYSTEM_LEAD = "8–12 weeks";
 
-/** Owner-confirmed processor identity. The app discloses it and does not change the shared Stripe profile. */
+/** Card charges use this statement suffix unless MEMBERSHIP_STATEMENT_DESCRIPTOR overrides it. */
 export const MERCHANT = {
-  statementDescriptor: "MODFXMEDIA, LLC",
-  disclosure:
-    "Card charges are processed by Stripe and will show on your statement as MODFXMEDIA, LLC. This checkout does not change that shared Stripe business profile.",
+  statementDescriptor: "MANHAIR",
+  disclosure: "Card charges show on your statement as MANHAIR.",
 } as const;
 
 export type TierId = "essential" | "signature" | "elite";
