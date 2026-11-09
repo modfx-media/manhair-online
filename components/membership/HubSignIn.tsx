@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function HubSignIn() {
+export function HubSignIn({ linkExpired = false }: { linkExpired?: boolean }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -23,6 +23,11 @@ export function HubSignIn() {
         setMessage(body.message ?? "The sign-in link was not sent.");
       }}
     >
+      {linkExpired ? (
+        <p role="status" className="rounded-md border border-copper-500 bg-ink-100 px-3 py-2 text-sm leading-6">
+          That hub link has expired or was already used. Request a new one. It works once and lasts 20 minutes.
+        </p>
+      ) : null}
       <p className="text-sm leading-7 text-ink-800">
         The studio hub uses a one-time email link. It is separate from the website admin, and it does not use a password.
       </p>

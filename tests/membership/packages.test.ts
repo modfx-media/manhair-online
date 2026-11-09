@@ -27,8 +27,8 @@ test("package facts are the locked mix and do not invent a popularity claim", ()
     assert.doesNotMatch(`${fact.difference} ${fact.choiceHeadline} ${fact.whyChoose.join(" ")} ${fact.bestFor} ${fact.annualNote} ${fact.mixLabel}`, /most popular|most guys|french lace|unlimited|warranty|prepay|athlete|swimmer|first-timer|lifespan|durability|standard of care|fitting scheduled/i);
   }
   assert.deepEqual(facts.map((fact) => fact.selectLabel), ["Choose Essential", "Choose Signature", "Choose Elite"]);
-  assert.match(facts[2]!.whyChoose.join(" "), /Priority booking/);
-  assert.doesNotMatch(facts[0]!.whyChoose.join(" ") + facts[1]!.whyChoose.join(" "), /Priority booking/);
+  assert.match(facts[2]!.whyChoose.join(" "), /not a booking link/);
+  assert.doesNotMatch(facts[0]!.whyChoose.join(" ") + facts[1]!.whyChoose.join(" "), /not a booking link/);
   assert.match(facts[2]!.difference, /only priority booking/);
   assert.doesNotMatch(facts[0]!.difference, /priority booking is included/i);
   assert.equal(SHARED_PACKAGE.setupCents, 49500);

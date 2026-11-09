@@ -373,7 +373,8 @@ test("recovery email stays closed, portal uses only this member's customer, and 
   const replay = await handleRecover(new Request(`https://www.manhaironline.com/api/membership/recover/?token=${encodeURIComponent(token)}`, {
     headers: { host: "www.manhaironline.com" },
   }), deps);
-  assert.equal(replay.status, 400);
+  assert.equal(replay.status, 302);
+  assert.equal(replay.headers.get("location"), "/account/?link=expired");
   const portal = await handleAccountPost(new Request("https://www.manhaironline.com/api/membership/account/?action=portal", {
     method: "POST",
     headers,

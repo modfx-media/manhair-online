@@ -359,7 +359,8 @@ test("staff hub links are single-use, allowlisted, and separate from member sess
   assert.match(enter.headers.get("set-cookie") ?? "", /mh_staff_session=/);
   assert.equal(enter.headers.get("location"), "/hub/");
   const replay = await handleHubEnter(new Request(`https://www.manhaironline.com/api/membership/hub/enter/?token=${encodeURIComponent(token)}`), context);
-  assert.equal(replay.status, 400);
+  assert.equal(replay.status, 302);
+  assert.equal(replay.headers.get("location"), "/hub/?link=expired");
 });
 
 test("a consented text is sent from the location default number only when SMS is enabled", async () => {
@@ -402,6 +403,20 @@ test("a consented text is sent from the location default number only when SMS is
   assert.match(smsCall ?? "", /"fromNumber":"\+19045268500"/);
   assert.doesNotMatch(smsCall ?? "", /"from":/);
   assert.match(smsCall ?? "", /STOP/);
+});
+
+test("an active membership cannot start a second signup", async () => {
+  const context = deps();
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("active@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("active@example.com"))[0]!;
+  member.status = "active";
+  member.setupPaid = true;
+  await context.store.saveMember(member);
+  const second = await handleCheckout(checkoutRequest(checkoutBody("active@example.com")), context);
+  assert.equal(second.status, 409);
+  const body = await second.json();
+  assert.equal(body.error, "already_member");
+  assert.match(body.message, /Sign in from the account page/);
 });
 
 test("checkout does not require a consultation", async () => {

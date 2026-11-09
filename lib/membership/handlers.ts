@@ -385,7 +385,7 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     return json({
       ok: false,
       error: "already_member",
-      message: "A membership is already open for this email. Entering the email does not sign you in.",
+      message: "This email already has an active membership. Sign in from the account page to manage it. No second membership was started.",
     }, 409);
   }
   const member: MemberRecord = {
@@ -581,11 +581,11 @@ export async function handleReturn(request: Request, deps: Deps): Promise<Respon
   if (!secret) return json({ ok: false, error: "session_secret_missing" }, 503);
   const payload = verifyToken(token, secret, deps.now());
   if (!payload || payload.purpose !== "checkout_return" || typeof payload.sid !== "string" || typeof payload.mid !== "string") {
-    return json({ ok: false, error: "return_token_rejected" }, 400);
+    return friendlyLink(request, "/account/?link=expired", "return_token_rejected");
   }
   const session = await deps.store.findSession(payload.sid);
   if (!session || session.memberId !== payload.mid || session.returnUsed || new Date(session.expiresAt).getTime() <= deps.now().getTime()) {
-    return json({ ok: false, error: "return_expired" }, 400);
+    return friendlyLink(request, "/account/?link=expired", "return_expired");
   }
   const raw = newSecret();
   const expiresAt = new Date(deps.now().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -665,8 +665,15 @@ function publicMember(member: MemberRecord, now: Date, invoices: Array<{ id: str
     ...timeline,
     paymentMethod: "Shown by the processor. This app does not store a card number.",
     chargeAtSource: member.chargeAtSource ?? "estimate",
+    nextChargeAt: member.nextChargeAt ?? member.recurringStartAt,
     payment: checkoutPaymentView(member, invoices),
   };
+}
+
+function friendlyLink(request: Request, location: string, error: string): Response {
+  const accept = request.headers.get("accept") ?? "";
+  if (accept.includes("application/json")) return json({ ok: false, error }, 400);
+  return new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });
 }
 
 export async function handleAccountPost(request: Request, deps: Deps): Promise<Response> {
@@ -982,7 +989,7 @@ async function recoverMember(body: Record<string, unknown>, request: Request, de
 export async function handleRecover(request: Request, deps: Deps): Promise<Response> {
   const token = new URL(request.url).searchParams.get("token") ?? "";
   const memberId = token ? await deps.store.consumeRecovery(hashSecret(token), deps.now()) : null;
-  if (!memberId) return json({ ok: false, error: "recovery_rejected" }, 400);
+  if (!memberId) return friendlyLink(request, "/account/?link=expired", "recovery_rejected");
   const raw = newSecret();
   const expiresAt = new Date(deps.now().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
   await deps.store.createSession({
@@ -1737,7 +1744,7 @@ export async function handleHubEnter(request: Request, deps: Deps): Promise<Resp
   const token = new URL(request.url).searchParams.get("token") ?? "";
   const email = token ? await deps.store.consumeStaffLink(hashSecret(token), deps.now()) : null;
   const role = email ? staffRole(email, deps.env) : null;
-  if (!email || !role) return json({ ok: false, error: "staff_link_rejected" }, 400);
+  if (!email || !role) return friendlyLink(request, "/hub/?link=expired", "staff_link_rejected");
   const raw = newSecret();
   await deps.store.saveStaffSession({
     tokenHash: hashSecret(raw),

@@ -94,7 +94,7 @@ export function packageWhy(id: TierId): string[] {
   if (id === "signature") {
     return ["More new systems than Essential", `${tier.systems} systems plus ${tier.maintenance} maintenance visits`];
   }
-  return ["Most new systems of any plan", "Priority booking. Not a guaranteed appointment."];
+  return ["Most new systems of any plan", "Our team schedules visits. This is not a booking link."];
 }
 
 export function packageBestFor(id: TierId): string {

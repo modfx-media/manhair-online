@@ -320,6 +320,10 @@ body {
 }
 
 .mh-btn-sm { padding: 0.65rem 1.1rem; font-size: 0.62rem; letter-spacing: 0.1em; }
+@media (max-width: 767px) {
+  .mh-btn-sm { min-height: 44px; }
+  .mh-logo-link { min-height: 44px; align-items: center; }
+}
 .mh-btn-lg { padding: 1rem 2.25rem; font-size: 0.78rem; }
 .mh-btn-block { display: flex; width: 100%; }
 
