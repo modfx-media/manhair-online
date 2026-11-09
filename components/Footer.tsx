@@ -65,7 +65,7 @@ export function Footer() {
               <li key={n.href}>
                 <Link
                   href={n.href}
-                  className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-800)] transition-colors hover:text-[color:var(--mh-copper-700)]"
+                  className="inline-flex min-h-11 items-center text-[color:var(--mh-ink-800)] transition-colors hover:text-[color:var(--mh-copper-700)]"
                 >
                   {n.label}
                 </Link>
@@ -190,7 +190,7 @@ export function Footer() {
             <li>
               <Link
                 href="/privacy-policy/"
-                className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
+                className="inline-flex min-h-11 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Privacy Policy
               </Link>
@@ -198,7 +198,7 @@ export function Footer() {
             <li>
               <Link
                 href="/terms-of-service/"
-                className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
+                className="inline-flex min-h-11 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Terms of Service
               </Link>
@@ -206,7 +206,7 @@ export function Footer() {
             <li>
               <Link
                 href="/refund-policy/#membership"
-                className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
+                className="inline-flex min-h-11 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Refund Policy
               </Link>

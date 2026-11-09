@@ -216,6 +216,239 @@ test("a setup invoice arriving before checkout uses subscription metadata even a
   assert.equal(invoices[0]?.amountPaid, 49500);
 });
 
+test("an unpaid checkout completion waits for async success and a failure alerts staff", async () => {
+  const context = deps({
+    constructEvent: (raw) => JSON.parse(raw),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_OWNER_ALERTS_SEND: "true",
+      MEMBERSHIP_STAFF_ALERT_EMAILS: "justin@modfxmedia.com",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+    }),
+    fetchImpl: async () => new Response("ok", { status: 200 }),
+  });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("ach@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("ach@example.com"))[0]!;
+  const send = (id: string, type: string, object: Record<string, unknown>) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id, type, livemode: false, created: 30, data: { object } }),
+  }), context);
+  assert.equal((await send("evt_ach_open", "checkout.session.completed", {
+    client_reference_id: member.id,
+    customer: "cus_ach",
+    subscription: "sub_ach",
+    amount_total: 49500,
+    payment_status: "unpaid",
+  })).status, 200);
+  const waiting = await context.store.findMemberById(member.id);
+  assert.equal(waiting?.setupPaid, false);
+  assert.notEqual(waiting?.status, "active");
+  assert.equal((await context.store.listDeals()).find((deal) => deal.memberId === member.id)?.stage, "New Leads");
+  assert.equal((await context.store.listAlerts()).some((alert) => alert.kind === "setup_paid"), false);
+  assert.equal((await send("evt_ach_paid", "checkout.session.async_payment_succeeded", {
+    client_reference_id: member.id,
+    customer: "cus_ach",
+    subscription: "sub_ach",
+    amount_total: 49500,
+    payment_status: "paid",
+  })).status, 200);
+  const paid = await context.store.findMemberById(member.id);
+  assert.equal(paid?.setupPaid, true);
+  assert.equal((await context.store.listDeals()).find((deal) => deal.memberId === member.id)?.stage, "Active Clients");
+  const other = deps({ constructEvent: (raw) => JSON.parse(raw), env: context.env, fetchImpl: context.fetchImpl });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("ach-fail@example.com")), other)).status, 200);
+  const failedMember = (await other.store.listMembersByEmail("ach-fail@example.com"))[0]!;
+  assert.equal((await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_ach_fail",
+      type: "checkout.session.async_payment_failed",
+      livemode: false,
+      created: 31,
+      data: { object: { client_reference_id: failedMember.id, payment_status: "unpaid" } },
+    }),
+  }), other)).status, 200);
+  assert.equal((await other.store.findMemberById(failedMember.id))?.status, "checkout_failed");
+  assert.equal((await other.store.findMemberById(failedMember.id))?.setupPaid, false);
+  assert.equal((await other.store.listAlerts()).some((alert) => alert.kind === "webhook_error" && alert.audience === "owner"), true);
+});
+
+test("checkout session failures log the Stripe error and keep the customer message", async () => {
+  const lines: string[] = [];
+  const original = console.info;
+  console.info = (message?: unknown) => {
+    lines.push(String(message));
+  };
+  try {
+    const stripe = fakeStripe();
+    stripe.checkout.sessions.create = async () => {
+      const error = new Error("The payment_method_types parameter is no longer supported. member@example.com");
+      Object.assign(error, { type: "invalid_request_error", code: "parameter_unknown" });
+      throw error;
+    };
+    const context = deps({ stripe });
+    const response = await handleCheckout(checkoutRequest(checkoutBody("log@example.com")), context);
+    assert.equal(response.status, 502);
+    const body = await response.json();
+    assert.equal(body.error, "processor_error");
+    assert.match(body.message, /No payment was taken/);
+    assert.doesNotMatch(body.message, /payment_method_types/);
+    const logged = lines.map((line) => JSON.parse(line)).find((row) => row.event === "checkout_session_failed");
+    assert.equal(logged.stripeType, "invalid_request_error");
+    assert.equal(logged.stripeCode, "parameter_unknown");
+    assert.match(logged.stripeMessage, /payment_method_types/);
+    assert.doesNotMatch(logged.stripeMessage, /member@example.com/);
+    assert.equal(logged.memberId, (await context.store.listMembersByEmail("log@example.com"))[0]?.id);
+  } finally {
+    console.info = original;
+  }
+});
+
+test("an open checkout session blocks a second signup for that email", async () => {
+  const context = deps();
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("open-checkout@example.com")), context)).status, 200);
+  const second = await handleCheckout(checkoutRequest({ ...checkoutBody("open-checkout@example.com"), tier: "essential" }), context);
+  assert.equal(second.status, 409);
+  assert.equal((await second.json()).error, "already_member");
+  const member = (await context.store.listMembersByEmail("open-checkout@example.com"))[0]!;
+  const checkout = await context.store.latestCheckout(member.id);
+  await context.store.saveCheckout({ ...checkout!, createdAt: new Date(NOW.getTime() - 31 * 60 * 1000).toISOString() });
+  assert.equal((await handleCheckout(checkoutRequest({ ...checkoutBody("open-checkout@example.com"), tier: "elite" }), context)).status, 200);
+});
+
+test("setup payment promotes a held subscription in every event order", async () => {
+  const trialStart = 1_700_000_000;
+  const trialEnd = trialStart + 30 * 86400;
+  const permute = <T>(items: T[]): T[][] => items.length === 0
+    ? [[]]
+    : items.flatMap((item, index) => permute([...items.slice(0, index), ...items.slice(index + 1)]).map((order) => [item, ...order]));
+  const sequences: string[][] = [];
+  for (const sub of ["created", "updated"]) {
+    for (const order of permute(["sub", "invoice", "paid"])) sequences.push(order.map((step) => (step === "sub" ? sub : step)));
+    for (const order of permute(["sub", "invoice", "unpaid", "async"])) {
+      if (order.indexOf("unpaid") < order.indexOf("async")) sequences.push(order.map((step) => (step === "sub" ? sub : step)));
+    }
+  }
+  let index = 0;
+  for (const steps of sequences) {
+    const email = `order${index}@example.com`;
+    index += 1;
+    const context = deps({
+      constructEvent: (raw) => JSON.parse(raw),
+      env: baseEnv({
+        RESEND_API_KEY: "re_test",
+        RESEND_FROM: "ManHair <info@manhaironline.com>",
+        MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+        MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+      }),
+      fetchImpl: async () => new Response("ok", { status: 200 }),
+    });
+    assert.equal((await handleCheckout(checkoutRequest(checkoutBody(email)), context)).status, 200, steps.join(">"));
+    const member = (await context.store.listMembersByEmail(email))[0]!;
+    const customer = `cus_${member.id}`;
+    const subscription = `sub_${member.id}`;
+    const send = (id: string, type: string, object: Record<string, unknown>, created: number) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+      method: "POST",
+      headers: { "stripe-signature": "test" },
+      body: JSON.stringify({ id, type, livemode: false, created, data: { object } }),
+    }), context);
+    for (const [offset, step] of steps.entries()) {
+      const created = 100 + offset;
+      const id = `evt_${member.id}_${step}_${offset}`;
+      if (step === "created" || step === "updated") {
+        assert.equal((await send(id, `customer.subscription.${step}`, {
+          id: subscription,
+          customer,
+          status: "trialing",
+          metadata: { member_id: member.id },
+          trial_start: trialStart,
+          trial_end: trialEnd,
+          current_period_end: trialEnd,
+          items: { data: [{ id: "si_order" }] },
+        }, created)).status, 200, steps.join(">"));
+      } else if (step === "invoice") {
+        assert.equal((await send(id, "invoice.paid", {
+          id: `in_${member.id}`,
+          customer,
+          amount_paid: 49500,
+          billing_reason: "subscription_create",
+          metadata: { member_id: member.id },
+          lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] },
+        }, created)).status, 200, steps.join(">"));
+      } else if (step === "paid" || step === "unpaid") {
+        assert.equal((await send(id, "checkout.session.completed", {
+          client_reference_id: member.id,
+          customer,
+          subscription,
+          amount_total: 49500,
+          payment_status: step === "paid" ? "paid" : "unpaid",
+        }, created)).status, 200, steps.join(">"));
+      } else {
+        assert.equal((await send(id, "checkout.session.async_payment_succeeded", {
+          client_reference_id: member.id,
+          customer,
+          subscription,
+          amount_total: 49500,
+          payment_status: "paid",
+        }, created)).status, 200, steps.join(">"));
+      }
+    }
+    const saved = await context.store.findMemberById(member.id);
+    assert.equal(saved?.setupPaid, true, steps.join(">"));
+    assert.equal(saved?.status, "trialing", steps.join(">"));
+    assert.equal((await context.store.listDeals()).find((deal) => deal.memberId === member.id)?.stage, "Active Clients", steps.join(">"));
+    assert.equal((await context.store.listAlerts()).filter((alert) => alert.kind === "setup_paid" && alert.audience === "customer").length, 1, steps.join(">"));
+  }
+});
+
+test("a paid checkout re-fetches the subscription when no status was stored", async () => {
+  const trialEnd = 1_700_000_000 + 30 * 86400;
+  const stripe = fakeStripe();
+  stripe.subscriptions.retrieve = async () => ({ status: "trialing", cancel_at: null, pause_collection: null, trial_end: trialEnd, current_period_end: trialEnd });
+  const context = deps({
+    stripe,
+    constructEvent: (raw) => JSON.parse(raw),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+    }),
+    fetchImpl: async () => new Response("ok", { status: 200 }),
+  });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("refetch@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("refetch@example.com"))[0]!;
+  await context.store.saveMember({ ...member, stripeSubscriptionId: "sub_refetch", stripeCustomerId: "cus_refetch" });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_refetch_invoice",
+      type: "invoice.paid",
+      livemode: false,
+      created: 40,
+      data: { object: {
+        id: "in_refetch",
+        customer: "cus_refetch",
+        amount_paid: 49500,
+        billing_reason: "subscription_create",
+        metadata: { member_id: member.id },
+        lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] },
+      } },
+    }),
+  }), context);
+  assert.equal(response.status, 200);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.setupPaid, true);
+  assert.equal(saved?.status, "trialing");
+  assert.equal(saved?.chargeAtSource, "stripe");
+  assert.equal((await context.store.listAlerts()).filter((alert) => alert.kind === "setup_paid" && alert.audience === "customer").length, 1);
+});
+
 test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
   const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
   await handleCheckout(checkoutRequest(checkoutBody()), context);
@@ -359,7 +592,8 @@ test("staff hub links are single-use, allowlisted, and separate from member sess
   assert.match(enter.headers.get("set-cookie") ?? "", /mh_staff_session=/);
   assert.equal(enter.headers.get("location"), "/hub/");
   const replay = await handleHubEnter(new Request(`https://www.manhaironline.com/api/membership/hub/enter/?token=${encodeURIComponent(token)}`), context);
-  assert.equal(replay.status, 400);
+  assert.equal(replay.status, 302);
+  assert.equal(replay.headers.get("location"), "/hub/?link=expired");
 });
 
 test("a consented text is sent from the location default number only when SMS is enabled", async () => {
@@ -402,6 +636,20 @@ test("a consented text is sent from the location default number only when SMS is
   assert.match(smsCall ?? "", /"fromNumber":"\+19045268500"/);
   assert.doesNotMatch(smsCall ?? "", /"from":/);
   assert.match(smsCall ?? "", /STOP/);
+});
+
+test("an active membership cannot start a second signup", async () => {
+  const context = deps();
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("active@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("active@example.com"))[0]!;
+  member.status = "active";
+  member.setupPaid = true;
+  await context.store.saveMember(member);
+  const second = await handleCheckout(checkoutRequest(checkoutBody("active@example.com")), context);
+  assert.equal(second.status, 409);
+  const body = await second.json();
+  assert.equal(body.error, "already_member");
+  assert.match(body.message, /Sign in from the account page/);
 });
 
 test("checkout does not require a consultation", async () => {
@@ -795,13 +1043,100 @@ test("readiness reports the real email and SMS flags", async () => {
       MEMBERSHIP_SMS_SEND: "true",
     }),
   }));
+  assert.equal(offBody.payments, "ready");
+  assert.equal(offBody.legalReview, "ready");
   const onBody = await on.json();
+  assert.equal(onBody.payments, "ready");
+  assert.equal(onBody.legalReview, "ready");
   assert.deepEqual(onBody.messaging, {
     confirmationEmail: "enabled",
     lifecycleEmail: "enabled",
     staffAlerts: "enabled",
     sms: "enabled",
   });
+});
+
+test("a scheduled cancellation and a deleted subscription send once", async () => {
+  const sent: string[] = [];
+  const context = deps({
+    constructEvent: (payload) => JSON.parse(payload),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_LIFECYCLE_SEND: "true",
+      MEMBERSHIP_LIFECYCLE_PHASE1: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+      MEMBERSHIP_SMS_SEND: "true",
+      GHL_API_TOKEN: "token",
+    }),
+    fetchImpl: async (input, init) => {
+      sent.push(`${String(input)} ${String(init?.body ?? "")}`);
+      return new Response("ok", { status: 200 });
+    },
+  });
+  await context.store.saveMember(await seedMember(context.store, { setupPaid: true, status: "active", phone: "9045550100" }));
+  await context.store.addConsent({
+    id: "con_cancel",
+    memberId: "mem_1",
+    termsVersion: "2026-11-07",
+    termsAcceptedAt: NOW.toISOString(),
+    autorenewAcceptedAt: NOW.toISOString(),
+    marketingEmail: false,
+    smsConsent: true,
+    smsConsentText: "yes",
+    smsConsentAt: NOW.toISOString(),
+    smsConsentVersion: "2026-11-09-tcpa",
+  });
+  await context.store.saveDeal({
+    id: "deal_cancel",
+    memberId: "mem_1",
+    name: "Alex Rivera",
+    email: "member@example.com",
+    phone: "9045550100",
+    stage: "Active Clients",
+    assignee: "",
+    nextFollowUp: null,
+    ghlContactId: "contact_cancel",
+    ghlOpportunityId: null,
+    syncStatus: "pushed",
+    syncHash: "",
+    locationId: null,
+    remoteUpdatedAt: null,
+    staffEditedAt: null,
+  });
+  const schedule = JSON.stringify({
+    id: "evt_cancel_sched",
+    type: "customer.subscription.updated",
+    created: 50,
+    data: { object: { id: "sub_1", customer: "cus_1", status: "active", cancel_at: 1_800_000_000, items: { data: [{ id: "si_1" }] } } },
+  });
+  const post = (body: string) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "t=1" },
+    body,
+  }), context);
+  assert.equal((await post(schedule)).status, 200);
+  assert.equal((await context.store.findMemberById("mem_1"))?.status, "cancel_scheduled");
+  const scheduled = await context.store.listLifecycleMessages();
+  assert.equal(scheduled.filter((row) => row.templateId === "cancellation_scheduled_email" && row.status === "sent").length, 1);
+  assert.equal(scheduled.filter((row) => row.templateId === "cancellation_scheduled_sms" && row.status === "sent").length, 1);
+  assert.match(sent.find((line) => line.includes("/conversations/messages")) ?? "", /"type":"SMS"/);
+  assert.equal((await post(schedule)).status, 200);
+  assert.equal((await context.store.listLifecycleMessages()).length, scheduled.length);
+  const deleted = JSON.stringify({
+    id: "evt_deleted",
+    type: "customer.subscription.deleted",
+    created: 60,
+    data: { object: { id: "sub_1", customer: "cus_1", status: "canceled", cancel_at: 1_800_000_000, items: { data: [{ id: "si_1" }] } } },
+  });
+  assert.equal((await post(deleted)).status, 200);
+  assert.equal((await context.store.findMemberById("mem_1"))?.status, "canceled");
+  const ended = await context.store.listLifecycleMessages();
+  assert.equal(ended.filter((row) => row.templateId === "membership_ended_email" && row.status === "sent").length, 1);
+  const again = JSON.stringify({ ...JSON.parse(deleted), id: "evt_deleted_again" });
+  assert.equal((await post(again)).status, 200);
+  assert.equal((await context.store.listLifecycleMessages()).filter((row) => row.templateId === "membership_ended_email").length, 1);
 });
 
 test("messaging send is refused", async () => {

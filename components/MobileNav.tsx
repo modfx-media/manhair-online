@@ -158,7 +158,7 @@ export function MobileNav() {
             type="button"
             aria-label="Close menu"
             onClick={close}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--mh-border-strong)] text-[color:var(--mh-ink-800)] transition-colors hover:border-[color:var(--mh-copper-500)] hover:text-[color:var(--mh-copper-700)]"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--mh-border-strong)] text-[color:var(--mh-ink-800)] transition-colors hover:border-[color:var(--mh-copper-500)] hover:text-[color:var(--mh-copper-700)]"
           >
             <CloseIcon />
             <span className="sr-only">Close menu</span>
@@ -255,7 +255,7 @@ export function MobileNav() {
         aria-expanded={open}
         aria-controls="mh-mobile-nav"
         onClick={() => setOpen((v) => !v)}
-        className="mh-mnav-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--mh-border-strong)] text-[color:var(--mh-fg)] transition-colors hover:border-[color:var(--mh-copper-500)] hover:text-[color:var(--mh-copper-700)] lg:hidden"
+        className="mh-mnav-toggle inline-flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--mh-border-strong)] text-[color:var(--mh-fg)] transition-colors hover:border-[color:var(--mh-copper-500)] hover:text-[color:var(--mh-copper-700)] lg:hidden"
       >
         <HamburgerIcon open={open} />
         <span className="sr-only">{open ? "Close menu" : "Open menu"}</span>

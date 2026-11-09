@@ -45,6 +45,8 @@ export type MemberBilling = {
   version: number;
   paymentGraceStartedAt?: string | null;
   pauseResumeAt?: string | null;
+  /** Stripe subscription status seen before the setup payment cleared. */
+  heldStripeStatus?: MemberStatus | null;
 };
 
 export type StoredInvoice = {
@@ -150,7 +152,7 @@ function fromUnix(seconds: number | null | undefined): string | null {
 }
 
 /** First charge is trial_end. Later charges use current_period_end. Both are Stripe instants. */
-function stripeChargePatch(event: {
+export function stripeChargePatch(event: {
   trialEnd: number | null;
   currentPeriodEnd?: number | null;
   status: string;
@@ -167,15 +169,37 @@ function stripeChargePatch(event: {
   };
 }
 
-function mapStripeStatus(status: string, cancelAt: number | null, paused: boolean): MemberStatus {
+const APPLIED_SUBSCRIPTION_STATUSES = new Set<MemberStatus>([
+  "trialing",
+  "active",
+  "past_due",
+  "paused",
+  "cancel_scheduled",
+  "canceled",
+]);
+
+export function mapStripeStatus(status: string, cancelAt: number | null, paused: boolean): MemberStatus {
+  if (status === "canceled") return "canceled";
   if (paused) return "paused";
   if (cancelAt) return "cancel_scheduled";
   if (status === "trialing") return "trialing";
   if (status === "active") return "active";
   if (status === "past_due") return "past_due";
-  if (status === "canceled" || status === "incomplete_expired" || status === "unpaid") return "canceled";
+  if (status === "incomplete_expired" || status === "unpaid") return "canceled";
   if (status === "incomplete") return "needs_review";
   return "needs_review";
+}
+
+/** When setup payment clears, leave checkout_open using the subscription status we already saw. */
+export function promoteCheckoutStatus(
+  member: { status: MemberStatus; heldStripeStatus?: MemberStatus | null },
+  setupIsPaid: boolean,
+): MemberStatus | null {
+  if (!setupIsPaid) return null;
+  if (member.status !== "checkout_open" && member.status !== "checkout_failed") return null;
+  const held = member.heldStripeStatus;
+  if (held && APPLIED_SUBSCRIPTION_STATUSES.has(held)) return held;
+  return null;
 }
 
 export function reduceBillingEvent(
@@ -212,9 +236,13 @@ export function reduceBillingEvent(
     let attention: Attention = null;
     let setupPaid = false;
     if (verdict === "setup_only" && event.paymentStatus === "paid") setupPaid = true;
+    const delayed = event.paymentStatus === "unpaid" || event.paymentStatus === "no_payment_required";
+    if (delayed) setupPaid = false;
     if (verdict === "setup_and_recurring") attention = "recurring_charged_at_checkout";
     if (verdict === "zero") attention = "setup_not_collected";
     if (verdict === "unexpected") attention = "unexpected_checkout_amount";
+    const nextPaid = delayed ? member.setupPaid : setupPaid || member.setupPaid;
+    const promoted = attention ? null : promoteCheckoutStatus(member, nextPaid);
     return {
       ...emptyEffect(),
       founding: setupPaid && event.reservationId ? "convert" : null,
@@ -222,9 +250,10 @@ export function reduceBillingEvent(
       statusPatch: {
         stripeCustomerId: event.customerId ?? member.stripeCustomerId,
         stripeSubscriptionId: event.subscriptionId ?? member.stripeSubscriptionId,
-        setupPaid: setupPaid || member.setupPaid,
+        setupPaid: nextPaid,
         attention: attention ?? member.attention,
-        status: attention ? "needs_review" : member.status,
+        status: attention ? "needs_review" : (promoted ?? member.status),
+        ...(promoted ? { heldStripeStatus: null } : {}),
       },
     };
   }
@@ -235,7 +264,12 @@ export function reduceBillingEvent(
     const charges = stripeChargePatch(event);
     if (stale) return { ...emptyEffect(), staleStatus: true, statusPatch: charges };
     const paused = event.pauseResumesAt !== null;
-    const status = mapStripeStatus(event.status, event.cancelAt, paused);
+    const mapped = mapStripeStatus(event.status, event.cancelAt, paused);
+    // ACH and other delayed methods can open a subscription before the setup payment clears.
+    // Leave the member in checkout until async_payment_succeeded marks the setup paid.
+    const awaitingSetup = !member.setupPaid && (member.status === "checkout_open" || member.status === "checkout_failed");
+    const status = awaitingSetup && mapped !== "canceled" ? member.status : mapped;
+    const heldStripeStatus = awaitingSetup && mapped !== "canceled" ? mapped : null;
     let attention: Attention = member.attention;
     if (event.trialStart && event.trialEnd) {
       // Checkout can remain open for 30 minutes. Stripe starts the trial when
@@ -261,6 +295,7 @@ export function reduceBillingEvent(
         cancelAt: fromUnix(event.cancelAt),
         pauseCollection: paused,
         pauseResumeAt: paused ? fromUnix(event.pauseResumesAt) : null,
+        heldStripeStatus,
         lastStatusEventCreated: event.created,
         attention,
       },
@@ -290,7 +325,12 @@ export function reduceBillingEvent(
         amountRefunded: 0,
       },
       statusPatch: event.type === "invoice.paid" && kind === "setup"
-        ? { setupPaid: true }
+        ? {
+            setupPaid: true,
+            ...(promoteCheckoutStatus(member, true)
+              ? { status: promoteCheckoutStatus(member, true)!, heldStripeStatus: null }
+              : {}),
+          }
         : event.type === "invoice.payment_failed" && !stale
           ? { status: "past_due", lastStatusEventCreated: event.created }
           : null,

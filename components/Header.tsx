@@ -102,7 +102,7 @@ export function Header() {
         <div className="flex shrink-0 items-center gap-2 md:gap-3">
           <a
             href={CONTACT.studio.phoneHref}
-            className="mh-icon-btn !h-10 !w-10 border !border-[color:var(--mh-border-strong)]"
+            className="mh-icon-btn !h-11 !w-11 border !border-[color:var(--mh-border-strong)]"
             aria-label={`Call ${CONTACT.studio.phone}`}
           >
             <PhoneIcon size={16} />

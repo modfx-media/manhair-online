@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import { drainAlerts, type Deps } from "../../lib/membership/handlers";
 import { runDueLifecycle } from "../../lib/membership/lifecycle-send";
@@ -125,7 +127,7 @@ test("customer and staff alerts render from the catalog to the sandbox recipient
   const drained = await drainAlerts(deps);
   assert.equal(drained.failed, 0);
   assert.ok(drained.delivered > 0);
-  const dir = "/opt/cursor/artifacts/lifecycle/flow";
+  const dir = path.join(process.env.MEMBERSHIP_ARTIFACT_DIR || path.join(tmpdir(), "manhair-membership-artifacts"), "lifecycle", "flow");
   mkdirSync(dir, { recursive: true });
   for (const message of sent) {
     assert.equal(message.to, "justin@modfxmedia.com");

@@ -100,6 +100,7 @@ Events to subscribe:
 
 - `checkout.session.completed`
 - `checkout.session.async_payment_succeeded`
+- `checkout.session.async_payment_failed`
 - `checkout.session.expired`
 - `customer.subscription.created`
 - `customer.subscription.updated`

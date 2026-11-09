@@ -184,7 +184,9 @@ export function assertSingleSubscription(params: CheckoutParams): void {
     throw new Error("trial must be 30 days");
   }
   if (params.line_items.length !== 2) throw new Error("expected one recurring price and one setup price");
-  if ("payment_method_types" in params) throw new Error("payment_method_types is not allowed");
+  if ("payment_method_types" in params) {
+    throw new Error("payment_method_types is not supported on this Checkout API version");
+  }
 }
 
 export function safeAppOrigin(request: Request, env: AppEnv): string {

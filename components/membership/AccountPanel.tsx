@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatStudio } from "@/lib/membership/dates";
-import { formatUsd, SCHEDULING, TIERS, type TierId } from "@/lib/membership/offer";
+import { formatUsd, TIERS, type TierId } from "@/lib/membership/offer";
 import { trackPurchase } from "@/components/membership/track-client";
 
 type MemberView = {
@@ -26,6 +26,7 @@ type MemberView = {
   cancelAt: string | null;
   pauseCollection: boolean;
   firstRecurringAt: string | null;
+  nextChargeAt?: string | null;
   minimumTermEndsAt: string;
   rateLockEndsAt: string;
   paymentMethod: string;
@@ -41,6 +42,13 @@ type MemberView = {
 type Invoice = { id: string; kind: string; status: string; amountPaid: number; amountRefunded: number };
 type Pause = { id: string; days: number; status: string };
 type CancellationRequest = { id: string; createdAt: string };
+
+function nextCharge(member: MemberView): string {
+  if (member.chargeAtSource !== "stripe") return "We’ll show the date once the payment record confirms it.";
+  const raw = member.nextChargeAt || member.firstRecurringAt;
+  if (!raw) return "We’ll show the date once the payment record confirms it.";
+  return formatStudio(new Date(raw));
+}
 
 async function post(action: string, body: Record<string, unknown>) {
   const response = await fetch(`/api/membership/account/?action=${action}`, {
@@ -58,6 +66,7 @@ export function AccountPanel({
   cancellationRequests = [],
   afterCheckout = false,
   signInNext = "",
+  linkExpired = false,
 }: {
   member: MemberView | null;
   invoices: Invoice[];
@@ -65,6 +74,7 @@ export function AccountPanel({
   cancellationRequests?: CancellationRequest[];
   afterCheckout?: boolean;
   signInNext?: string;
+  linkExpired?: boolean;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [live, setLive] = useState(member);
@@ -103,6 +113,11 @@ export function AccountPanel({
         }}
       >
         <h1 className="mh-display text-4xl">Your membership</h1>
+        {linkExpired ? (
+          <p role="status" className="rounded-md border border-copper-500 bg-ink-100 px-3 py-2 text-sm leading-6">
+            That link has expired or was already used. Request a new one below. It does not start a payment.
+          </p>
+        ) : null}
         <p className="text-sm leading-6 text-ink-700">
           There is no signed-in member on this browser. Email a one-time sign-in link to the membership address.
           Entering the email does not open the account and does not start another payment.
@@ -110,9 +125,9 @@ export function AccountPanel({
         </p>
         <label className="grid gap-1 text-sm font-semibold">
           Email
-          <input name="email" type="email" required className="mh-input" />
+          <input name="email" type="email" required className="mh-input min-h-11 text-base" />
         </label>
-        <button className="mh-btn mh-btn-ghost" type="submit">
+        <button className="mh-btn mh-btn-ghost min-h-11" type="submit">
           Email a sign-in link
         </button>
         {message ? (
@@ -136,15 +151,18 @@ export function AccountPanel({
                 ? "The payment was not confirmed. You do not need to pay again unless you start a new checkout."
                 : "Your checkout returned before the payment confirmation arrived. This page checks again every few seconds. You do not need to pay again."}
           </p>
-          <p className="mt-2">The first system typically takes 8–12 weeks. The monthly charge can begin before the system is ready. That 30 days is not a promise that the system arrives.</p>
-          <p className="mt-2">{SCHEDULING.summary}</p>
+          <p className="mt-2">Our team will contact you to schedule your consultation. You’ll get a welcome email from info@manhaironline.com.</p>
+          <p className="mt-2">The first system typically takes 8–12 weeks. The monthly charge can begin before the system is ready.</p>
         </section>
       ) : null}
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-600">Membership</p>
         <h1 className="mh-display mt-2 text-4xl">{live.tierName}</h1>
         <p className="mt-3 text-sm leading-6 text-ink-700">
-          {live.statusLabel ?? "Payment not confirmed"}. {live.setupNote ?? ""} {live.monthly} a month.
+          Plan: {live.tierName}. {live.statusLabel ?? "Payment not confirmed"}. {live.setupNote ?? ""} {live.monthly} a month.
+        </p>
+        <p className="text-sm leading-6 text-ink-700">
+          Next charge: {nextCharge(live)}
         </p>
         {live.serviceHold ? (
           <section role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-6 text-red-900">
@@ -173,7 +191,7 @@ export function AccountPanel({
         <p>
           A failed monthly payment has 14 days before visits and new system orders are held. The membership is not cancelled, and an order already underway is not cancelled. Updating a card does not clear that hold. A verified payment does. Payment method update stays available.
         </p>
-        <p>{SCHEDULING.summary}</p>
+        <p>Our team will contact you to schedule your consultation. This page does not book a time.</p>
       </section>
       <section>
         <h2 className="font-display text-2xl">Invoices</h2>
@@ -260,17 +278,9 @@ export function AccountPanel({
           ))}
         </div>
       </section>
-      <button
-        className="mh-btn mh-btn-primary w-fit"
-        type="button"
-        onClick={async () => {
-          const result = await post("portal", {});
-          if (result.ok && result.url) window.location.assign(result.url);
-          else setMessage(result.message ?? "Payment method update is not available.");
-        }}
-      >
-        Update payment method
-      </button>
+      <a className="mh-btn mh-btn-primary w-fit min-h-11" href="/account/billing/">
+        Manage billing
+      </a>
       <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={async () => setMessage((await post("logout", {})).ok ? "Signed out." : "Still signed in.")}>
         Sign out
       </button>

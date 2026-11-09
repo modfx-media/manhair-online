@@ -48,6 +48,50 @@ test("a checkout completed later still has a valid 30-day processor trial", () =
   assert.equal(fraud.statusPatch?.attention, "fraud");
 });
 
+test("an unpaid checkout completion does not mark the setup paid", () => {
+  const unpaid = mapStripeEvent({
+    id: "evt_ach_unpaid",
+    type: "checkout.session.completed",
+    created: 20,
+    data: { object: { client_reference_id: "mem_1", customer: "cus_1", amount_total: 49500, payment_status: "unpaid" } },
+  });
+  const effect = reduceBillingEvent(member({ status: "checkout_open", setupPaid: false }), unpaid, new Set());
+  assert.equal(effect.statusPatch?.setupPaid, false);
+  assert.equal(effect.statusPatch?.status, "checkout_open");
+  const earlySub = mapStripeEvent({
+    id: "evt_sub_before_pay",
+    type: "customer.subscription.updated",
+    created: 21,
+    data: { object: { id: "sub_1", customer: "cus_1", status: "active", metadata: { member_id: "mem_1" }, items: { data: [{ id: "si_1" }] } } },
+  });
+  const held = reduceBillingEvent(member({ status: "checkout_open", setupPaid: false }), earlySub, new Set());
+  assert.equal(held.statusPatch?.status, "checkout_open");
+});
+
+test("a deleted subscription with cancel_at ends instead of staying cancel_scheduled", () => {
+  const deleted = mapStripeEvent({
+    id: "evt_deleted_cancel_at",
+    type: "customer.subscription.deleted",
+    created: 200,
+    data: {
+      object: {
+        id: "sub_1",
+        customer: "cus_1",
+        status: "canceled",
+        cancel_at: 1_800_000_000,
+        metadata: { member_id: "mem_1" },
+        items: { data: [{ id: "si_1" }] },
+      },
+    },
+  });
+  assert.equal(deleted.type, "customer.subscription.updated");
+  if (deleted.type !== "customer.subscription.updated") return;
+  assert.equal(deleted.status, "canceled");
+  assert.equal(deleted.cancelAt, 1_800_000_000);
+  const effect = reduceBillingEvent(member({ setupPaid: true, status: "cancel_scheduled" }), deleted, new Set());
+  assert.equal(effect.statusPatch?.status, "canceled");
+});
+
 test("an evening Pacific trial end is the previous calendar day from UTC", () => {
   // Dec 8, 2026 8:44 PM PST. UTC is already Dec 9.
   const trialEnd = Math.floor(Date.parse("2026-12-09T04:44:00.000Z") / 1000);
@@ -180,7 +224,7 @@ test("founding stays off and rejects an expanded cap", () => {
   assert.equal(open.enabled && open.cap, 25);
 });
 
-test("checkout params are one subscription with a 30 day trial and no card types", () => {
+test("checkout params are one subscription with a 30 day trial and dashboard payment methods", () => {
   const built = buildCheckoutParams({
     env: env(),
     memberId: "mem_1",

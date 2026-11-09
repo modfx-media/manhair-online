@@ -3,11 +3,11 @@ import { SMS_CONSENT_TEXT, SMS_CONSENT_VERSION, businessIdentity, emailComplianc
 import { confirmationMessage, customerStatusLabel, publicSiteOrigin, staffAlertMessage } from "./email-copy";
 import { messageHolds, messageTransport } from "./message-holds";
 import { staffRole, assignableStaff } from "./access";
-import { reduceBillingEvent, type MemberBilling } from "./billing";
+import { mapStripeStatus, promoteCheckoutStatus, reduceBillingEvent, stripeChargePatch, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, checkoutPaymentView, isSameOrigin, priceMatches, publicCheckoutOrigin, safeAppOrigin, type PriceSnapshot } from "./checkout";
 import { ghlMode, paidMemberStageChange, pushMembershipProfile, pushOpportunityStage, sendLocationSms, syncHash, syncLead } from "./ghl";
-import { postMembershipEmail, renderAlertCatalog, runDueLifecycle, sendCatalogMessage } from "./lifecycle-send";
+import { SUBSCRIPTION_LIFECYCLE_TEMPLATES, postMembershipEmail, renderAlertCatalog, runDueLifecycle, sendCatalogMessage } from "./lifecycle-send";
 import { formatAppointmentWhen, memberMergeVars } from "./lifecycle-vars";
 import { disputeCopyFacts, invoiceCopyFacts } from "./stripe-map";
 import { membershipGhlPayload, type MembershipGhlInput } from "./ghl-profile";
@@ -97,6 +97,13 @@ export type StripeLike = {
   subscriptions: {
     update(id: string, params: Record<string, unknown>): Promise<Record<string, unknown>>;
     cancel?(id: string, params: { prorate: false; invoice_now: false }): Promise<{ status: string }>;
+    retrieve?(id: string): Promise<{
+      status: string;
+      cancel_at?: number | null;
+      pause_collection?: { resumes_at?: number | null } | null;
+      trial_end?: number | null;
+      current_period_end?: number | null;
+    }>;
   };
   refunds?: {
     create(
@@ -171,6 +178,7 @@ function toBilling(member: MemberRecord): MemberBilling {
     pauseCollection: member.pauseCollection,
     lastStatusEventCreated: member.lastStatusEventCreated,
     attention: member.attention,
+    heldStripeStatus: member.heldStripeStatus ?? null,
     version: member.version,
   };
 }
@@ -191,7 +199,7 @@ async function memberFromEvent(store: MembershipStore, event: ReturnType<typeof 
 export async function handleReadiness(deps: Deps): Promise<Response> {
   const founding = foundingConfig(deps.env);
   return json({
-    payments: paymentBlockers(deps.env).length === 0 ? "blocked_until_account_lookup" : "blocked",
+    payments: paymentBlockers(deps.env).length === 0 ? "ready" : "blocked",
     paymentBlockers: paymentBlockers(deps.env).map((blocker) => blocker.operatorMessage),
     portal: paymentBlockers(deps.env).length === 0 ? "billing_only_when_customer_exists" : "not_configured",
     recoveryEmail: recoveryEmailReady(deps.env) ? "enabled" : "not_configured",
@@ -201,7 +209,7 @@ export async function handleReadiness(deps: Deps): Promise<Response> {
     messaging: messagingStatus(deps.env),
     database: databaseReady(deps.env) ? "configured" : "missing",
     sandboxTimelineConfirmed: CHECKOUT_TIMELINE_SANDBOX_CONFIRMED,
-    legalReview: "pending",
+    legalReview: paymentBlockers(deps.env).length === 0 ? "ready" : "pending",
   });
 }
 
@@ -381,12 +389,26 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     }
   }
   const holders = await deps.store.listMembersByEmail(email);
-  if (holders.some((holder) => OPEN_STATUSES.has(holder.status))) {
-    return json({
-      ok: false,
-      error: "already_member",
-      message: "A membership is already open for this email. Entering the email does not sign you in.",
-    }, 409);
+  for (const holder of holders) {
+    const paidStuck = holder.setupPaid && (holder.status === "checkout_open" || holder.status === "checkout_failed");
+    if (OPEN_STATUSES.has(holder.status) || paidStuck) {
+      return json({
+        ok: false,
+        error: "already_member",
+        message: "This email already has an active membership. Sign in from the account page to manage it. No second membership was started.",
+      }, 409);
+    }
+    if (holder.status === "checkout_open") {
+      const checkout = await deps.store.latestCheckout(holder.id);
+      const age = checkout ? now.getTime() - new Date(checkout.createdAt).getTime() : Number.POSITIVE_INFINITY;
+      if (checkout?.url && age < 30 * 60 * 1000) {
+        return json({
+          ok: false,
+          error: "already_member",
+          message: "A checkout is already open for this email. No second membership was started.",
+        }, 409);
+      }
+    }
   }
   const member: MemberRecord = {
     id: newId(),
@@ -567,11 +589,28 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     });
   } catch (error) {
     if (isMembershipSchemaMissing(error)) return storageNotReady();
+    logCheckoutFailure(member.id, error);
     if (reservationId) await deps.store.setFoundingStatus(reservationId, "released");
     member.status = "checkout_failed";
     await deps.store.saveMember(member);
-    return json({ ok: false, error: "processor_error" }, 502);
+    return json({ ok: false, error: "processor_error", message: "Card checkout could not be opened. No payment was taken." }, 502);
   }
+}
+
+function logCheckoutFailure(memberId: string, error: unknown): void {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const raw = record.raw && typeof record.raw === "object" ? record.raw as Record<string, unknown> : {};
+  const message = String(record.message ?? raw.message ?? "unknown")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .slice(0, 300);
+  console.info(JSON.stringify({
+    scope: "membership",
+    event: "checkout_session_failed",
+    memberId,
+    stripeType: String(record.type ?? raw.type ?? "unknown"),
+    stripeCode: String(record.code ?? raw.code ?? "unknown"),
+    stripeMessage: message,
+  }));
 }
 
 export async function handleReturn(request: Request, deps: Deps): Promise<Response> {
@@ -581,11 +620,11 @@ export async function handleReturn(request: Request, deps: Deps): Promise<Respon
   if (!secret) return json({ ok: false, error: "session_secret_missing" }, 503);
   const payload = verifyToken(token, secret, deps.now());
   if (!payload || payload.purpose !== "checkout_return" || typeof payload.sid !== "string" || typeof payload.mid !== "string") {
-    return json({ ok: false, error: "return_token_rejected" }, 400);
+    return friendlyLink(request, "/account/?link=expired", "return_token_rejected");
   }
   const session = await deps.store.findSession(payload.sid);
   if (!session || session.memberId !== payload.mid || session.returnUsed || new Date(session.expiresAt).getTime() <= deps.now().getTime()) {
-    return json({ ok: false, error: "return_expired" }, 400);
+    return friendlyLink(request, "/account/?link=expired", "return_expired");
   }
   const raw = newSecret();
   const expiresAt = new Date(deps.now().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -665,8 +704,15 @@ function publicMember(member: MemberRecord, now: Date, invoices: Array<{ id: str
     ...timeline,
     paymentMethod: "Shown by the processor. This app does not store a card number.",
     chargeAtSource: member.chargeAtSource ?? "estimate",
+    nextChargeAt: member.nextChargeAt ?? member.recurringStartAt,
     payment: checkoutPaymentView(member, invoices),
   };
+}
+
+function friendlyLink(request: Request, location: string, error: string): Response {
+  const accept = request.headers.get("accept") ?? "";
+  if (accept.includes("application/json")) return json({ ok: false, error }, 400);
+  return new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });
 }
 
 export async function handleAccountPost(request: Request, deps: Deps): Promise<Response> {
@@ -684,6 +730,65 @@ export async function handleAccountPost(request: Request, deps: Deps): Promise<R
   if (action === "tier") return changeTier(member, body, deps);
   if (action === "portal") return openPortal(member, deps, origin);
   return json({ ok: false, error: "unknown_action" }, 404);
+}
+
+async function settlePaidCheckoutStatus(deps: Deps, memberId: string): Promise<void> {
+  const member = await deps.store.findMemberById(memberId);
+  if (!member?.setupPaid) return;
+  if (member.status !== "checkout_open" && member.status !== "checkout_failed") return;
+  const held = promoteCheckoutStatus(member, true);
+  if (held) {
+    await deps.store.compareAndSave({ ...member, status: held, heldStripeStatus: null }, member.version);
+    return;
+  }
+  const retrieve = deps.stripe?.subscriptions.retrieve;
+  if (!retrieve || !member.stripeSubscriptionId) return;
+  try {
+    const subscription = await retrieve(member.stripeSubscriptionId);
+    const mapped = mapStripeStatus(
+      subscription.status,
+      subscription.cancel_at ?? null,
+      typeof subscription.pause_collection?.resumes_at === "number",
+    );
+    if (!promoteCheckoutStatus({ status: member.status, heldStripeStatus: mapped }, true)) return;
+    const charges = stripeChargePatch({
+      trialEnd: subscription.trial_end ?? null,
+      currentPeriodEnd: subscription.current_period_end ?? null,
+      status: subscription.status,
+    });
+    const fresh = await deps.store.findMemberById(memberId);
+    if (!fresh?.setupPaid || (fresh.status !== "checkout_open" && fresh.status !== "checkout_failed")) return;
+    await deps.store.compareAndSave({
+      ...fresh,
+      status: mapped,
+      heldStripeStatus: null,
+      ...(charges ?? {}),
+    }, fresh.version);
+  } catch (error) {
+    logCheckoutFailure(memberId, error);
+  }
+}
+
+async function notifySubscriptionLifecycle(
+  deps: Deps,
+  member: MemberRecord,
+  previousStatus: MemberRecord["status"] | null,
+  stripeType: string,
+): Promise<void> {
+  if (member.status === "cancel_scheduled" && previousStatus !== "cancel_scheduled") {
+    const cycle = member.cancelAt ?? member.id;
+    for (const templateId of SUBSCRIPTION_LIFECYCLE_TEMPLATES.cancel_scheduled) {
+      await notifyLifecycle(deps, member, templateId, `${templateId}:${member.id}:${cycle}`);
+    }
+  }
+  if (stripeType === "customer.subscription.deleted" && member.status === "canceled" && previousStatus !== "canceled") {
+    const suitability = await deps.store.findSuitabilityCase(member.id);
+    if (suitability) return;
+    const cycle = member.stripeSubscriptionId ?? member.id;
+    for (const templateId of SUBSCRIPTION_LIFECYCLE_TEMPLATES.ended) {
+      await notifyLifecycle(deps, member, templateId, `${templateId}:${member.id}:${cycle}`);
+    }
+  }
 }
 
 async function notifyLifecycle(
@@ -982,7 +1087,7 @@ async function recoverMember(body: Record<string, unknown>, request: Request, de
 export async function handleRecover(request: Request, deps: Deps): Promise<Response> {
   const token = new URL(request.url).searchParams.get("token") ?? "";
   const memberId = token ? await deps.store.consumeRecovery(hashSecret(token), deps.now()) : null;
-  if (!memberId) return json({ ok: false, error: "recovery_rejected" }, 400);
+  if (!memberId) return friendlyLink(request, "/account/?link=expired", "recovery_rejected");
   const raw = newSecret();
   const expiresAt = new Date(deps.now().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
   await deps.store.createSession({
@@ -1160,6 +1265,7 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     if (effect.founding === "convert" && "reservationId" in internal && internal.reservationId) {
       await deps.store.setFoundingStatus(internal.reservationId, "converted");
     }
+    if (member) await settlePaidCheckoutStatus(deps, member.id);
     await recordPaymentAlerts(deps, {
       eventId: event.id,
       previousStatus,
@@ -1187,6 +1293,19 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
         now: deps.now(),
         env: deps.env,
       }));
+    }
+    if (internal.type === "checkout.session.async_payment_failed" && member) {
+      await enqueueStaffAlert(deps, staffNoticeDraft({
+        eventId: event.id,
+        kind: "webhook_error",
+        memberId: member.id,
+        now: deps.now(),
+        env: deps.env,
+      }));
+    }
+    if (member && internal.type === "customer.subscription.updated") {
+      const fresh = await deps.store.findMemberById(member.id);
+      if (fresh) await notifySubscriptionLifecycle(deps, fresh, previousStatus, event.type);
     }
     const paidNow = Boolean(effect.statusPatch && "setupPaid" in effect.statusPatch && effect.statusPatch.setupPaid);
     if (member && (paidNow || effect.invoice)) {
@@ -1737,7 +1856,7 @@ export async function handleHubEnter(request: Request, deps: Deps): Promise<Resp
   const token = new URL(request.url).searchParams.get("token") ?? "";
   const email = token ? await deps.store.consumeStaffLink(hashSecret(token), deps.now()) : null;
   const role = email ? staffRole(email, deps.env) : null;
-  if (!email || !role) return json({ ok: false, error: "staff_link_rejected" }, 400);
+  if (!email || !role) return friendlyLink(request, "/hub/?link=expired", "staff_link_rejected");
   const raw = newSecret();
   await deps.store.saveStaffSession({
     tokenHash: hashSecret(raw),

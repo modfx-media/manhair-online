@@ -49,7 +49,7 @@ export default function MembershipsPage() {
               { label: "Hair systems a year", values: plans.map((plan) => String(plan.systems)) },
               { label: "Maintenance visits a year", values: plans.map((plan) => String(plan.maintenance)) },
               { label: "Scheduled visits a year", values: plans.map((plan) => String(plan.visits)) },
-              { label: "Priority booking", values: plans.map((plan) => (plan.priorityBooking ? "Yes" : "No")) },
+              { label: "Scheduling priority", values: plans.map((plan) => (plan.priorityBooking ? "First in line" : "Standard")) },
             ].map((row) => (
               <div key={row.label} className="rounded-md bg-white p-4">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-700">{row.label}</h3>

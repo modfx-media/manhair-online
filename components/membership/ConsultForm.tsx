@@ -67,7 +67,7 @@ export function ConsultForm() {
         <input name="phone" type="tel" autoComplete="tel" className="mh-input min-h-11" />
       </label>
       <label className="flex items-start gap-3 text-sm leading-6">
-        <input name="marketingConsent" type="checkbox" className="mt-1 size-4" />
+        <input name="marketingConsent" type="checkbox" className="mt-1 h-11 w-11 shrink-0" />
         <span>Studio updates about consultations are optional. Leave this unchecked and we will not plan marketing messages. This is not the membership checkout.</span>
       </label>
       <button className="mh-btn mh-btn-primary min-h-11" type="submit" disabled={pending}>

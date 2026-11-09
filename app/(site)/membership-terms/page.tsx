@@ -19,7 +19,7 @@ export default function MembershipTermsPage() {
       <p>The {formatUsd(49500)} setup is charged at signup and goes toward the first system. The first monthly charge is 30 days after signup, then each month. Those 30 days are not unlimited service. A first system typically takes 8–12 weeks, and billing can start before that fitting.</p>
       <p>The minimum term is 3 months, then the plan is month to month. The monthly rate of the plan you join is locked for 24 months. A cancellation from the account page is a request. It does not change billing until the studio reviews it.</p>
       <p>You can request a pause of up to 60 days a year. A request does not pause billing by itself.</p>
-      <p>You can join and pay before a consultation. {REFUND_POLICY.summary}</p>
+      <p>{REFUND_POLICY.summary}</p>
       <p>If a monthly payment fails, there are 14 days before visits and new system orders are held. The membership is not cancelled, and an order already underway is not cancelled. The hold ends when the unpaid monthly invoices are paid.</p>
       <p>An additional fitted system is {formatUsd(EXTRA_SYSTEM_CENTS)}. An extra maintenance visit is {formatUsd(EXTRA_MAINTENANCE_CENTS)}.</p>
       <p>Card charges show on your statement as {descriptor}.</p>

@@ -33,7 +33,12 @@ function DraftList() {
   );
 }
 
-export default async function HubPage() {
+export default async function HubPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ link?: string }>;
+}) {
+  const query = await searchParams;
   const staff = await currentStaffEmail();
   const role = staffRole(staff.email, process.env);
   if (!role) {
@@ -41,7 +46,7 @@ export default async function HubPage() {
       <main className="mx-auto grid max-w-xl gap-4 px-5 py-16">
         <PreviewNotice />
         <h1 className="mh-display text-4xl">Studio hub</h1>
-        <HubSignIn />
+        <HubSignIn linkExpired={query.link === "expired"} />
         {staff.authError ? <p className="text-sm text-red-800">{staff.authError}</p> : null}
         <p className="text-sm leading-7 text-ink-700">{SCHEDULING.summary}</p>
       </main>

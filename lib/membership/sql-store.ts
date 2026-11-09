@@ -67,6 +67,7 @@ function mapMember(row: Row): MemberRecord {
     attention: (text(row.attention) as Attention) ?? null,
     paymentGraceStartedAt: text(row.payment_grace_started_at),
     pauseResumeAt: text(row.pause_resume_at),
+    heldStripeStatus: text(row.held_stripe_status) as MemberRecord["heldStripeStatus"],
     termsVersion: requiredText(row.terms_version),
     lastStatusEventCreated: num(row.last_status_event_created),
     version: num(row.version),
@@ -158,7 +159,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           stripe_subscription_id, stripe_subscription_item_id, monthly_cents, setup_cents,
           setup_paid, recurring_start_at, next_charge_at, charge_at_source, minimum_term_ends_at, rate_lock_ends_at,
           entitlement_year_ends_at, systems_used, maintenance_used, pause_days_used,
-          cancel_at, pause_collection, attention, payment_grace_started_at, pause_resume_at, terms_version, last_status_event_created, version, created_at
+          cancel_at, pause_collection, attention, payment_grace_started_at, pause_resume_at, held_stripe_status, terms_version, last_status_event_created, version, created_at
         ) VALUES (
           ${member.id}, ${member.email}, ${member.phone}, ${member.firstName}, ${member.lastName},
           ${member.tier}, ${member.status}, ${member.stripeCustomerId}, ${member.stripeSubscriptionId},
@@ -166,7 +167,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           ${member.setupPaid}, ${member.recurringStartAt}, ${member.nextChargeAt ?? null}, ${member.chargeAtSource ?? null}, ${member.minimumTermEndsAt},
           ${member.rateLockEndsAt}, ${member.entitlementYearEndsAt}, ${member.systemsUsed},
           ${member.maintenanceUsed}, ${member.pauseDaysUsed}, ${member.cancelAt},
-          ${member.pauseCollection}, ${member.attention}, ${member.paymentGraceStartedAt ?? null}, ${member.pauseResumeAt ?? null}, ${member.termsVersion}, ${member.lastStatusEventCreated},
+          ${member.pauseCollection}, ${member.attention}, ${member.paymentGraceStartedAt ?? null}, ${member.pauseResumeAt ?? null}, ${member.heldStripeStatus ?? null}, ${member.termsVersion}, ${member.lastStatusEventCreated},
           ${member.version}, ${member.createdAt}
         )
         ON CONFLICT (id) DO UPDATE SET
@@ -196,6 +197,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           attention = EXCLUDED.attention,
           payment_grace_started_at = EXCLUDED.payment_grace_started_at,
           pause_resume_at = EXCLUDED.pause_resume_at,
+          held_stripe_status = EXCLUDED.held_stripe_status,
           terms_version = EXCLUDED.terms_version,
           last_status_event_created = EXCLUDED.last_status_event_created,
           version = EXCLUDED.version
@@ -223,6 +225,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           attention = ${member.attention},
           payment_grace_started_at = ${member.paymentGraceStartedAt ?? null},
           pause_resume_at = ${member.pauseResumeAt ?? null},
+          held_stripe_status = ${member.heldStripeStatus ?? null},
           last_status_event_created = ${member.lastStatusEventCreated},
           version = ${expectedVersion + 1}
         WHERE id = ${member.id} AND version = ${expectedVersion}
@@ -270,6 +273,19 @@ export function createSqlStore(connectionString: string): MembershipStore {
     },
     async getCheckout(key) {
       const rows = await sql`SELECT * FROM membership_checkouts WHERE idempotency_key = ${key} LIMIT 1`;
+      const row = rows[0] as Row | undefined;
+      if (!row) return null;
+      return {
+        idempotencyKey: requiredText(row.idempotency_key),
+        memberId: requiredText(row.member_id),
+        sessionId: text(row.session_id),
+        url: text(row.url),
+        reservationId: text(row.reservation_id),
+        createdAt: requiredText(row.created_at),
+      };
+    },
+    async latestCheckout(memberId) {
+      const rows = await sql`SELECT * FROM membership_checkouts WHERE member_id = ${memberId} ORDER BY created_at DESC LIMIT 1`;
       const row = rows[0] as Row | undefined;
       if (!row) return null;
       return {
@@ -927,6 +943,7 @@ export function unavailableStore(): MembershipStore {
     reserveFounding: fail,
     setFoundingStatus: fail,
     getCheckout: async () => null,
+    latestCheckout: async () => null,
     saveCheckout: fail,
     claimEvent: fail,
     finishEvent: fail,

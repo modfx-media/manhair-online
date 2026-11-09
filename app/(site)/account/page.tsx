@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; link?: string }>;
 }) {
   const query = await searchParams;
   const jar = await cookies();
@@ -28,7 +28,7 @@ export default async function AccountPage({
   return (
     <main className="mx-auto grid max-w-3xl gap-6 px-5 py-12 md:py-16">
       <PreviewNotice />
-      <AccountPanel member={data.member} invoices={data.invoices} pauses={data.pauses} cancellationRequests={data.cancellationRequests} afterCheckout={query.next === "checkout"} signInNext={query.next === "billing" ? "billing" : ""} />
+      <AccountPanel member={data.member} invoices={data.invoices} pauses={data.pauses} cancellationRequests={data.cancellationRequests} afterCheckout={query.next === "checkout"} signInNext={query.next === "billing" ? "billing" : ""} linkExpired={query.link === "expired"} />
     </main>
   );
 }
