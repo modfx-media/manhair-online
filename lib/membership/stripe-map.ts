@@ -6,6 +6,12 @@ function idOf(value: unknown): string | null {
   return null;
 }
 
+function unix(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
+  return null;
+}
+
 function meta(object: Record<string, unknown>): Record<string, string> {
   const metadata = object.metadata;
   if (!metadata || typeof metadata !== "object") return {};
@@ -98,8 +104,9 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
       subscriptionId: typeof object.id === "string" ? object.id : "",
       subscriptionItemId: typeof first?.id === "string" ? first.id : null,
       status: event.type === "customer.subscription.deleted" ? "canceled" : typeof object.status === "string" ? object.status : "incomplete",
-      trialStart: typeof object.trial_start === "number" ? object.trial_start : null,
-      trialEnd: typeof object.trial_end === "number" ? object.trial_end : null,
+      trialStart: unix(object.trial_start),
+      trialEnd: unix(object.trial_end),
+      currentPeriodEnd: unix(object.current_period_end),
       cancelAt: typeof object.cancel_at === "number" ? object.cancel_at : null,
       pauseResumesAt: typeof pause?.resumes_at === "number" ? pause.resumes_at : null,
     };

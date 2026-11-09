@@ -16,6 +16,7 @@ type MemberView = {
   setupPaid: boolean;
   statusLabel?: string;
   setupNote?: string;
+  chargeAtSource?: "estimate" | "stripe" | null;
   attention: string | null;
   systemsUsed: number;
   systemsIncluded: number;
@@ -66,7 +67,8 @@ export function AccountPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [live, setLive] = useState(member);
   useEffect(() => {
-    if (!afterCheckout || !live || live.payment?.state !== "pending") return;
+    const waitingForStripeDate = live?.setupPaid && live.chargeAtSource !== "stripe";
+    if (!afterCheckout || !live || (live.payment?.state !== "pending" && !waitingForStripeDate)) return;
     let stopped = false;
     const timer = setInterval(() => {
       void fetch("/api/membership/account/", { cache: "no-store" })

@@ -36,6 +36,8 @@ export type MemberBilling = {
   monthlyCents: number;
   setupPaid: boolean;
   recurringStartAt: string | null;
+  nextChargeAt?: string | null;
+  chargeAtSource?: "estimate" | "stripe" | null;
   cancelAt: string | null;
   pauseCollection: boolean;
   lastStatusEventCreated: number;
@@ -102,6 +104,7 @@ export type InternalEvent =
       status: string;
       trialStart?: number | null;
       trialEnd: number | null;
+      currentPeriodEnd?: number | null;
       cancelAt: number | null;
       pauseResumesAt: number | null;
     }
@@ -140,9 +143,27 @@ export function emptyEffect(): BillingEffect {
   };
 }
 
-function fromUnix(seconds: number | null): string | null {
+function fromUnix(seconds: number | null | undefined): string | null {
   if (!seconds) return null;
   return new Date(seconds * 1000).toISOString();
+}
+
+/** First charge is trial_end. Later charges use current_period_end. Both are Stripe instants. */
+function stripeChargePatch(event: {
+  trialEnd: number | null;
+  currentPeriodEnd?: number | null;
+  status: string;
+}): Partial<MemberBilling> | null {
+  const trial = fromUnix(event.trialEnd);
+  const periodEnd = fromUnix(event.currentPeriodEnd);
+  const first = trial ?? (event.status === "trialing" ? periodEnd : null);
+  const next = periodEnd ?? trial;
+  if (!first && !next) return null;
+  return {
+    ...(first ? { recurringStartAt: first } : {}),
+    ...(next ? { nextChargeAt: next } : {}),
+    chargeAtSource: "stripe",
+  };
 }
 
 function mapStripeStatus(status: string, cancelAt: number | null, paused: boolean): MemberStatus {
@@ -210,7 +231,8 @@ export function reduceBillingEvent(
   if (event.type === "customer.subscription.updated") {
     if (!member) return { ...emptyEffect(), unmapped: true };
     const stale = event.created < member.lastStatusEventCreated;
-    if (stale) return { ...emptyEffect(), staleStatus: true };
+    const charges = stripeChargePatch(event);
+    if (stale) return { ...emptyEffect(), staleStatus: true, statusPatch: charges };
     const paused = event.pauseResumesAt !== null;
     const status = mapStripeStatus(event.status, event.cancelAt, paused);
     let attention: Attention = member.attention;
@@ -223,9 +245,6 @@ export function reduceBillingEvent(
       } else if (attention === "unexpected_trial") {
         attention = null;
       }
-    } else if (event.trialEnd && member.recurringStartAt) {
-      const expected = new Date(member.recurringStartAt).getTime();
-      if (Math.abs(event.trialEnd * 1000 - expected) > 2 * 60 * 1000) attention = "unexpected_trial";
     }
     return {
       ...emptyEffect(),
@@ -235,7 +254,9 @@ export function reduceBillingEvent(
         stripeCustomerId: event.customerId ?? member.stripeCustomerId,
         stripeSubscriptionId: event.subscriptionId,
         stripeSubscriptionItemId: event.subscriptionItemId ?? member.stripeSubscriptionItemId,
-        recurringStartAt: fromUnix(event.trialEnd) ?? member.recurringStartAt,
+        recurringStartAt: charges?.recurringStartAt ?? member.recurringStartAt,
+        nextChargeAt: charges?.nextChargeAt ?? member.nextChargeAt ?? null,
+        chargeAtSource: charges?.chargeAtSource ?? member.chargeAtSource ?? "estimate",
         cancelAt: fromUnix(event.cancelAt),
         pauseCollection: paused,
         lastStatusEventCreated: event.created,

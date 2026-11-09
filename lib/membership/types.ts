@@ -17,6 +17,9 @@ export type MemberRecord = {
   setupCents: number;
   setupPaid: boolean;
   recurringStartAt: string | null;
+  nextChargeAt?: string | null;
+  /** estimate until a subscription webhook supplies trial_end or current_period_end. */
+  chargeAtSource?: "estimate" | "stripe" | null;
   minimumTermEndsAt: string;
   rateLockEndsAt: string;
   entitlementYearEndsAt: string;

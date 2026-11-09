@@ -13,6 +13,7 @@ export type ConfirmationMember = {
   setupCents: number;
   monthlyCents: number;
   recurringStartAt: string | null;
+  chargeAtSource?: "estimate" | "stripe" | null;
   minimumTermEndsAt: string;
 };
 
@@ -62,7 +63,10 @@ export function confirmationMessage(member: ConfirmationMember, env: AppEnv, acc
   const plan = TIERS[member.tier].name;
   const setup = formatUsd(member.setupCents);
   const monthly = formatUsd(member.monthlyCents);
-  const firstCharge = member.recurringStartAt ? formatStudioDay(new Date(member.recurringStartAt)) : "30 days after signup";
+  const confirmedCharge = member.chargeAtSource === "stripe" && member.recurringStartAt
+    ? formatStudioDay(new Date(member.recurringStartAt))
+    : null;
+  const firstCharge = confirmedCharge ?? "the trial end Stripe schedules, about 30 days after payment";
   const minimumEnd = formatStudioDay(new Date(member.minimumTermEndsAt));
   const descriptor = statementDescriptorSuffix(env);
   const identity = businessIdentity(env);
@@ -196,11 +200,13 @@ export function customerStatusLabel(
     status: string;
     setupPaid: boolean;
     recurringStartAt: string | null;
+    chargeAtSource?: "estimate" | "stripe" | null;
   },
   now = new Date(),
 ): string {
-  const first = member.recurringStartAt ? formatStudioDay(new Date(member.recurringStartAt)) : null;
-  const futureCharge = member.recurringStartAt ? new Date(member.recurringStartAt).getTime() > now.getTime() : false;
+  const confirmed = member.chargeAtSource === "stripe" ? member.recurringStartAt : null;
+  const first = confirmed ? formatStudioDay(new Date(confirmed)) : null;
+  const futureCharge = confirmed ? new Date(confirmed).getTime() > now.getTime() : false;
   if (member.status === "past_due") return "Payment past due";
   if (member.status === "paused") return "Paused";
   if (member.status === "cancel_scheduled") return futureCharge && first ? `Active – first monthly payment ${first}` : "Active until the scheduled cancellation";
@@ -209,6 +215,9 @@ export function customerStatusLabel(
   if (member.status === "checkout_open") return "Signup not finished";
   if (member.status === "needs_review") return "We need to review this membership";
   if (member.setupPaid && first && (member.status === "trialing" || futureCharge)) return `Active – first monthly payment ${first}`;
+  if (member.setupPaid && !first && (member.status === "trialing" || member.status === "active")) {
+    return "Active – first monthly charge follows the subscription trial end";
+  }
   if (member.setupPaid) return "Active";
   return "Payment not confirmed";
 }

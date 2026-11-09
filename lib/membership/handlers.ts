@@ -373,6 +373,8 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     setupCents,
     setupPaid: false,
     recurringStartAt: timeline.firstRecurringAt.toISOString(),
+    nextChargeAt: null,
+    chargeAtSource: "estimate",
     minimumTermEndsAt: timeline.minimumTermEndsAt.toISOString(),
     rateLockEndsAt: timeline.rateLockEndsAt.toISOString(),
     entitlementYearEndsAt: timeline.entitlementYearEndsAt.toISOString(),
@@ -632,6 +634,7 @@ function publicMember(member: MemberRecord, now: Date, invoices: Array<{ id: str
     newSystemOrders: orders.ok ? "available" : orders.reason,
     ...timeline,
     paymentMethod: "Shown by the processor. This app does not store a card number.",
+    chargeAtSource: member.chargeAtSource ?? "estimate",
     payment: checkoutPaymentView(member, invoices),
   };
 }
@@ -960,7 +963,20 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     return json({ ok: true, duplicate: true });
   }
   try {
-    if (member && !effect.staleStatus && (effect.statusPatch || effect.attention)) {
+    const chargePatch = effect.staleStatus && effect.statusPatch?.chargeAtSource === "stripe"
+      ? {
+          recurringStartAt: effect.statusPatch.recurringStartAt ?? member?.recurringStartAt ?? null,
+          nextChargeAt: effect.statusPatch.nextChargeAt ?? member?.nextChargeAt ?? null,
+          chargeAtSource: "stripe" as const,
+        }
+      : null;
+    if (member && chargePatch) {
+      const saved = await deps.store.compareAndSave({ ...member, ...chargePatch, version: member.version }, member.version);
+      if (saved === "conflict") {
+        await deps.store.finishEvent(event.id, "failed");
+        return json({ ok: false, error: "conflict" }, 409);
+      }
+    } else if (member && !effect.staleStatus && (effect.statusPatch || effect.attention)) {
       const next = {
         ...member,
         ...effect.statusPatch,
@@ -1026,6 +1042,7 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
       webhookFailed: false,
       memberId: member?.id ?? effect.invoice?.memberId ?? null,
     });
+    if (member) await enqueueDatedConfirmation(deps, member.id);
     if (internal.type === "charge.dispute.created" && member) {
       await enqueueStaffAlert(deps, staffNoticeDraft({
         eventId: event.id,
@@ -1065,7 +1082,13 @@ async function recordPaymentAlerts(
   },
 ): Promise<void> {
   try {
-    const drafts = alertsForPayment({ ...input, now: deps.now(), env: deps.env });
+    const fresh = input.memberId ? await deps.store.findMemberById(input.memberId) : null;
+    const drafts = alertsForPayment({
+      ...input,
+      now: deps.now(),
+      env: deps.env,
+      chargeDateReady: fresh?.chargeAtSource === "stripe",
+    });
     for (const draft of drafts) {
       await deps.store.enqueueAlert({
         ...draft,
@@ -1107,6 +1130,17 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
   const transport = messageTransport(deps.env);
   const customer = alert.audience === "customer";
   const customerReady = alert.kind === "setup_paid" ? confirmationEmailReady(deps.env) : customerAlertsReady(deps.env);
+  if (customer && alert.kind === "setup_paid") {
+    const dated = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
+    if (dated?.chargeAtSource !== "stripe" || !dated.recurringStartAt) {
+      await deps.store.updateAlert(alert.id, {
+        status: "held",
+        nextAttemptAt: null,
+        lastError: "awaiting_stripe_charge_date",
+      });
+      return "held";
+    }
+  }
   if (customer && !customerReady) {
     await deps.store.updateAlert(alert.id, {
       status: "held",
@@ -1150,7 +1184,7 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
         from: memberEmailFrom(deps.env).from,
         reply_to: memberEmailFrom(deps.env).replyTo,
         to,
-        subject: customer && alert.kind === "setup_paid" && member
+        subject: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
           ? confirmationMessage(member, deps.env, accountUrl).subject
           : staffAlertMessage({
               kind: alert.kind,
@@ -1162,7 +1196,7 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
               occurredAt: new Date(alert.createdAt),
               hubUrl: `${origin}/hub/`,
             }).subject,
-        text: customer && alert.kind === "setup_paid" && member
+        text: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
           ? confirmationMessage(member, deps.env, accountUrl).text
           : customer
             ? `${ownerAlertText(alert)}\n\n${footer}`
@@ -1176,7 +1210,7 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
                 occurredAt: new Date(alert.createdAt),
                 hubUrl: `${origin}/hub/`,
               }).text,
-        html: customer && alert.kind === "setup_paid" && member
+        html: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
           ? confirmationMessage(member, deps.env, accountUrl).html
           : staffAlertMessage({
               kind: alert.kind,
@@ -1200,6 +1234,31 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
     console.info(JSON.stringify({ scope: "membership", event: "alert_delivery_failed", ...alertLogFields({ ...alert, status: next.status }) }));
     return "failed";
   }
+}
+
+async function enqueueDatedConfirmation(deps: Deps, memberId: string): Promise<void> {
+  const member = await deps.store.findMemberById(memberId);
+  if (!member?.setupPaid || member.chargeAtSource !== "stripe" || !member.recurringStartAt) return;
+  const drafts = alertsForPayment({
+    eventId: `setup_confirm:${member.id}`,
+    previousStatus: "checkout_open",
+    invoice: { kind: "setup", status: "paid", amountPaid: member.setupCents },
+    webhookFailed: false,
+    memberId: member.id,
+    now: deps.now(),
+    env: deps.env,
+    chargeDateReady: true,
+  }).filter((draft) => draft.audience === "customer");
+  for (const draft of drafts) {
+    await deps.store.enqueueAlert({
+      ...draft,
+      id: newId(),
+      attempts: 0,
+      lastError: null,
+      createdAt: deps.now().toISOString(),
+    });
+  }
+  await drainAlerts(deps);
 }
 
 async function enqueueStaffAlert(deps: Deps, draft: AlertDraft): Promise<void> {

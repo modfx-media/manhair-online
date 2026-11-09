@@ -92,6 +92,8 @@ export function alertsForPayment(input: {
   memberId: string | null;
   now: Date;
   env: AppEnv;
+  /** Customer setup mail waits until trial_end or current_period_end is stored. */
+  chargeDateReady?: boolean;
 }): AlertDraft[] {
   const kinds: Array<{ kind: AlertKind; amountCents: number; customer: boolean }> = [];
   if (input.webhookFailed) kinds.push({ kind: "webhook_error", amountCents: 0, customer: false });
@@ -109,11 +111,14 @@ export function alertsForPayment(input: {
   for (const item of kinds) {
     const audiences: AlertAudience[] = item.customer ? ["owner", "customer"] : ["owner"];
     for (const audience of audiences) {
+      if (audience === "customer" && item.kind === "setup_paid" && input.chargeDateReady !== true) continue;
       const ownerCanAttempt = audience === "owner" && ownerAlertsReady(input.env) && (transport === "live" || transport === "fake");
       const customerReady = item.kind === "setup_paid" ? confirmationEmailReady(input.env) : customerAlertsReady(input.env);
       const customerCanAttempt = audience === "customer" && customerReady && (transport === "live" || transport === "fake");
       drafts.push({
-        dedupeKey: `${input.eventId}:${item.kind}:${audience}`,
+        dedupeKey: audience === "customer" && item.kind === "setup_paid"
+          ? `setup_confirm:${input.memberId}:customer`
+          : `${input.eventId}:${item.kind}:${audience}`,
         sourceEventId: input.eventId,
         kind: item.kind,
         audience,
