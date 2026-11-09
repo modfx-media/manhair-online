@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PlanStudio } from "@/components/membership/PlanStudio";
 import { PreviewNotice } from "@/components/membership/PreviewNotice";
 import { billingTimeline, formatStudio } from "@/lib/membership/dates";
-import { MERCHANT, SCHEDULING, formatUsd } from "@/lib/membership/offer";
+import { MERCHANT, REFUND_POLICY, SCHEDULING, formatUsd } from "@/lib/membership/offer";
 import { PACKAGE_PAGE, packageFacts, SHARED_PACKAGE, SYSTEM_VS_MAINTENANCE, VISIT_CADENCE } from "@/lib/membership/packages";
 
 export const dynamic = "force-dynamic";
@@ -97,9 +97,9 @@ export default function MembershipsPage() {
           <h2 className="font-display text-3xl tracking-[-0.02em]">Not in the monthly price</h2>
           <ul className="mt-4 grid gap-3 text-base leading-7">
             <li>An additional fitted system is {formatUsd(SHARED_PACKAGE.extraSystemCents)}. An extra maintenance visit is {formatUsd(SHARED_PACKAGE.extraMaintenanceCents)}. Checkout does not sell either one.</li>
-            <li>The $295 founding setup is off.</li>
-            <li>This checkout does not add sales tax. That is the current practice, not a claim of a legal exemption. {MERCHANT.disclosure}</li>
-            <li>If staff confirm a membership is unsuitable, the setup and collected membership charges are refunded and future billing stops. The 3-month minimum does not block that. Other refund reasons are not decided, and this page does not refund anyone by itself.</li>
+            <li>{MERCHANT.disclosure}</li>
+            <li>{REFUND_POLICY.summary}</li>
+            <li>A failed monthly payment has 14 days before visits and new system orders are held. The membership stays open.</li>
             <li>{SCHEDULING.summary}</li>
           </ul>
         </div>

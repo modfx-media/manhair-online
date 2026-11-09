@@ -17,6 +17,9 @@ export type MemberRecord = {
   setupCents: number;
   setupPaid: boolean;
   recurringStartAt: string | null;
+  nextChargeAt?: string | null;
+  /** estimate until a subscription webhook supplies trial_end or current_period_end. */
+  chargeAtSource?: "estimate" | "stripe" | null;
   minimumTermEndsAt: string;
   rateLockEndsAt: string;
   entitlementYearEndsAt: string;
@@ -155,6 +158,20 @@ export type RecoveryRecord = {
   used: boolean;
 };
 
+export type StaffLinkRecord = {
+  tokenHash: string;
+  email: string;
+  expiresAt: string;
+  used: boolean;
+};
+
+export type StaffSessionRecord = {
+  tokenHash: string;
+  email: string;
+  role: "owner" | "coordinator";
+  expiresAt: string;
+};
+
 export type SyncState = {
   locationId: string;
   contactCursor: string | null;
@@ -172,6 +189,11 @@ export type ConsentRecord = {
   termsVersion: string;
   termsAcceptedAt: string;
   autorenewAcceptedAt: string;
+  marketingEmail: boolean;
+  smsConsent: boolean;
+  smsConsentText: string | null;
+  smsConsentAt: string | null;
+  smsConsentVersion: string | null;
 };
 
 export type UsageResult = "applied" | "replay" | "rejected";
@@ -189,6 +211,7 @@ export interface MembershipStore {
   saveMember(member: MemberRecord): Promise<void>;
   compareAndSave(member: MemberRecord, expectedVersion: number): Promise<"ok" | "conflict">;
   addConsent(consent: ConsentRecord): Promise<void>;
+  listConsents(memberId: string): Promise<ConsentRecord[]>;
   reserveFounding(input: { id: string; memberId: string; expiresAt: string; cap: number }): Promise<"reserved" | "cap">;
   setFoundingStatus(id: string, status: "converted" | "released"): Promise<void>;
   getCheckout(key: string): Promise<CheckoutRecord | null>;
@@ -203,7 +226,7 @@ export interface MembershipStore {
   findSuitabilityCase(memberId: string): Promise<SuitabilityCaseRecord | null>;
   updateSuitabilityCancel(id: string, cancelStatus: SuitabilityCaseRecord["cancelStatus"]): Promise<void>;
   saveRefundRequest(row: RefundRequestRecord): Promise<void>;
-  listRefundRequests(memberId: string): Promise<RefundRequestRecord[]>;
+  listRefundRequests(memberId?: string): Promise<RefundRequestRecord[]>;
   updateRefundRequest(id: string, patch: Pick<RefundRequestRecord, "status" | "stripeRefundId">): Promise<void>;
   saveAppointment(row: AppointmentRecord): Promise<void>;
   listAppointments(memberId: string): Promise<AppointmentRecord[]>;
@@ -215,6 +238,10 @@ export interface MembershipStore {
   deleteSessionByHash(tokenHash: string): Promise<void>;
   saveRecovery(row: RecoveryRecord): Promise<void>;
   consumeRecovery(tokenHash: string, now: Date): Promise<string | null>;
+  saveStaffLink(row: StaffLinkRecord): Promise<void>;
+  consumeStaffLink(tokenHash: string, now: Date): Promise<string | null>;
+  saveStaffSession(row: StaffSessionRecord): Promise<void>;
+  findStaffSession(tokenHash: string): Promise<StaffSessionRecord | null>;
   getSyncState(): Promise<SyncState | null>;
   saveSyncState(row: SyncState): Promise<void>;
   addAuthAudit(row: AuthAuditRecord): Promise<void>;

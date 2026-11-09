@@ -22,7 +22,7 @@ check(
     timeline.secondRecurringAt.toISOString() === "2027-01-07T19:00:00.000Z",
   "setup at checkout instant, first membership +30 days, next charge one calendar month later",
 );
-check("merchant disclosure", MERCHANT.statementDescriptor === "MODFXMEDIA, LLC", MERCHANT.disclosure);
+check("merchant disclosure", MERCHANT.statementDescriptor === "MANHAIR", MERCHANT.disclosure);
 check(
   "stripe events",
   STRIPE_WEBHOOK_EVENTS.includes("invoice.paid") && STRIPE_WEBHOOK_EVENTS.includes("invoice.payment_failed"),

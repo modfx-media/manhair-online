@@ -1,10 +1,13 @@
-import { alertAfterFailure, alertLogFields, alertsForPayment, ownerAlertText, ownerAlertsReady, type AlertRecord } from "./alerts";
+import { alertAfterFailure, alertLogFields, alertsForPayment, confirmationEmailReady, customerAlertsReady, ownerAlertText, ownerAlertsReady, staffAlertRecipients, staffNoticeDraft, type AlertDraft, type AlertRecord } from "./alerts";
+import { SMS_CONSENT_TEXT, SMS_CONSENT_VERSION, businessIdentity, emailComplianceFooter, memberEmailFrom, recoveryUnavailableMessage, statementDescriptorSuffix } from "./business";
+import { confirmationMessage, customerStatusLabel, publicSiteOrigin, staffAlertMessage } from "./email-copy";
 import { messageHolds, messageTransport } from "./message-holds";
 import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
-import { buildCheckoutParams, checkoutIdempotencyKey, isSameOrigin, priceMatches, safeAppOrigin, type PriceSnapshot } from "./checkout";
-import { ghlMode, paidMemberStageChange, pushOpportunityStage, syncHash, syncLead } from "./ghl";
+import { buildCheckoutParams, checkoutIdempotencyKey, checkoutPaymentView, isSameOrigin, priceMatches, publicCheckoutOrigin, safeAppOrigin, type PriceSnapshot } from "./checkout";
+import { ghlMode, paidMemberStageChange, pushMembershipProfile, pushOpportunityStage, sendLocationSms, syncHash, syncLead } from "./ghl";
+import { membershipGhlPayload, type MembershipGhlInput } from "./ghl-profile";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import { reviewedLifecycle } from "./lifecycle-review";
@@ -249,10 +252,35 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
       : `Consultation stored ${now}. Marketing consent declined. Not synced. No message sent.`,
     createdAt: now,
   });
+  await enqueueStaffAlert(deps, staffNoticeDraft({
+    eventId: dealId,
+    kind: "consultation_requested",
+    memberId: null,
+    now: deps.now(),
+    env: deps.env,
+  }));
+  if (resolveGhlTarget(deps.env).ok) {
+    const ghl = await syncLead(deps.env, {
+      email,
+      phone,
+      firstName,
+      lastName,
+      dealId,
+      profile: membershipGhlPayload({ lead: true, consultPending: true, suitability: "pending", syncVersion: 1 }),
+    }, deps.fetchImpl ?? fetch);
+    const saved = await deps.store.listDeals();
+    const deal = saved.find((item) => item.id === dealId);
+    if (deal) {
+      deal.ghlContactId = ghl.contactId;
+      deal.ghlOpportunityId = ghl.opportunityId;
+      deal.syncStatus = ghl.status;
+      await deps.store.saveDeal(deal);
+    }
+  }
   return json({
     ok: true,
     synced: false,
-    message: "Saved for the studio as a local lead. It is not in HighLevel, and no email was sent.",
+    message: "Your consultation request is saved. Griselda arranges the time. This did not start a payment or send you an email.",
   });
   } catch (error) {
     if (isMembershipSchemaMissing(error)) return storageNotReady();
@@ -278,6 +306,14 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
   }
   if (body.termsAccepted !== true || body.autorenewAccepted !== true) {
     return json({ ok: false, error: "consent_required" }, 400);
+  }
+  const smsConsent = body.smsConsent === true;
+  if (smsConsent && !phone) {
+    return json({
+      ok: false,
+      error: "sms_phone_required",
+      message: "Add a mobile number to opt in to texts, or leave the text checkbox unchecked. Email checkout does not need it.",
+    }, 400);
   }
   const blockers = paymentBlockers(deps.env);
   if (blockers.length || !deps.stripe) {
@@ -337,6 +373,8 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     setupCents,
     setupPaid: false,
     recurringStartAt: timeline.firstRecurringAt.toISOString(),
+    nextChargeAt: null,
+    chargeAtSource: "estimate",
     minimumTermEndsAt: timeline.minimumTermEndsAt.toISOString(),
     rateLockEndsAt: timeline.rateLockEndsAt.toISOString(),
     entitlementYearEndsAt: timeline.entitlementYearEndsAt.toISOString(),
@@ -352,12 +390,18 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     createdAt: now.toISOString(),
   };
   await deps.store.saveMember(member);
+  const consentId = newId();
   await deps.store.addConsent({
-    id: newId(),
+    id: consentId,
     memberId: member.id,
     termsVersion: TERMS_VERSION,
     termsAcceptedAt: now.toISOString(),
     autorenewAcceptedAt: now.toISOString(),
+    marketingEmail: body.marketingConsent === true,
+    smsConsent,
+    smsConsentText: smsConsent ? SMS_CONSENT_TEXT : null,
+    smsConsentAt: smsConsent ? now.toISOString() : null,
+    smsConsentVersion: smsConsent ? SMS_CONSENT_VERSION : null,
   });
 
   let reservationId: string | null = null;
@@ -374,13 +418,13 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
 
   const sessionId = newId();
   const returnToken = signToken({ purpose: "checkout_return", sid: sessionId, mid: member.id }, secret, 30 * 60, now);
-  const built = buildCheckoutParams({
+    const built = buildCheckoutParams({
     env: deps.env,
     memberId: member.id,
     email,
     tier,
     useFounding,
-    origin,
+    origin: publicCheckoutOrigin(request, deps.env),
     now,
     returnToken,
     reservationId,
@@ -445,7 +489,27 @@ export async function handleCheckout(request: Request, deps: Deps): Promise<Resp
     };
     const ghl = await syncLead(
       deps.env,
-      { email, phone, firstName, lastName, dealId },
+      {
+        email,
+        phone,
+        firstName,
+        lastName,
+        dealId,
+        profile: membershipGhlPayload({
+          lead: true,
+          memberId: member.id,
+          plan: tier,
+          billingState: "checkout_open",
+          setupPaid: false,
+          serviceHold: false,
+          marketingEmailConsent: body.marketingConsent === true,
+          marketingSmsConsent: smsConsent,
+          consentEvidenceReference: consentId,
+          firstRecurringAt: member.recurringStartAt,
+          syncVersion: 1,
+          fulfillment: null,
+        }),
+      },
       deps.fetchImpl ?? fetch,
     );
     deal.syncStatus = ghl.status;
@@ -527,7 +591,7 @@ export async function handleAccountGet(request: Request, deps: Deps): Promise<Re
   const cancellationRequests = (await deps.store.listAuthAudits(member.id)).filter((row) => row.action === "cancellation_requested");
   return json({
     ok: true,
-    member: publicMember(member, deps.now()),
+    member: publicMember(member, deps.now(), invoices),
     invoices,
     pauses,
     cancellationRequests,
@@ -536,7 +600,7 @@ export async function handleAccountGet(request: Request, deps: Deps): Promise<Re
   });
 }
 
-function publicMember(member: MemberRecord, now: Date) {
+function publicMember(member: MemberRecord, now: Date, invoices: Array<{ id: string; kind: string; status: string; amountPaid: number }> = []) {
   const timeline = {
     firstRecurringAt: member.recurringStartAt,
     minimumTermEndsAt: member.minimumTermEndsAt,
@@ -553,6 +617,10 @@ function publicMember(member: MemberRecord, now: Date) {
     monthly: formatUsd(member.monthlyCents),
     setup: formatUsd(member.setupCents),
     setupPaid: member.setupPaid,
+    statusLabel: customerStatusLabel(member, now),
+    setupNote: member.setupPaid
+      ? `${formatUsd(member.setupCents)} setup is paid and applies toward your first system.`
+      : "Your setup payment is not confirmed yet.",
     attention: member.attention,
     systemsUsed: member.systemsUsed,
     systemsIncluded: TIERS[member.tier].systems,
@@ -566,6 +634,8 @@ function publicMember(member: MemberRecord, now: Date) {
     newSystemOrders: orders.ok ? "available" : orders.reason,
     ...timeline,
     paymentMethod: "Shown by the processor. This app does not store a card number.",
+    chargeAtSource: member.chargeAtSource ?? "estimate",
+    payment: checkoutPaymentView(member, invoices),
   };
 }
 
@@ -593,6 +663,14 @@ async function cancelMember(member: MemberRecord, deps: Deps): Promise<Response>
     action: "cancellation_requested",
     createdAt: deps.now().toISOString(),
   });
+  await enqueueStaffAlert(deps, staffNoticeDraft({
+    eventId: `cancel:${member.id}:${deps.now().toISOString()}`,
+    kind: "cancellation_requested",
+    memberId: member.id,
+    now: deps.now(),
+    env: deps.env,
+  }));
+  await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   return json({
     ok: true,
     applied: false,
@@ -614,6 +692,14 @@ async function requestPause(member: MemberRecord, body: Record<string, unknown>,
     createdAt: deps.now().toISOString(),
   };
   await deps.store.savePauseRequest(request);
+  await enqueueStaffAlert(deps, staffNoticeDraft({
+    eventId: request.id,
+    kind: "pause_requested",
+    memberId: member.id,
+    now: deps.now(),
+    env: deps.env,
+  }));
+  await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   if (deps.env.MEMBERSHIP_PAUSE_SELF_SERVE !== "true") {
     return json({
       ok: true,
@@ -756,19 +842,23 @@ export async function defaultRecoveryDelivery(
   fetchImpl: typeof fetch,
 ): Promise<{ sent: boolean; reason?: string }> {
   if (!recoveryEmailReady(env)) {
-    return {
-      sent: false,
-      reason: "Account recovery email is not enabled. No message was sent. The membership stays on file and does not need another payment.",
-    };
+    return { sent: false, reason: recoveryUnavailableMessage(env) };
   }
+  const origin = (env.NEXT_PUBLIC_SITE_URL || "https://www.manhaironline.com").replace(/\/$/, "");
+  const footer = emailComplianceFooter({
+    identity: businessIdentity(env),
+    manageUrl: `${origin}/account/`,
+  });
+  const sender = memberEmailFrom(env);
   const response = await fetchImpl("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: env.RESEND_FROM,
+      from: sender.from,
+      reply_to: sender.replyTo,
       to: message.to,
       subject: "Your ManHair membership sign-in link",
-      text: `This link signs you in to the membership you already have. It does not start a new payment. ${message.url}`,
+      text: `This link signs you in to the membership you already have. It does not start a new payment.\n${message.url}\n\n${footer}`,
     }),
   });
   if (!response.ok) return { sent: false, reason: "The email provider did not accept the sign-in link. No session was opened." };
@@ -873,7 +963,20 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     return json({ ok: true, duplicate: true });
   }
   try {
-    if (member && !effect.staleStatus && (effect.statusPatch || effect.attention)) {
+    const chargePatch = effect.staleStatus && effect.statusPatch?.chargeAtSource === "stripe"
+      ? {
+          recurringStartAt: effect.statusPatch.recurringStartAt ?? member?.recurringStartAt ?? null,
+          nextChargeAt: effect.statusPatch.nextChargeAt ?? member?.nextChargeAt ?? null,
+          chargeAtSource: "stripe" as const,
+        }
+      : null;
+    if (member && chargePatch) {
+      const saved = await deps.store.compareAndSave({ ...member, ...chargePatch, version: member.version }, member.version);
+      if (saved === "conflict") {
+        await deps.store.finishEvent(event.id, "failed");
+        return json({ ok: false, error: "conflict" }, 409);
+      }
+    } else if (member && !effect.staleStatus && (effect.statusPatch || effect.attention)) {
       const next = {
         ...member,
         ...effect.statusPatch,
@@ -939,6 +1042,20 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
       webhookFailed: false,
       memberId: member?.id ?? effect.invoice?.memberId ?? null,
     });
+    if (member) await enqueueDatedConfirmation(deps, member.id);
+    if (internal.type === "charge.dispute.created" && member) {
+      await enqueueStaffAlert(deps, staffNoticeDraft({
+        eventId: event.id,
+        kind: "dispute",
+        memberId: member.id,
+        now: deps.now(),
+        env: deps.env,
+      }));
+    }
+    const paidNow = Boolean(effect.statusPatch && "setupPaid" in effect.statusPatch && effect.statusPatch.setupPaid);
+    if (member && (paidNow || effect.invoice)) {
+      await syncMemberCrm(deps, member.id, { promotePaidStage: paidNow });
+    }
     await deps.store.finishEvent(event.id, "processed");
     return json({ ok: true, unmapped: effect.unmapped, stale: effect.staleStatus });
   } catch {
@@ -965,7 +1082,13 @@ async function recordPaymentAlerts(
   },
 ): Promise<void> {
   try {
-    const drafts = alertsForPayment({ ...input, now: deps.now(), env: deps.env });
+    const fresh = input.memberId ? await deps.store.findMemberById(input.memberId) : null;
+    const drafts = alertsForPayment({
+      ...input,
+      now: deps.now(),
+      env: deps.env,
+      chargeDateReady: fresh?.chargeAtSource === "stripe",
+    });
     for (const draft of drafts) {
       await deps.store.enqueueAlert({
         ...draft,
@@ -1004,12 +1127,29 @@ export async function drainAlerts(deps: Deps): Promise<{ delivered: number; fail
 }
 
 async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered" | "failed" | "held" | "fake"> {
-  if (alert.audience === "customer") {
-    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "customer_content_unreviewed" });
+  const transport = messageTransport(deps.env);
+  const customer = alert.audience === "customer";
+  const customerReady = alert.kind === "setup_paid" ? confirmationEmailReady(deps.env) : customerAlertsReady(deps.env);
+  if (customer && alert.kind === "setup_paid") {
+    const dated = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
+    if (dated?.chargeAtSource !== "stripe" || !dated.recurringStartAt) {
+      await deps.store.updateAlert(alert.id, {
+        status: "held",
+        nextAttemptAt: null,
+        lastError: "awaiting_stripe_charge_date",
+      });
+      return "held";
+    }
+  }
+  if (customer && !customerReady) {
+    await deps.store.updateAlert(alert.id, {
+      status: "held",
+      nextAttemptAt: null,
+      lastError: alert.kind === "setup_paid" ? "confirmation_send_disabled" : "lifecycle_send_disabled",
+    });
     return "held";
   }
-  const transport = messageTransport(deps.env);
-  if (!ownerAlertsReady(deps.env) || transport === "off") {
+  if (!customer && (!ownerAlertsReady(deps.env) || transport === "off")) {
     await deps.store.updateAlert(alert.id, {
       status: "held",
       nextAttemptAt: null,
@@ -1017,21 +1157,71 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
     });
     return "held";
   }
+  if (customer && transport === "off") {
+    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "transport_not_live" });
+    return "held";
+  }
   if (transport === "fake") {
     await deps.store.updateAlert(alert.id, { status: "fake_recorded", nextAttemptAt: null, lastError: "fake_transport" });
     console.info(JSON.stringify({ scope: "membership", event: "alert_fake_recorded", ...alertLogFields(alert) }));
     return "fake";
   }
-  const to = deps.env.MEMBERSHIP_ALERT_TO?.trim() ?? "";
+  const origin = publicSiteOrigin(deps.env);
+  const accountUrl = `${origin}/account/`;
+  const footer = emailComplianceFooter({ identity: businessIdentity(deps.env), manageUrl: accountUrl });
+  const member = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
+  const deal = !member ? (await deps.store.listDeals()).find((item) => item.id === alert.sourceEventId) ?? null : null;
+  const to = customer ? member?.email : staffAlertRecipients(deps.env);
+  if (!to || (Array.isArray(to) && to.length === 0)) {
+    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "recipient_missing" });
+    return "held";
+  }
   try {
     const response = await (deps.fetchImpl ?? fetch)("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${deps.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: deps.env.RESEND_FROM,
+        from: memberEmailFrom(deps.env).from,
+        reply_to: memberEmailFrom(deps.env).replyTo,
         to,
-        subject: `ManHair ${alert.kind.replaceAll("_", " ")}`,
-        text: ownerAlertText(alert),
+        subject: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
+          ? confirmationMessage(member, deps.env, accountUrl).subject
+          : staffAlertMessage({
+              kind: alert.kind,
+              name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
+              email: member?.email ?? deal?.email ?? "",
+              phone: member?.phone ?? deal?.phone ?? null,
+              plan: member ? TIERS[member.tier].name : null,
+              amountCents: alert.amountCents,
+              occurredAt: new Date(alert.createdAt),
+              hubUrl: `${origin}/hub/`,
+            }).subject,
+        text: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
+          ? confirmationMessage(member, deps.env, accountUrl).text
+          : customer
+            ? `${ownerAlertText(alert)}\n\n${footer}`
+            : staffAlertMessage({
+                kind: alert.kind,
+                name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
+                email: member?.email ?? deal?.email ?? "",
+                phone: member?.phone ?? deal?.phone ?? null,
+                plan: member ? TIERS[member.tier].name : null,
+                amountCents: alert.amountCents,
+                occurredAt: new Date(alert.createdAt),
+                hubUrl: `${origin}/hub/`,
+              }).text,
+        html: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
+          ? confirmationMessage(member, deps.env, accountUrl).html
+          : staffAlertMessage({
+              kind: alert.kind,
+              name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
+              email: member?.email ?? deal?.email ?? "",
+              phone: member?.phone ?? deal?.phone ?? null,
+              plan: member ? TIERS[member.tier].name : null,
+              amountCents: alert.amountCents,
+              occurredAt: new Date(alert.createdAt),
+              hubUrl: `${origin}/hub/`,
+            }).html,
       }),
     });
     if (!response.ok) throw new Error("provider_rejected");
@@ -1044,6 +1234,156 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
     console.info(JSON.stringify({ scope: "membership", event: "alert_delivery_failed", ...alertLogFields({ ...alert, status: next.status }) }));
     return "failed";
   }
+}
+
+async function enqueueDatedConfirmation(deps: Deps, memberId: string): Promise<void> {
+  const member = await deps.store.findMemberById(memberId);
+  if (!member?.setupPaid || member.chargeAtSource !== "stripe" || !member.recurringStartAt) return;
+  const drafts = alertsForPayment({
+    eventId: `setup_confirm:${member.id}`,
+    previousStatus: "checkout_open",
+    invoice: { kind: "setup", status: "paid", amountPaid: member.setupCents },
+    webhookFailed: false,
+    memberId: member.id,
+    now: deps.now(),
+    env: deps.env,
+    chargeDateReady: true,
+  }).filter((draft) => draft.audience === "customer");
+  for (const draft of drafts) {
+    await deps.store.enqueueAlert({
+      ...draft,
+      id: newId(),
+      attempts: 0,
+      lastError: null,
+      createdAt: deps.now().toISOString(),
+    });
+  }
+  await drainAlerts(deps);
+}
+
+async function enqueueStaffAlert(deps: Deps, draft: AlertDraft): Promise<void> {
+  try {
+    await deps.store.enqueueAlert({
+      ...draft,
+      id: newId(),
+      attempts: 0,
+      lastError: draft.status === "held" ? "alerts_not_configured" : null,
+      createdAt: deps.now().toISOString(),
+    });
+    await drainAlerts(deps);
+  } catch {
+    console.info(JSON.stringify({ scope: "membership", event: "staff_alert_enqueue_failed", kind: draft.kind }));
+  }
+}
+
+async function syncMemberCrm(deps: Deps, memberId: string, options: { promotePaidStage: boolean }): Promise<void> {
+  try {
+    const member = await deps.store.findMemberById(memberId);
+    if (!member) return;
+    const deals = await deps.store.listDeals();
+    const deal = deals.find((item) => item.memberId === member.id) ?? null;
+    const payload = membershipGhlPayload(await membershipGhlInput(deps, member, deals));
+    let changedStage = false;
+    if (options.promotePaidStage && member.setupPaid && deal && deal.stage !== "Active Clients") {
+      deal.stage = "Active Clients";
+      deal.syncHash = syncHash({ stage: deal.stage, assignee: deal.assignee, followUp: deal.nextFollowUp ?? "" });
+      deal.staffEditedAt = deps.now().toISOString();
+      changedStage = true;
+      await deps.store.addActivity({
+        id: newId(),
+        dealId: deal.id,
+        actor: "billing",
+        action: "stage_changed:Active Clients",
+        createdAt: deps.now().toISOString(),
+      });
+    }
+    const connected = resolveGhlTarget(deps.env).ok;
+    if (!deal) return;
+    if (!connected) {
+      deal.syncStatus = "queued_not_connected";
+      await deps.store.saveDeal(deal);
+      return;
+    }
+    const fetchImpl = deps.fetchImpl ?? fetch;
+    const profile = await pushMembershipProfile(deps.env, deal.ghlContactId, payload, fetchImpl);
+    const stage = options.promotePaidStage && member.setupPaid
+      ? await pushOpportunityStage(deps.env, deal.ghlOpportunityId, "Active Clients", fetchImpl)
+      : "not_connected";
+    if (profile === "pushed" && (stage === "pushed" || stage === "not_connected")) deal.syncStatus = stage === "pushed" ? "pushed" : deal.syncStatus;
+    else if (profile === "no_contact" || stage === "stage_map_missing") deal.syncStatus = "queued_not_connected";
+    else if (profile === "push_failed" || stage === "push_failed") deal.syncStatus = "push_failed";
+    else if (changedStage) deal.syncStatus = deal.syncStatus || "queued_not_connected";
+    if (options.promotePaidStage && member.setupPaid) {
+      const prior = await deps.store.listActivity(deal.id);
+      if (!prior.some((item) => item.action === "sms_setup_confirmation")) {
+        const consented = (await deps.store.listConsents(member.id)).some((item) => item.smsConsent);
+        const sms = await sendLocationSms(
+          deps.env,
+          deal.ghlContactId,
+          `ManHair: your membership setup payment is confirmed. Card charges appear as ${statementDescriptorSuffix(deps.env)}. Reply STOP to opt out.`,
+          fetchImpl,
+          consented,
+        );
+        if (sms.sent) {
+          await deps.store.addActivity({
+            id: newId(),
+            dealId: deal.id,
+            actor: "billing",
+            action: "sms_setup_confirmation",
+            createdAt: deps.now().toISOString(),
+          });
+        }
+      }
+    }
+    await deps.store.saveDeal(deal);
+  } catch {
+    console.info(JSON.stringify({ scope: "membership", event: "crm_sync_failed", memberId }));
+  }
+}
+
+async function membershipGhlInput(deps: Deps, member: MemberRecord, deals: DealRecord[]): Promise<MembershipGhlInput> {
+  const consents = await deps.store.listConsents(member.id);
+  const consent = consents[consents.length - 1] ?? null;
+  const appointments = (await deps.store.listAppointments(member.id))
+    .filter((item) => item.state !== "canceled")
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const nextVisit = appointments.find((item) => new Date(item.startsAt).getTime() >= deps.now().getTime()) ?? appointments[0] ?? null;
+  const pauses = await deps.store.listPauseRequests(member.id);
+  const audits = await deps.store.listAuthAudits(member.id);
+  const refunds = await deps.store.listRefundRequests(member.id);
+  const suitability = await deps.store.findSuitabilityCase(member.id);
+  const access = paymentServiceHold(member.paymentGraceStartedAt, deps.now());
+  const refundOpen = refunds.some((item) => item.status !== "processor_succeeded");
+  const refunded = refunds.some((item) => item.status === "processor_succeeded") && !refundOpen;
+  const consultPending = !suitability && deals.some((item) => item.memberId === null && item.email === member.email);
+  const invoices = await deps.store.listInvoices(member.id);
+  const setupInvoice = invoices.find((item) => item.kind === "setup" && item.status === "paid");
+  return {
+    lead: true,
+    memberId: member.id,
+    stripeCustomerId: member.stripeCustomerId,
+    plan: member.tier,
+    billingState: member.status,
+    setupPaid: member.setupPaid,
+    serviceHold: access === "held",
+    billingGrace: access === "grace",
+    suitability: suitability ? "unsuitable" : nextVisit ? "suitable" : consultPending ? "pending" : null,
+    fulfillment: member.setupPaid ? (member.systemsUsed > 0 ? "system-ready" : "order-pending") : null,
+    orderReference: setupInvoice?.id ?? null,
+    nextAppointmentAt: nextVisit?.startsAt ?? null,
+    appointmentTimezone: nextVisit?.timeZone ?? null,
+    marketingEmailConsent: consent ? consent.marketingEmail : null,
+    marketingSmsConsent: consent ? consent.smsConsent : null,
+    consentEvidenceReference: consent?.id ?? null,
+    firstRecurringAt: member.recurringStartAt,
+    graceStartedAt: member.paymentGraceStartedAt ?? null,
+    syncVersion: member.version,
+    consultPending,
+    pauseRequested: pauses.some((item) => item.status === "requested"),
+    cancelRequested: audits.some((item) => item.action === "cancellation_requested"),
+    refundPending: refundOpen,
+    refunded,
+  };
 }
 
 async function staffSuitability(body: Record<string, unknown>, deps: Deps): Promise<Response> {
@@ -1123,6 +1463,15 @@ async function staffSuitability(body: Record<string, unknown>, deps: Deps): Prom
     refunds.push(row);
   }
   await deps.store.addAuthAudit({ id: newId(), memberId: member.id, action: "suitability_failure_recorded", createdAt: now });
+  await enqueueStaffAlert(deps, staffNoticeDraft({
+    eventId: caseId,
+    kind: "refund_requested",
+    memberId: member.id,
+    amountCents: refunds.reduce((sum, item) => sum + item.amountCents, 0),
+    now: deps.now(),
+    env: deps.env,
+  }));
+  await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   const completed = cancelStatus === "processor_canceled" && refunds.length > 0 && refunds.every((refund) => refund.status === "processor_succeeded");
   return json({
     ok: true,
@@ -1162,12 +1511,86 @@ async function staffAppointment(body: Record<string, unknown>, deps: Deps): Prom
     updatedAt: now,
   });
   await deps.store.addAuthAudit({ id: newId(), memberId: member.id, action: `appointment_${parsed.appointment.state}`, createdAt: now });
+  await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   return json({
     ok: true,
     bookingUrl: null,
     appointment: parsed.appointment,
     messages: schedulingMessages(parsed.appointment),
     message: "The visit was recorded by staff. No booking link was published, and no confirmation or reminder was sent.",
+  });
+}
+
+const HUB_LINK_MS = 20 * 60 * 1000;
+const HUB_SESSION_MS = 12 * 60 * 60 * 1000;
+
+export function readStaffSessionToken(request: Request): string | null {
+  const cookie = request.headers.get("cookie") ?? "";
+  const match = cookie.match(/(?:^|;\s*)mh_staff_session=([^;]+)/);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+export async function handleHubSignIn(request: Request, deps: Deps): Promise<Response> {
+  const origin = safeAppOrigin(request, deps.env);
+  if (!isSameOrigin(request, origin)) return json({ ok: false, error: "origin_rejected" }, 403);
+  const body = (await readJson(request)) ?? {};
+  const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+  if (!validEmail(email)) return json({ ok: false, error: "invalid_email", message: "Enter a valid email." }, 400);
+  const allowed = await deps.store.consumeRate(`hub-signin:${email}`, deps.now(), 5, 60 * 60 * 1000);
+  if (!allowed) {
+    return json({ ok: false, error: "rate_limited", message: "Too many sign-in links were requested. Nothing else was sent." }, 429);
+  }
+  const role = staffRole(email, deps.env);
+  const generic = "If this email is on the studio list, a sign-in link was sent.";
+  if (!role) return json({ ok: true, message: generic });
+  if (!deps.env.RESEND_API_KEY?.trim()) {
+    return json({
+      ok: false,
+      error: "email_not_configured",
+      message: "Staff sign-in email is not configured, so no link was sent.",
+    }, 501);
+  }
+  const secret = newSecret();
+  const expiresAt = new Date(deps.now().getTime() + HUB_LINK_MS).toISOString();
+  await deps.store.saveStaffLink({ tokenHash: hashSecret(secret), email, expiresAt, used: false });
+  const sender = memberEmailFrom(deps.env);
+  const url = `${origin}/api/membership/hub/enter/?token=${encodeURIComponent(secret)}`;
+  const response = await (deps.fetchImpl ?? fetch)("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${deps.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: sender.from,
+      reply_to: sender.replyTo,
+      to: email,
+      subject: "Your ManHair studio hub sign-in link",
+      text: `This link signs you in to the studio hub. It expires in 20 minutes and works once. It does not open the website admin.\n${url}`,
+    }),
+  });
+  if (!response.ok) {
+    await deps.store.consumeStaffLink(hashSecret(secret), deps.now());
+    return json({ ok: false, error: "email_not_sent", message: "The email provider did not accept the sign-in link. No session was opened." }, 502);
+  }
+  return json({ ok: true, message: generic });
+}
+
+export async function handleHubEnter(request: Request, deps: Deps): Promise<Response> {
+  const token = new URL(request.url).searchParams.get("token") ?? "";
+  const email = token ? await deps.store.consumeStaffLink(hashSecret(token), deps.now()) : null;
+  const role = email ? staffRole(email, deps.env) : null;
+  if (!email || !role) return json({ ok: false, error: "staff_link_rejected" }, 400);
+  const raw = newSecret();
+  await deps.store.saveStaffSession({
+    tokenHash: hashSecret(raw),
+    email,
+    role,
+    expiresAt: new Date(deps.now().getTime() + HUB_SESSION_MS).toISOString(),
+  });
+  const secure = safeAppOrigin(request, deps.env).startsWith("https://");
+  const parts = [`mh_staff_session=${encodeURIComponent(raw)}`, "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=43200"];
+  if (secure) parts.push("Secure");
+  return new Response(null, {
+    status: 302,
+    headers: { location: "/hub/", "set-cookie": parts.join("; "), "cache-control": "no-store" },
   });
 }
 
@@ -1231,6 +1654,8 @@ async function hubSnapshot(deps: Deps) {
     revenue: revenueReport(invoices, members),
     alerts: await deps.store.listAlerts(),
     cancellationRequests: (await deps.store.listAuthAudits()).filter((row) => row.action === "cancellation_requested"),
+    pauseRequests: await deps.store.listPauseRequests(),
+    refundRequests: await deps.store.listRefundRequests(),
     deals,
     ghlSync: await deps.store.getSyncState(),
     freshness: ghlFreshness(await deps.store.getSyncState(), ghlMode(deps.env)),
@@ -1477,9 +1902,10 @@ export async function loadAccountPage(request: Request, deps: Deps) {
   try {
     const member = await currentMember(request, deps);
     if (!member) return { member: null, invoices: [], pauses: [], cancellationRequests: [] };
+    const invoices = await deps.store.listInvoices(member.id);
     return {
-      member: publicMember(member, deps.now()),
-      invoices: await deps.store.listInvoices(member.id),
+      member: publicMember(member, deps.now(), invoices),
+      invoices,
       pauses: await deps.store.listPauseRequests(member.id),
       cancellationRequests: (await deps.store.listAuthAudits(member.id)).filter((row) => row.action === "cancellation_requested"),
     };

@@ -5195,3 +5195,19 @@ footer {
   cursor: ew-resize;
 }
 .mh-ba-slider:focus-visible { outline: 2px solid var(--mh-copper-500); outline-offset: -2px; }
+
+/* Keep the chat launcher off the join plan and form on a phone. */
+@media (max-width: 767px) {
+  [data-membership-join] {
+    scroll-padding-bottom: 6.5rem;
+  }
+  body:has([data-membership-join]) chat-widget,
+  body:has([data-membership-join]) #chat-widget,
+  body:has([data-membership-join]) .chat-widget,
+  body:has([data-membership-join]) [class*="lc_text-widget"] {
+    left: 12px !important;
+    right: auto !important;
+    bottom: 12px !important;
+    z-index: 20 !important;
+  }
+}

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   APPROVED_STRIPE_ACCOUNT,
@@ -20,6 +21,14 @@ const previewEnv = {
   MEMBERSHIP_STRIPE_SETUP: "apply",
   STRIPE_SECRET_KEY: "rk_test_example",
 };
+
+test("sandbox products use the MANHAIR statement descriptor", () => {
+  assert.equal(SANDBOX_CATALOG.length, 4);
+  assert.match(
+    readFileSync(new URL("../../lib/membership/stripe-sandbox-client.ts", import.meta.url), "utf8"),
+    /statement_descriptor: BUSINESS_DEFAULTS\.statementDescriptor/,
+  );
+});
 
 test("sandbox setup stays off outside the preview branch and without a test key", () => {
   assert.equal(sandboxSetupDecision({}).run, false);

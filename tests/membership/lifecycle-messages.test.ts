@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { handleConsultation } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
+import { LIFECYCLE_EVENTS } from "../../lib/membership/lifecycle-events";
 import { canonicalEvent, channelSuppressed, dedupePlans, planMessages, type Suppression } from "../../lib/membership/message-lifecycle";
 import { unavailableStore } from "../../lib/membership/sql-store";
 
@@ -16,7 +17,7 @@ const open: Suppression = {
 test("marketing plans stay held and stop after signup, unsubscribe, or do-not-disturb", () => {
   const planned = planMessages({
     eventId: "consult_1",
-    type: "consultation_stored",
+    type: LIFECYCLE_EVENTS.consultation,
     occurredAt: "2026-11-08T09:00:00.000Z",
     memberId: null,
     email: "lead@example.com",
@@ -25,7 +26,7 @@ test("marketing plans stay held and stop after signup, unsubscribe, or do-not-di
   assert.ok(planned.every((plan) => plan.status === "held" && plan.send === false));
   const stopped = planMessages({
     eventId: "consult_1",
-    type: "consultation_stored",
+    type: LIFECYCLE_EVENTS.consultation,
     occurredAt: "2026-11-08T09:00:00.000Z",
     memberId: null,
     email: "lead@example.com",
@@ -33,7 +34,7 @@ test("marketing plans stay held and stop after signup, unsubscribe, or do-not-di
   assert.ok(stopped.every((plan) => plan.status === "suppressed" && plan.reason === "converted"));
   const dnd = planMessages({
     eventId: "consult_2",
-    type: "consultation_stored",
+    type: LIFECYCLE_EVENTS.consultation,
     occurredAt: "2026-11-08T09:00:00.000Z",
     memberId: null,
     email: "lead@example.com",
@@ -45,7 +46,7 @@ test("marketing plans stay held and stop after signup, unsubscribe, or do-not-di
 test("transactional plans require a verified timestamp and never invent a fitting date", () => {
   const paid = planMessages({
     eventId: "evt_setup",
-    type: "stripe_setup_paid",
+    type: LIFECYCLE_EVENTS.setupPaid,
     occurredAt: "2026-11-08T09:12:00.000Z",
     memberId: "mem_1",
     email: "member@example.com",
@@ -55,7 +56,7 @@ test("transactional plans require a verified timestamp and never invent a fittin
   assert.equal(paid[0]?.send, false);
   const fitting = planMessages({
     eventId: "fit_1",
-    type: "staff_verified_fitting_at",
+    type: LIFECYCLE_EVENTS.fittingCompleted,
     occurredAt: null,
     memberId: "mem_1",
     email: "member@example.com",
@@ -70,7 +71,7 @@ test("channel do-not-disturb overrides a global false and setup aliases share on
   assert.equal(channelSuppressed("sms", { ...open, marketingSmsConsent: true }), null);
   const blocked = planMessages({
     eventId: "consult_3",
-    type: "consultation_stored",
+    type: LIFECYCLE_EVENTS.consultation,
     occurredAt: "2026-11-08T09:00:00.000Z",
     memberId: null,
     email: "lead@example.com",

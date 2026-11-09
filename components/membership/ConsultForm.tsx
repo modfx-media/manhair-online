@@ -35,7 +35,7 @@ export function ConsultForm() {
       return;
     }
     setDone(true);
-    setMessage(body.message ?? "Stored for the studio. Not sent and not marked synced.");
+    setMessage(body.message ?? "Your consultation request is saved. Griselda arranges the time. This did not start a payment.");
   }
 
   if (done) {

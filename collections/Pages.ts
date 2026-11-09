@@ -1,6 +1,6 @@
 import type { CollectionConfig } from "payload";
 import { emptyToNull } from "@/lib/cms/hooks";
-import { authenticated, authenticatedOrPublished } from "./access";
+import { authenticatedOrPublished, payloadOwner } from "./access";
 import { assignPathFromSlug, uniqueNullableText } from "./fields";
 import { revalidatePost, revalidatePostDelete } from "./revalidate";
 import { previewAdmin, publicDrafts } from "./versions";
@@ -13,10 +13,10 @@ export const Pages: CollectionConfig = {
     ...previewAdmin,
   },
   access: {
-    create: authenticated,
-    delete: authenticated,
+    create: payloadOwner,
+    delete: payloadOwner,
     read: authenticatedOrPublished,
-    update: authenticated,
+    update: payloadOwner,
   },
   defaultPopulate: {
     title: true,
@@ -104,10 +104,10 @@ export const Posts: CollectionConfig = {
     ...previewAdmin,
   },
   access: {
-    create: authenticated,
-    delete: authenticated,
+    create: payloadOwner,
+    delete: payloadOwner,
     read: authenticatedOrPublished,
-    update: authenticated,
+    update: payloadOwner,
   },
   fields: [
     {

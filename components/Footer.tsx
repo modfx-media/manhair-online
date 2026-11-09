@@ -205,7 +205,7 @@ export function Footer() {
             </li>
             <li>
               <Link
-                href="/refund-policy/"
+                href="/refund-policy/#membership"
                 className="inline-flex min-h-6 items-center text-[color:var(--mh-ink-700)] hover:text-[color:var(--mh-copper-700)]"
               >
                 Refund Policy

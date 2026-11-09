@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { JsonLd, buildPageGraph } from "@/components/JsonLd";
+import { REFUND_POLICY, SCHEDULING } from "@/lib/membership/offer";
 import { Display } from "@/components/ui";
 import { SITE, SOCIAL } from "@/lib/site";
 import { getPageMeta, toMetadata } from "@/lib/pages";
@@ -101,11 +103,21 @@ export default function Page() {
       {/* Body */}
       <section className="bg-[color:var(--mh-bg)]">
         <div className="mh-container py-8 md:py-20">
-          <article
-            className="mh-prose mx-auto max-w-3xl"
-            // eslint-disable-next-line react/no-danger
-            dangerouslySetInnerHTML={{ __html: BODY_HTML }}
-          />
+          <article className="mh-prose mx-auto max-w-3xl">
+            <section id="membership" className="mb-10 rounded-md border border-[color:var(--mh-border)] bg-[color:var(--mh-surface)] p-5">
+              <h2>Membership refunds</h2>
+              <p>{REFUND_POLICY.summary}</p>
+              <p>A failed monthly payment has 14 days before visits and new system orders are placed on hold. That hold is not a cancellation, and it is not a refund.</p>
+              <p>{SCHEDULING.summary}</p>
+              <p>
+                The rules the membership checkout uses are on the <Link href="/membership-terms/">membership terms</Link>.
+              </p>
+            </section>
+            <div
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: BODY_HTML }}
+            />
+          </article>
         </div>
       </section>
     </>

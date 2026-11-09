@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatStudio } from "@/lib/membership/dates";
 import { formatUsd, SCHEDULING, TIERS, type TierId } from "@/lib/membership/offer";
+import { trackPurchase } from "@/components/membership/track-client";
 
 type MemberView = {
   id: string;
@@ -13,6 +14,9 @@ type MemberView = {
   monthly: string;
   setup: string;
   setupPaid: boolean;
+  statusLabel?: string;
+  setupNote?: string;
+  chargeAtSource?: "estimate" | "stripe" | null;
   attention: string | null;
   systemsUsed: number;
   systemsIncluded: number;
@@ -28,6 +32,10 @@ type MemberView = {
   serviceHold?: boolean;
   visits?: string;
   newSystemOrders?: string;
+  payment?: {
+    state: "pending" | "paid" | "failed";
+    purchase: { transactionId: string; value: number; currency: string; itemId: string; itemName: string } | null;
+  };
 };
 
 type Invoice = { id: string; kind: string; status: string; amountPaid: number; amountRefunded: number };
@@ -57,7 +65,29 @@ export function AccountPanel({
   afterCheckout?: boolean;
 }) {
   const [message, setMessage] = useState<string | null>(null);
-  if (!member) {
+  const [live, setLive] = useState(member);
+  useEffect(() => {
+    const waitingForStripeDate = live?.setupPaid && live.chargeAtSource !== "stripe";
+    if (!afterCheckout || !live || (live.payment?.state !== "pending" && !waitingForStripeDate)) return;
+    let stopped = false;
+    const timer = setInterval(() => {
+      void fetch("/api/membership/account/", { cache: "no-store" })
+        .then(async (response) => {
+          if (!response.ok || stopped) return;
+          const body = (await response.json()) as { member?: MemberView };
+          if (body.member) setLive(body.member);
+        })
+        .catch(() => undefined);
+    }, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [afterCheckout, live]);
+  useEffect(() => {
+    if (live?.payment?.state === "paid" && live.payment.purchase) trackPurchase(live.payment.purchase);
+  }, [live]);
+  if (!live) {
     return (
       <form
         className="grid max-w-md gap-3"
@@ -69,8 +99,9 @@ export function AccountPanel({
       >
         <h1 className="mh-display text-4xl">Your membership</h1>
         <p className="text-sm leading-6 text-ink-700">
-          There is no signed-in member on this browser. A later visit uses a one-time link sent to the membership email.
+          There is no signed-in member on this browser. Email a one-time sign-in link to the membership address.
           Entering the email does not open the account and does not start another payment.
+          {afterCheckout ? " If you just finished checkout, a missing session is not a second charge." : ""}
         </p>
         <label className="grid gap-1 text-sm font-semibold">
           Email
@@ -92,44 +123,48 @@ export function AccountPanel({
     <div className="grid gap-8">
       {afterCheckout ? (
         <section role="status" className="rounded-md border border-copper-500 bg-ink-100 p-4 text-sm leading-6">
-          <h2 className="font-display text-2xl">Next steps</h2>
-          <p className="mt-2">Returning from checkout does not confirm a charge. The processor webhook is what marks setup as paid.</p>
+          <h2 className="font-display text-2xl">{live.payment?.state === "paid" ? "Payment confirmed" : live.payment?.state === "failed" ? "Payment not confirmed" : "Confirming your payment"}</h2>
+          <p className="mt-2">
+            {live.payment?.state === "paid"
+              ? "Your setup payment is confirmed and applies toward your first system."
+              : live.payment?.state === "failed"
+                ? "The payment was not confirmed. You do not need to pay again unless you start a new checkout."
+                : "Your checkout returned before the payment confirmation arrived. This page checks again every few seconds. You do not need to pay again."}
+          </p>
           <p className="mt-2">The first system typically takes 8–12 weeks. The monthly charge can begin before the system is ready. That 30 days is not a promise that the system arrives.</p>
           <p className="mt-2">{SCHEDULING.summary}</p>
         </section>
       ) : null}
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-600">Membership</p>
-        <h1 className="mh-display mt-2 text-4xl">{member.tierName}</h1>
+        <h1 className="mh-display mt-2 text-4xl">{live.tierName}</h1>
         <p className="mt-3 text-sm leading-6 text-ink-700">
-          Status: {member.status}. {member.monthly} monthly after the first membership charge
-          {member.firstRecurringAt ? ` on ${formatStudio(new Date(member.firstRecurringAt))}` : ""}.
-          Setup {member.setup} is {member.setupPaid ? "marked paid by a processor event" : "not confirmed by a processor event yet"}.
+          {live.statusLabel ?? "Payment not confirmed"}. {live.setupNote ?? ""} {live.monthly} a month.
         </p>
-        {member.serviceHold ? (
+        {live.serviceHold ? (
           <section role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-6 text-red-900">
             <h2 className="font-semibold">Visits and new system orders are held</h2>
             <p className="mt-1">
               A monthly invoice is still unpaid after 14 days. The membership is not cancelled, and an order already underway is not cancelled.
               Updating the payment method stays available and does not clear this hold. The hold clears only after the processor verifies payment of every unpaid monthly invoice.
             </p>
-            <p className="mt-1">Visits: {member.visits}. New system orders: {member.newSystemOrders}.</p>
+            <p className="mt-1">Visits: {live.visits}. New system orders: {live.newSystemOrders}.</p>
           </section>
         ) : null}
-        {member.attention ? (
+        {live.attention ? (
           <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-            The processor record needs review ({member.attention}). This page will not describe the billing timeline as confirmed.
+            The processor record needs review ({live.attention}). This page will not describe the billing timeline as confirmed.
           </p>
         ) : null}
       </header>
       <section className="grid gap-3 rounded-md border border-ink-300 bg-ink-100 p-4 text-sm leading-6">
-        <p>Rate lock through {formatStudio(new Date(member.rateLockEndsAt))}.</p>
-        <p>Minimum term through {formatStudio(new Date(member.minimumTermEndsAt))}.</p>
+        <p>Rate lock through {formatStudio(new Date(live.rateLockEndsAt))}.</p>
+        <p>Minimum term through {formatStudio(new Date(live.minimumTermEndsAt))}.</p>
         <p>
-          Systems used {member.systemsUsed} of {member.systemsIncluded}. Maintenance used {member.maintenanceUsed} of{" "}
-          {member.maintenanceIncluded}. Pause days used {member.pauseDaysUsed} of 60.
+          Systems used {live.systemsUsed} of {live.systemsIncluded}. Maintenance used {live.maintenanceUsed} of{" "}
+          {live.maintenanceIncluded}. Pause days used {live.pauseDaysUsed} of 60.
         </p>
-        <p>{member.paymentMethod}</p>
+        <p>{live.paymentMethod}</p>
         <p>
           A failed monthly payment has 14 days before visits and new system orders are held. The membership is not cancelled, and an order already underway is not cancelled. Updating a card does not clear that hold. A verified payment does. Payment method update stays available.
         </p>
@@ -164,7 +199,7 @@ export function AccountPanel({
         >
           Request cancellation
         </button>
-        {member.cancelAt ? <p className="text-sm">A processor date is on file: {member.cancelAt}. This page does not treat a new request as that date.</p> : null}
+        {live.cancelAt ? <p className="text-sm">A processor date is on file: {live.cancelAt}. This page does not treat a new request as that date.</p> : null}
         {cancellationRequests.length === 0 ? (
           <p className="text-sm text-ink-700">No cancellation requests.</p>
         ) : (

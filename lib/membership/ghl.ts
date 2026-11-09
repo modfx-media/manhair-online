@@ -1,3 +1,4 @@
+import { GHL_MEMBERSHIP_TAGS, type MembershipGhlPayload } from "./ghl-profile";
 import { resolveGhlTarget } from "./manhair-ghl";
 import type { AppEnv } from "./readiness";
 
@@ -113,6 +114,7 @@ export type LeadDraft = {
   dealId: string;
   contactId?: string | null;
   opportunityId?: string | null;
+  profile?: MembershipGhlPayload;
 };
 
 async function ghlResponseCode(response: Response): Promise<string | null> {
@@ -177,6 +179,7 @@ export async function syncLead(
         firstName: lead.firstName,
         lastName: lead.lastName,
         source: "ManHair membership",
+        ...(lead.profile ? { tags: lead.profile.tags, customFields: lead.profile.customFields } : {}),
       }),
     });
     if (!created?.ok) {
@@ -194,6 +197,10 @@ export async function syncLead(
     }
   }
   if (!contactId) return { status: "push_failed", contactId: null, opportunityId: null };
+  if (lead.profile) {
+    const profilePush = await pushMembershipProfile(env, contactId, lead.profile, fetchImpl);
+    if (profilePush === "push_failed") return { status: "push_failed", contactId, opportunityId: lead.opportunityId ?? null };
+  }
   if (lead.opportunityId) {
     return { status: "pushed", contactId, opportunityId: lead.opportunityId };
   }
@@ -212,4 +219,76 @@ export async function syncLead(
   if (!opportunity?.ok) return { status: "pushed", contactId, opportunityId: null };
   const opportunityBody = (await opportunity.json()) as { opportunity?: { id?: string } };
   return { status: "pushed", contactId, opportunityId: opportunityBody.opportunity?.id ?? null };
+}
+
+/**
+ * Writes the membership tag set and custom fields.
+ * Does not call HighLevel when the location is not authorized or the contact id is missing.
+ * A workflow 403 is not retried.
+ */
+export async function pushMembershipProfile(
+  env: AppEnv,
+  contactId: string | null,
+  payload: MembershipGhlPayload,
+  fetchImpl: typeof fetch,
+): Promise<"not_connected" | "no_contact" | "pushed" | "push_failed"> {
+  const target = resolveGhlTarget(env);
+  if (!target.ok) return "not_connected";
+  if (!contactId) return "no_contact";
+  const headers = {
+    Authorization: `Bearer ${target.token}`,
+    Version: "2021-07-28",
+    "Content-Type": "application/json",
+  };
+  const contactUrl = `https://services.leadconnectorhq.com/contacts/${encodeURIComponent(contactId)}`;
+  const updated = await fetchWithRetry(fetchImpl, contactUrl, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ customFields: payload.customFields }),
+  });
+  if (!updated?.ok) return "push_failed";
+  if (payload.tags.length > 0) {
+    const added = await fetchWithRetry(fetchImpl, `${contactUrl}/tags`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ tags: payload.tags }),
+    });
+    if (!added?.ok) return "push_failed";
+  }
+  const remove = GHL_MEMBERSHIP_TAGS.filter((tag) => !payload.tags.includes(tag));
+  if (remove.length > 0) {
+    const removed = await fetchWithRetry(fetchImpl, `${contactUrl}/tags`, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ tags: remove }),
+    });
+    if (!removed?.ok) return "push_failed";
+  }
+  return "pushed";
+}
+
+/** Texts go out through HighLevel from the location's default number. No from-number is sent. */
+export async function sendLocationSms(
+  env: AppEnv,
+  contactId: string | null,
+  message: string,
+  fetchImpl: typeof fetch,
+  consented: boolean,
+): Promise<{ sent: boolean; reason: string }> {
+  if (!consented) return { sent: false, reason: "no_sms_consent" };
+  if (env.MEMBERSHIP_SMS_SEND !== "true") return { sent: false, reason: "sms_disabled" };
+  const target = resolveGhlTarget(env);
+  if (!target.ok) return { sent: false, reason: "not_connected" };
+  if (!contactId) return { sent: false, reason: "no_contact" };
+  const response = await fetchWithRetry(fetchImpl, "https://services.leadconnectorhq.com/conversations/messages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${target.token}`,
+      Version: "2021-07-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ type: "SMS", contactId, message }),
+  });
+  if (!response?.ok) return { sent: false, reason: "push_failed" };
+  return { sent: true, reason: "sent" };
 }

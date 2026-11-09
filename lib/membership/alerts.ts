@@ -19,7 +19,17 @@ export const STRIPE_WEBHOOK_EVENTS = [
 
 export const STRIPE_WEBHOOK_PATH = "/api/membership/webhook/";
 
-export type AlertKind = "setup_paid" | "monthly_paid" | "invoice_failed" | "invoice_recovered" | "webhook_error";
+export type AlertKind =
+  | "setup_paid"
+  | "monthly_paid"
+  | "invoice_failed"
+  | "invoice_recovered"
+  | "webhook_error"
+  | "consultation_requested"
+  | "pause_requested"
+  | "cancellation_requested"
+  | "refund_requested"
+  | "dispute";
 export type AlertAudience = "owner" | "customer";
 export type AlertStatus = "held" | "pending" | "sending" | "delivered" | "failed" | "fake_recorded";
 
@@ -43,19 +53,35 @@ export type AlertRecord = AlertDraft & {
 
 const MAX_ATTEMPTS = 6;
 
+export function staffAlertRecipients(env: AppEnv): string[] {
+  const listed = (env.MEMBERSHIP_STAFF_ALERT_EMAILS ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.includes("@") && !part.includes(" "));
+  if (listed.length > 0) return [...new Set(listed)];
+  const single = env.MEMBERSHIP_ALERT_TO?.trim() ?? "";
+  return single.includes("@") ? [single] : [];
+}
+
 export function ownerAlertsReady(env: AppEnv): boolean {
   return (
     env.MEMBERSHIP_OWNER_ALERTS_SEND === "true" &&
-    Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM?.trim() && env.MEMBERSHIP_ALERT_TO?.trim())
+    Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM?.trim() && staffAlertRecipients(env).length > 0)
   );
 }
 
-/** Customer payment and order mail stays held. Sender flags do not approve the copy or the receipt check. */
+/**
+ * Customer lifecycle mail stays off unless both send flags are true and a postal address is configured.
+ * Either flag unset, or a missing address, keeps the send held.
+ */
+/** The setup confirmation. Off until MEMBERSHIP_CUSTOMER_ALERTS_SEND=true and Resend has a key. */
+export function confirmationEmailReady(env: AppEnv): boolean {
+  return env.MEMBERSHIP_CUSTOMER_ALERTS_SEND === "true" && Boolean(env.RESEND_API_KEY?.trim());
+}
+
+/** Other customer lifecycle mail stays off unless the lifecycle flag is also true. */
 export function customerAlertsReady(env: AppEnv): boolean {
-  const senderConfigured =
-    env.MEMBERSHIP_CUSTOMER_ALERTS_SEND === "true" &&
-    Boolean(env.RESEND_API_KEY?.trim() && env.RESEND_FROM?.trim());
-  return senderConfigured && false;
+  return confirmationEmailReady(env) && env.MEMBERSHIP_LIFECYCLE_SEND === "true";
 }
 
 export function alertsForPayment(input: {
@@ -66,6 +92,8 @@ export function alertsForPayment(input: {
   memberId: string | null;
   now: Date;
   env: AppEnv;
+  /** Customer setup mail waits until trial_end or current_period_end is stored. */
+  chargeDateReady?: boolean;
 }): AlertDraft[] {
   const kinds: Array<{ kind: AlertKind; amountCents: number; customer: boolean }> = [];
   if (input.webhookFailed) kinds.push({ kind: "webhook_error", amountCents: 0, customer: false });
@@ -83,16 +111,21 @@ export function alertsForPayment(input: {
   for (const item of kinds) {
     const audiences: AlertAudience[] = item.customer ? ["owner", "customer"] : ["owner"];
     for (const audience of audiences) {
+      if (audience === "customer" && item.kind === "setup_paid" && input.chargeDateReady !== true) continue;
       const ownerCanAttempt = audience === "owner" && ownerAlertsReady(input.env) && (transport === "live" || transport === "fake");
+      const customerReady = item.kind === "setup_paid" ? confirmationEmailReady(input.env) : customerAlertsReady(input.env);
+      const customerCanAttempt = audience === "customer" && customerReady && (transport === "live" || transport === "fake");
       drafts.push({
-        dedupeKey: `${input.eventId}:${item.kind}:${audience}`,
+        dedupeKey: audience === "customer" && item.kind === "setup_paid"
+          ? `setup_confirm:${input.memberId}:customer`
+          : `${input.eventId}:${item.kind}:${audience}`,
         sourceEventId: input.eventId,
         kind: item.kind,
         audience,
         memberId: input.memberId,
         amountCents: item.amountCents,
-        status: ownerCanAttempt ? "pending" : "held",
-        nextAttemptAt: ownerCanAttempt ? nowIso : null,
+        status: ownerCanAttempt || customerCanAttempt ? "pending" : "held",
+        nextAttemptAt: ownerCanAttempt || customerCanAttempt ? nowIso : null,
       });
     }
   }
@@ -115,4 +148,26 @@ export function alertLogFields(alert: { id: string; kind: string; audience: stri
 
 export function ownerAlertText(alert: { kind: AlertKind; memberId: string | null; amountCents: number }): string {
   return `ManHair payment alert ${alert.kind}. Member ${alert.memberId ?? "unmapped"}. Amount cents ${alert.amountCents}.`;
+}
+
+export function staffNoticeDraft(input: {
+  eventId: string;
+  kind: AlertKind;
+  memberId: string | null;
+  amountCents?: number;
+  now: Date;
+  env: AppEnv;
+}): AlertDraft {
+  const transport = messageTransport(input.env);
+  const ready = ownerAlertsReady(input.env) && (transport === "live" || transport === "fake");
+  return {
+    dedupeKey: `${input.eventId}:${input.kind}:owner`,
+    sourceEventId: input.eventId,
+    kind: input.kind,
+    audience: "owner",
+    memberId: input.memberId,
+    amountCents: input.amountCents ?? 0,
+    status: ready ? "pending" : "held",
+    nextAttemptAt: ready ? input.now.toISOString() : null,
+  };
 }

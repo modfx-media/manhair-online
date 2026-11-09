@@ -61,7 +61,7 @@
     },
     "founding_offer_status": "OFF — no founding, charter, or early-bird pricing/framing may appear anywhere",
     "tax": "No tax is currently collected; copy must never claim a tax exemption",
-    "statement_descriptor": "MODFXMEDIA LLC — must be disclosed to the member before payment is submitted",
+    "statement_descriptor": "MANHAIR — must be disclosed to the member before payment is submitted",
     "receipt_policy": "If Stripe's automatic receipt emails are enabled for the account, the internal payment confirmation email must be suppressed (no duplicate receipt)"
   },
   "global_safety": {
@@ -147,7 +147,7 @@
         },
         {
           "heading": "Membership terms",
-          "body": "Your membership requires a 3-month minimum commitment, after which it continues on a month-to-month basis. Your monthly rate is locked for 24 months from signup. You may request a pause of up to 60 days per year; pause requests are reviewed and are not automatically approved. Charges on your statement will appear under the descriptor MODFXMEDIA LLC. No sales tax is currently being collected on this purchase. For questions about cancellation or changes to your membership, contact {{SUPPORT_CONTACT_NOT_CONFIGURED}}.",
+          "body": "Your membership requires a 3-month minimum commitment, after which it continues on a month-to-month basis. Your monthly rate is locked for 24 months from signup. You may request a pause of up to 60 days per year; pause requests are reviewed and are not automatically approved. Charges on your statement will appear under the descriptor MANHAIR. For questions about cancellation or changes to your membership, contact {{SUPPORT_CONTACT_NOT_CONFIGURED}}.",
           "cta": null
         },
         {
@@ -162,7 +162,7 @@
         },
         {
           "heading": "Submit",
-          "body": "By submitting, you authorize a charge of $495.00 today under the statement descriptor MODFXMEDIA LLC, and authorize future recurring charges of {{SELECTED_PLAN_MONTHLY_PRICE}} beginning {{FIRST_RECURRING_CHARGE_DATE}} per the terms above.",
+          "body": "By submitting, you authorize a charge of $495.00 today under the statement descriptor MANHAIR, and authorize future recurring charges of {{SELECTED_PLAN_MONTHLY_PRICE}} beginning {{FIRST_RECURRING_CHARGE_DATE}} per the terms above.",
           "cta": "Submit and Pay $495 Now"
         }
       ]
@@ -194,7 +194,7 @@
         },
         {
           "heading": "What's next",
-          "body": "Your system typically takes 8 to 12 weeks of system lead time; your fitting date must be confirmed separately. We'll keep you updated by email along the way. When it's time to schedule, you'll do so at {{BOOKING_URL_NOT_CONFIGURED}}.",
+          "body": "Your system typically takes 8 to 12 weeks of system lead time; your fitting date must be confirmed separately. We'll keep you updated by email along the way. Griselda arranges the visit manually. There is no booking link.",
           "cta": null
         },
         {
@@ -270,7 +270,7 @@
   "emails": [
     {
       "template_id": "email_membership_welcome",
-      "event_key": "membership.setup_payment_verified",
+      "event_key": "membership.setup_paid",
       "sequence": "membership_lifecycle_transactional",
       "relative_timing": "Immediately after verified setup payment event",
       "entry_conditions": [
@@ -300,7 +300,7 @@
     },
     {
       "template_id": "email_payment_confirmation",
-      "event_key": "payment_intent.succeeded",
+      "event_key": "payment.succeeded",
       "sequence": "membership_lifecycle_transactional",
       "relative_timing": "Immediately after verified payment event, gated by receipt-dedup check",
       "entry_conditions": [
@@ -322,7 +322,7 @@
         "Here's your ManHair payment confirmation"
       ],
       "preview_text": "A confirmed record of your {{CHARGE_AMOUNT}} charge on {{CHARGE_DATE}}.",
-      "body": "Hi {{FIRST_NAME}},\n\nThis confirms a successful charge of {{CHARGE_AMOUNT}} on {{CHARGE_DATE}}, to the card ending in {{PAYMENT_METHOD_LAST4}}. This charge appears on your statement as MODFXMEDIA LLC.\n\nReceipt reference: {{RECEIPT_ID}}.\n\nKeep this email for your records.",
+      "body": "Hi {{FIRST_NAME}},\n\nThis confirms a successful charge of {{CHARGE_AMOUNT}} on {{CHARGE_DATE}}, to the card ending in {{PAYMENT_METHOD_LAST4}}. This charge appears on your statement as MANHAIR.\n\nReceipt reference: {{RECEIPT_ID}}.\n\nKeep this email for your records.",
       "cta": {
         "label": "View billing details",
         "internal_placeholder": "{{BILLING_PORTAL_URL_NOT_CONFIGURED}}"
@@ -361,7 +361,7 @@
     },
     {
       "template_id": "email_leadtime_expectation_week2",
-      "event_key": "membership.setup_payment_verified + 14 days",
+      "event_key": "membership.setup_paid + 14 days",
       "sequence": "membership_lifecycle_transactional",
       "relative_timing": "~14 days (week 2) after verified setup payment",
       "entry_conditions": [
@@ -391,7 +391,7 @@
     },
     {
       "template_id": "email_status_update_week8",
-      "event_key": "membership.setup_payment_verified + 56 days",
+      "event_key": "membership.setup_paid + 56 days",
       "sequence": "membership_lifecycle_transactional",
       "relative_timing": "~56 days (week 8) after verified setup payment",
       "entry_conditions": [
@@ -420,7 +420,7 @@
     },
     {
       "template_id": "email_status_update_week12",
-      "event_key": "membership.setup_payment_verified + 84 days",
+      "event_key": "membership.setup_paid + 84 days",
       "sequence": "membership_lifecycle_transactional",
       "relative_timing": "~84 days (week 12) after verified setup payment",
       "entry_conditions": [
@@ -506,7 +506,7 @@
     },
     {
       "template_id": "email_recurring_charge_reminder",
-      "event_key": "stripe.invoice.upcoming",
+      "event_key": "invoice.upcoming",
       "sequence": "membership_billing",
       "relative_timing": "3 days before the actual next invoice date on the Stripe subscription record",
       "entry_conditions": [
@@ -862,7 +862,7 @@
     "No cancellation deadline, proration rule, guarantee, included-but-unspecified service, or booking URL is hard-coded anywhere; all use explicit {{...NOT_CONFIGURED}} placeholders until confirmed.",
     "No founding/early-bird/charter pricing or framing appears anywhere, per FoundingOFF.",
     "Tax line items show $0 collected and never claim a tax exemption.",
-    "The MODFXMEDIA LLC statement descriptor is disclosed to the member before payment is submitted.",
+    "The MANHAIR statement descriptor is disclosed to the member before payment is submitted.",
     "Lead-time emails (week 2, 8, 12) never state a guaranteed or promised delivery/fitting date.",
     "The care-after-fitting email is not activated until provider-approved care guidance copy replaces {{APPROVED_CARE_GUIDANCE_NOT_CONFIGURED}}.",
     "Consultation nurture emails only enroll leads with explicit, recorded marketing opt-in, and exit immediately on signup, booking, DND, unsubscribe, bounce, or complaint.",
@@ -920,7 +920,7 @@
         "automation_status": "manual move only — not enabled"
       },
       {
-        "event": "membership.setup_payment_verified",
+        "event": "membership.setup_paid",
         "suggested_stage": "Active Clients",
         "automation_status": "manual move only — not enabled"
       },

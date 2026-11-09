@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { handleAccountGet, handleAccountPost, handleCheckout, handleHub, handleWebhook, type Deps, type StripeLike } from "../../lib/membership/handlers";
+import { handleAccountGet, handleAccountPost, handleCheckout, handleConsultation, handleHub, handleHubEnter, handleHubSignIn, handleWebhook, type Deps, type StripeLike } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
 import type { MemberRecord } from "../../lib/membership/types";
 import { billingTimeline } from "../../lib/membership/dates";
@@ -231,6 +231,176 @@ test("failed delayed checkout stays unpaid and cannot regress a paid member", as
   await context.store.saveMember({ ...member, setupPaid: true, status: "active" });
   assert.equal((await send("evt_stale_delayed")).status, 200);
   assert.equal((await context.store.findMemberById(member.id))?.status, "active");
+});
+
+test("setup payment moves the deal to Active Clients once and can push HighLevel", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody()), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  const deal = (await context.store.listDeals()).find((item) => item.memberId === member.id)!;
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  context.env = baseEnv({ GHL_API_TOKEN: "token" });
+  deal.ghlContactId = "contact_1";
+  deal.ghlOpportunityId = "opp_1";
+  await context.store.saveDeal(deal);
+  context.fetchImpl = async (input, init) => {
+    calls.push({ url: String(input), method: String(init?.method ?? "GET"), body: String(init?.body ?? "") });
+    return Response.json({ opportunity: { locationId: "jv4grExvok7omWurc4PE", pipelineId: "arkMXixdGM81H9FjL2gc" } });
+  };
+  const send = (id: string, type: string, object: Record<string, unknown>) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id, type, livemode: false, created: 20, data: { object } }),
+  }), context);
+  assert.equal((await send("evt_checkout_paid", "checkout.session.completed", {
+    client_reference_id: member.id,
+    customer: "cus_paid",
+    amount_total: 49500,
+    payment_status: "paid",
+  })).status, 200);
+  const paid = (await context.store.listDeals()).find((item) => item.memberId === member.id);
+  assert.equal(paid?.stage, "Active Clients");
+  assert.equal(paid?.syncStatus, "pushed");
+  const stageNotes = (await context.store.listActivity(deal.id)).filter((item) => item.action === "stage_changed:Active Clients");
+  assert.equal(stageNotes.length, 1);
+  const tagPost = calls.find((call) => call.method === "POST" && call.url.endsWith("/tags"));
+  assert.match(tagPost?.body ?? "", /mh-v1-setup-paid/);
+  assert.match(tagPost?.body ?? "", /mh-v1-plan-signature/);
+  const fieldPut = calls.find((call) => call.method === "PUT" && call.url.endsWith("/contacts/contact_1"));
+  assert.match(fieldPut?.body ?? "", /contact\.mh_internal_customer_id/);
+  assert.match(fieldPut?.body ?? "", /mh_membership_id/);
+  assert.match(fieldPut?.body ?? "", /mh_sync_version/);
+  assert.ok(calls.some((call) => call.method === "PUT" && call.url.includes("/opportunities/opp_1") && call.body.includes("58fb7eaa-4fc7-47f3-b00c-392e4cbd91e8")));
+  assert.equal((await send("evt_setup_invoice", "invoice.paid", {
+    id: "in_setup_deal",
+    customer: "cus_paid",
+    amount_paid: 49500,
+    billing_reason: "subscription_create",
+    metadata: { member_id: member.id },
+    lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] },
+  })).status, 200);
+  assert.equal((await context.store.listActivity(deal.id)).filter((item) => item.action === "stage_changed:Active Clients").length, 1);
+});
+
+test("email checkout works without SMS consent, and a checked box is stored", async () => {
+  const context = deps();
+  const declined = await handleCheckout(checkoutRequest({ ...checkoutBody(), smsConsent: true, phone: "" }), context);
+  assert.equal(declined.status, 400);
+  const emailOnly = await handleCheckout(checkoutRequest(checkoutBody()), context);
+  assert.equal(emailOnly.status, 200);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  const skipped = await context.store.listConsents(member.id);
+  assert.equal(skipped[0]?.smsConsent, false);
+  assert.equal(skipped[0]?.smsConsentText, null);
+  const opted = deps();
+  const accepted = await handleCheckout(checkoutRequest({ ...checkoutBody("sms@example.com"), phone: "9045550199", smsConsent: true }), opted);
+  assert.equal(accepted.status, 200);
+  const smsMember = (await opted.store.listMembersByEmail("sms@example.com"))[0]!;
+  const saved = await opted.store.listConsents(smsMember.id);
+  assert.equal(saved[0]?.smsConsent, true);
+  assert.match(saved[0]?.smsConsentText ?? "", /STOP/);
+  assert.match(saved[0]?.smsConsentText ?? "", /HELP/);
+});
+
+test("a consultation alert stays held and is visible to the hub", async () => {
+  const context = deps({ staffEmail: "owner@manhaironline.com" });
+  const saved = await handleConsultation(new Request("https://www.manhaironline.com/api/membership/consultation/", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ firstName: "Ari", lastName: "Cole", email: "ari@example.com", marketingConsent: false }),
+  }), context);
+  assert.equal(saved.status, 200);
+  const hub = await handleHub(new Request("https://www.manhaironline.com/api/membership/hub/"), context);
+  assert.equal(hub.status, 200);
+  const body = await hub.json();
+  const held = body.alerts.find((alert: { kind: string; status: string }) => alert.kind === "consultation_requested");
+  assert.equal(held?.status, "held");
+  assert.ok(Array.isArray(body.pauseRequests));
+  assert.ok(Array.isArray(body.refundRequests));
+});
+
+test("subscription checkout does not set a statement descriptor suffix", async () => {
+  const context = deps();
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody()), context)).status, 200);
+  const created = context.stripe.creates[0] as { params: Record<string, unknown> };
+  assert.equal("payment_intent_data" in created.params, false);
+});
+
+test("staff hub links are single-use, allowlisted, and separate from member sessions", async () => {
+  const context = deps({
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      MEMBERSHIP_COORDINATOR_EMAILS: "griselda@manhaironline.com",
+    }),
+    fetchImpl: async (_input, init) => {
+      sent.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response("ok", { status: 200 });
+    },
+  });
+  const sent: Array<{ to?: string; reply_to?: string; text?: string }> = [];
+  const stranger = await handleHubSignIn(new Request("https://www.manhaironline.com/api/membership/hub/sign-in/", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ email: "stranger@example.com" }),
+  }), context);
+  assert.equal(stranger.status, 200);
+  assert.equal(sent.length, 0);
+  const coordinator = await handleHubSignIn(new Request("https://www.manhaironline.com/api/membership/hub/sign-in/", {
+    method: "POST",
+    headers: { origin: "https://www.manhaironline.com", host: "www.manhaironline.com", "content-type": "application/json" },
+    body: JSON.stringify({ email: "Griselda@manhaironline.com" }),
+  }), context);
+  assert.equal(coordinator.status, 200);
+  assert.equal(sent[0]?.to, "griselda@manhaironline.com");
+  assert.equal(sent[0]?.reply_to, "info@manhaironline.com");
+  const token = decodeURIComponent((sent[0]?.text ?? "").split("token=")[1] ?? "");
+  const enter = await handleHubEnter(new Request(`https://www.manhaironline.com/api/membership/hub/enter/?token=${encodeURIComponent(token)}`), context);
+  assert.equal(enter.status, 302);
+  assert.match(enter.headers.get("set-cookie") ?? "", /mh_staff_session=/);
+  assert.equal(enter.headers.get("location"), "/hub/");
+  const replay = await handleHubEnter(new Request(`https://www.manhaironline.com/api/membership/hub/enter/?token=${encodeURIComponent(token)}`), context);
+  assert.equal(replay.status, 400);
+});
+
+test("a consented text is sent from the location default number only when SMS is enabled", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw), env: baseEnv({ GHL_API_TOKEN: "token" }) });
+  const calls: string[] = [];
+  context.fetchImpl = async (input, init) => {
+    calls.push(`${init?.method ?? "GET"} ${String(input)} ${String(init?.body ?? "")}`);
+    return Response.json({ contact: { id: "contact_sms", locationId: "jv4grExvok7omWurc4PE" }, opportunity: { id: "opp_sms", locationId: "jv4grExvok7omWurc4PE", pipelineId: "arkMXixdGM81H9FjL2gc" } });
+  };
+  assert.equal((await handleCheckout(checkoutRequest({ ...checkoutBody("sms-flag@example.com"), phone: "9045550199", smsConsent: true }), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("sms-flag@example.com"))[0]!;
+  const send = () => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_sms_setup",
+      type: "checkout.session.completed",
+      livemode: false,
+      created: 30,
+      data: { object: { client_reference_id: member.id, customer: "cus_sms", amount_total: 49500, payment_status: "paid" } },
+    }),
+  }), context);
+  assert.equal((await send()).status, 200);
+  assert.equal(calls.some((call) => call.includes("/conversations/messages")), false);
+  context.env = baseEnv({ GHL_API_TOKEN: "token", MEMBERSHIP_SMS_SEND: "true" });
+  assert.equal((await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_sms_setup_on",
+      type: "invoice.paid",
+      livemode: false,
+      created: 31,
+      data: { object: { id: "in_sms", customer: "cus_sms", amount_paid: 49500, billing_reason: "subscription_create", metadata: { member_id: member.id }, lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] } } },
+    }),
+  }), context)).status, 200);
+  const smsCall = calls.find((call) => call.includes("/conversations/messages"));
+  assert.ok(smsCall);
+  assert.match(smsCall ?? "", /"type":"SMS"/);
+  assert.doesNotMatch(smsCall ?? "", /"from"/);
+  assert.match(smsCall ?? "", /STOP/);
 });
 
 test("checkout does not require a consultation", async () => {

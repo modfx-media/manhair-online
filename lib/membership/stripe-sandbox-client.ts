@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { BUSINESS_DEFAULTS } from "./business";
 import { BILLING_PORTAL_FEATURES } from "./handlers";
 import {
   SANDBOX_METADATA,
@@ -31,6 +32,7 @@ export function createStripeSandboxClient(secret: string): SandboxStripe {
       const product = await stripe.products.create(
         {
           name: item.productName,
+          statement_descriptor: BUSINESS_DEFAULTS.statementDescriptor,
           metadata: { manhair_sandbox: SANDBOX_METADATA, lookup: item.lookupKey },
         },
         { idempotencyKey: `manhair-sandbox-product-${item.lookupKey}` },

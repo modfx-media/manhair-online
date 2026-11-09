@@ -21,7 +21,7 @@ test("payment alerts are idempotent, held until sender and recipient exist, and 
   });
   assert.deepEqual(
     drafts.map((draft) => draft.kind + ":" + draft.audience + ":" + draft.status),
-    ["setup_paid:owner:held", "setup_paid:customer:held"],
+    ["setup_paid:owner:held"],
   );
   const store = createMemoryStore();
   for (const draft of drafts) {
@@ -55,7 +55,7 @@ test("payment alerts are idempotent, held until sender and recipient exist, and 
   assert.ok(again.nextAttemptAt);
 });
 
-test("customer payment alerts stay held and a fake transport does not call the email provider", async () => {
+test("a setup confirmation is queued when customer mail is enabled, and a fake transport does not call the provider", async () => {
   const env = {
     RESEND_API_KEY: "re_test",
     RESEND_FROM: "ManHair <studio@manhaironline.com>",
@@ -72,12 +72,43 @@ test("customer payment alerts stay held and a fake transport does not call the e
     memberId: "mem_1",
     now,
     env,
+    chargeDateReady: true,
   });
   assert.deepEqual(
     drafts.map((draft) => draft.audience + ":" + draft.status),
-    ["owner:pending", "customer:held"],
+    ["owner:pending", "customer:pending"],
   );
   const store = createMemoryStore();
+  await store.saveMember({
+    id: "mem_1",
+    email: "member@example.com",
+    phone: null,
+    firstName: "Alex",
+    lastName: "Rivera",
+    tier: "signature",
+    status: "trialing",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionItemId: null,
+    monthlyCents: 55900,
+    setupCents: 49500,
+    setupPaid: true,
+    chargeAtSource: "stripe",
+    recurringStartAt: "2026-12-09T04:44:00.000Z",
+    minimumTermEndsAt: "2027-02-08T04:44:00.000Z",
+    rateLockEndsAt: "2028-11-08T04:44:00.000Z",
+    entitlementYearEndsAt: "2027-11-08T04:44:00.000Z",
+    systemsUsed: 0,
+    maintenanceUsed: 0,
+    pauseDaysUsed: 0,
+    cancelAt: null,
+    pauseCollection: false,
+    attention: null,
+    termsVersion: "2026-11-07",
+    lastStatusEventCreated: 0,
+    version: 0,
+    createdAt: now.toISOString(),
+  });
   for (const draft of drafts) {
     await store.enqueueAlert({ ...draft, id: newId(), attempts: 0, lastError: null, createdAt: now.toISOString() });
   }
@@ -94,8 +125,157 @@ test("customer payment alerts stay held and a fake transport does not call the e
   } as Deps);
   assert.equal(calls, 0);
   assert.equal(drained.delivered, 0);
-  assert.equal(drained.fake, 1);
+  assert.equal(drained.fake, 2);
   const saved = await store.listAlerts();
-  assert.equal(saved.find((alert) => alert.audience === "customer")?.status, "held");
+  assert.equal(saved.find((alert) => alert.audience === "customer")?.status, "fake_recorded");
   assert.equal(saved.find((alert) => alert.audience === "owner")?.status, "fake_recorded");
+});
+
+test("the setup confirmation names MANHAIR, the studio address, and the member reply-to", async () => {
+  const env = {
+    RESEND_API_KEY: "re_test",
+    MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+    MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+  };
+  const drafts = alertsForPayment({
+    eventId: "evt_mail",
+    previousStatus: "checkout_open",
+    invoice: { kind: "setup", status: "paid", amountPaid: 49500 },
+    webhookFailed: false,
+    memberId: "mem_mail",
+    now,
+    env,
+    chargeDateReady: true,
+  });
+  const store = createMemoryStore();
+  await store.saveMember({
+    id: "mem_mail",
+    email: "member@example.com",
+    phone: null,
+    firstName: "Alex",
+    lastName: "Rivera",
+    tier: "signature",
+    status: "trialing",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionItemId: null,
+    monthlyCents: 55900,
+    setupCents: 49500,
+    setupPaid: true,
+    chargeAtSource: "stripe",
+    recurringStartAt: "2026-12-09T04:44:00.000Z",
+    minimumTermEndsAt: "2027-02-07T19:00:00.000Z",
+    rateLockEndsAt: "2028-11-07T19:00:00.000Z",
+    entitlementYearEndsAt: "2027-11-07T19:00:00.000Z",
+    systemsUsed: 0,
+    maintenanceUsed: 0,
+    pauseDaysUsed: 0,
+    cancelAt: null,
+    pauseCollection: false,
+    attention: null,
+    termsVersion: "2026-11-07",
+    lastStatusEventCreated: 0,
+    version: 0,
+    createdAt: now.toISOString(),
+  });
+  const customer = drafts.find((draft) => draft.audience === "customer")!;
+  await store.enqueueAlert({ ...customer, id: "alert_mail", attempts: 0, lastError: null, createdAt: now.toISOString() });
+  let payload: { from?: string; reply_to?: string; text?: string; html?: string; subject?: string } = {};
+  await drainAlerts({
+    env,
+    store,
+    stripe: null,
+    now: () => now,
+    fetchImpl: async (_input, init) => {
+      payload = JSON.parse(String(init?.body ?? "{}"));
+      return new Response("sent", { status: 200 });
+    },
+  } as Deps);
+  assert.equal(payload.from, "ManHair <info@manhaironline.com>");
+  assert.equal(payload.reply_to, "info@manhaironline.com");
+  assert.match(payload.text ?? "", /MANHAIR/);
+  assert.match(payload.text ?? "", /20 Heron, Lake Forest, CA 92630/);
+  assert.match(payload.text ?? "", /Signature/);
+  assert.match(payload.text ?? "", /\$495/);
+  assert.match(payload.text ?? "", /\$559/);
+  assert.match(payload.text ?? "", /Dec 8, 2026/);
+  assert.doesNotMatch(payload.text ?? "", /Dec 9, 2026/);
+  assert.match(payload.text ?? "", /Griselda/);
+  assert.match(payload.text ?? "", /unsuitable/);
+  assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/account\//);
+  assert.doesNotMatch(payload.text ?? "", /Unsubscribe/i);
+  assert.match(payload.html ?? "", /You're in, Alex/);
+  assert.doesNotMatch(payload.html ?? "", /Unsubscribe/i);
+});
+
+test("a staff alert names the member and links to the hub", async () => {
+  const env = {
+    RESEND_API_KEY: "re_test",
+    RESEND_FROM: "ManHair <info@manhaironline.com>",
+    MEMBERSHIP_STAFF_ALERT_EMAILS: "justin@example.com,griselda@example.com",
+    MEMBERSHIP_OWNER_ALERTS_SEND: "true",
+    MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+  };
+  const store = createMemoryStore();
+  await store.saveMember({
+    id: "mem_staff",
+    email: "member@example.com",
+    phone: "+1 (904) 555-0100",
+    firstName: "Alex",
+    lastName: "Rivera",
+    tier: "signature",
+    status: "trialing",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionItemId: null,
+    monthlyCents: 55900,
+    setupCents: 49500,
+    setupPaid: true,
+    recurringStartAt: "2026-12-07T19:00:00.000Z",
+    minimumTermEndsAt: "2027-02-07T19:00:00.000Z",
+    rateLockEndsAt: "2028-11-07T19:00:00.000Z",
+    entitlementYearEndsAt: "2027-11-07T19:00:00.000Z",
+    systemsUsed: 0,
+    maintenanceUsed: 0,
+    pauseDaysUsed: 0,
+    cancelAt: null,
+    pauseCollection: false,
+    attention: null,
+    termsVersion: "2026-11-07",
+    lastStatusEventCreated: 0,
+    version: 0,
+    createdAt: now.toISOString(),
+  });
+  await store.enqueueAlert({
+    id: "alert_staff",
+    dedupeKey: "evt_staff:setup_paid:owner",
+    sourceEventId: "evt_staff",
+    kind: "setup_paid",
+    audience: "owner",
+    memberId: "mem_staff",
+    amountCents: 49500,
+    status: "pending",
+    nextAttemptAt: now.toISOString(),
+    attempts: 0,
+    lastError: null,
+    createdAt: "2026-12-09T04:44:00.000Z",
+  });
+  let payload: { subject?: string; text?: string; to?: string[] } = {};
+  await drainAlerts({
+    env,
+    store,
+    stripe: null,
+    now: () => now,
+    fetchImpl: async (_input, init) => {
+      payload = JSON.parse(String(init?.body ?? "{}"));
+      return new Response("sent", { status: 200 });
+    },
+  } as Deps);
+  assert.equal(payload.subject, "New ManHair member: Alex Rivera – Signature");
+  assert.match(payload.text ?? "", /member@example.com/);
+  assert.match(payload.text ?? "", /\+1 \(904\) 555-0100/);
+  assert.match(payload.text ?? "", /\$495/);
+  assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/hub\//);
+  assert.match(payload.text ?? "", /Dec 8, 2026/);
+  assert.doesNotMatch(payload.text ?? "", /Dec 9, 2026/);
 });

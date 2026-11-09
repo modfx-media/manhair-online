@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { billingDisclosure, billingTimeline } from "./dates";
 import { normalizeEmail } from "./tokens";
-import { TERMS_VERSION, TRIAL_DAYS, type TierId } from "./offer";
+import { TERMS_VERSION, TIERS, TRIAL_DAYS, type TierId } from "./offer";
 import { expectedPrice, type AppEnv, type Blocker } from "./readiness";
 
 export type PriceSnapshot = {
@@ -173,6 +173,51 @@ export function safeAppOrigin(request: Request, env: AppEnv): string {
     return `${proto}://${bare}`;
   }
   return configured;
+}
+
+/**
+ * Stripe return URL. Preview may use its vercel.app host.
+ * Production never sends the customer back to a vercel.app URL, which can ask for a Vercel login.
+ */
+export function publicCheckoutOrigin(request: Request, env: AppEnv): string {
+  const configured = (env.NEXT_PUBLIC_SITE_URL || "https://www.manhaironline.com").replace(/\/$/, "");
+  if (env.VERCEL_ENV === "preview") return safeAppOrigin(request, env);
+  const host = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").split(",")[0]?.trim().toLowerCase() ?? "";
+  if (host.endsWith(".vercel.app")) return configured;
+  return safeAppOrigin(request, env);
+}
+
+export type CheckoutPaymentView = {
+  state: "pending" | "paid" | "failed";
+  purchase: {
+    transactionId: string;
+    value: number;
+    currency: "USD";
+    itemId: string;
+    itemName: string;
+  } | null;
+};
+
+export function checkoutPaymentView(
+  member: { id: string; tier: TierId; status: string; setupPaid: boolean; setupCents: number },
+  invoices: Array<{ id: string; kind: string; status: string; amountPaid: number }>,
+): CheckoutPaymentView {
+  const setupInvoice = invoices.find((invoice) => invoice.kind === "setup" && invoice.status === "paid" && invoice.amountPaid > 0);
+  if (member.setupPaid) {
+    const amount = setupInvoice?.amountPaid ?? member.setupCents;
+    return {
+      state: "paid",
+      purchase: {
+        transactionId: setupInvoice?.id ?? `setup:${member.id}`,
+        value: amount / 100,
+        currency: "USD",
+        itemId: member.tier,
+        itemName: TIERS[member.tier].name,
+      },
+    };
+  }
+  if (member.status === "checkout_failed") return { state: "failed", purchase: null };
+  return { state: "pending", purchase: null };
 }
 
 export function isSameOrigin(request: Request, origin: string): boolean {

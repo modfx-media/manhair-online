@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 import type { AlertRecord } from "./alerts";
@@ -54,6 +54,8 @@ function mapMember(row: Row): MemberRecord {
     setupCents: num(row.setup_cents),
     setupPaid: bool(row.setup_paid),
     recurringStartAt: text(row.recurring_start_at),
+    nextChargeAt: text(row.next_charge_at),
+    chargeAtSource: row.charge_at_source === "stripe" ? "stripe" : row.charge_at_source === "estimate" ? "estimate" : null,
     minimumTermEndsAt: requiredText(row.minimum_term_ends_at),
     rateLockEndsAt: requiredText(row.rate_lock_ends_at),
     entitlementYearEndsAt: requiredText(row.entitlement_year_ends_at),
@@ -153,14 +155,14 @@ export function createSqlStore(connectionString: string): MembershipStore {
         INSERT INTO membership_members (
           id, email, phone, first_name, last_name, tier, status, stripe_customer_id,
           stripe_subscription_id, stripe_subscription_item_id, monthly_cents, setup_cents,
-          setup_paid, recurring_start_at, minimum_term_ends_at, rate_lock_ends_at,
+          setup_paid, recurring_start_at, next_charge_at, charge_at_source, minimum_term_ends_at, rate_lock_ends_at,
           entitlement_year_ends_at, systems_used, maintenance_used, pause_days_used,
           cancel_at, pause_collection, attention, payment_grace_started_at, terms_version, last_status_event_created, version, created_at
         ) VALUES (
           ${member.id}, ${member.email}, ${member.phone}, ${member.firstName}, ${member.lastName},
           ${member.tier}, ${member.status}, ${member.stripeCustomerId}, ${member.stripeSubscriptionId},
           ${member.stripeSubscriptionItemId}, ${member.monthlyCents}, ${member.setupCents},
-          ${member.setupPaid}, ${member.recurringStartAt}, ${member.minimumTermEndsAt},
+          ${member.setupPaid}, ${member.recurringStartAt}, ${member.nextChargeAt ?? null}, ${member.chargeAtSource ?? null}, ${member.minimumTermEndsAt},
           ${member.rateLockEndsAt}, ${member.entitlementYearEndsAt}, ${member.systemsUsed},
           ${member.maintenanceUsed}, ${member.pauseDaysUsed}, ${member.cancelAt},
           ${member.pauseCollection}, ${member.attention}, ${member.paymentGraceStartedAt ?? null}, ${member.termsVersion}, ${member.lastStatusEventCreated},
@@ -180,6 +182,8 @@ export function createSqlStore(connectionString: string): MembershipStore {
           setup_cents = EXCLUDED.setup_cents,
           setup_paid = EXCLUDED.setup_paid,
           recurring_start_at = EXCLUDED.recurring_start_at,
+          next_charge_at = EXCLUDED.next_charge_at,
+          charge_at_source = EXCLUDED.charge_at_source,
           minimum_term_ends_at = EXCLUDED.minimum_term_ends_at,
           rate_lock_ends_at = EXCLUDED.rate_lock_ends_at,
           entitlement_year_ends_at = EXCLUDED.entitlement_year_ends_at,
@@ -206,6 +210,8 @@ export function createSqlStore(connectionString: string): MembershipStore {
           monthly_cents = ${member.monthlyCents},
           setup_paid = ${member.setupPaid},
           recurring_start_at = ${member.recurringStartAt},
+          next_charge_at = ${member.nextChargeAt ?? null},
+          charge_at_source = ${member.chargeAtSource ?? null},
           minimum_term_ends_at = ${member.minimumTermEndsAt},
           rate_lock_ends_at = ${member.rateLockEndsAt},
           entitlement_year_ends_at = ${member.entitlementYearEndsAt},
@@ -223,10 +229,34 @@ export function createSqlStore(connectionString: string): MembershipStore {
     },
     async addConsent(consent) {
       await sql`
-        INSERT INTO membership_consents (id, member_id, terms_version, terms_accepted_at, autorenew_accepted_at)
-        VALUES (${consent.id}, ${consent.memberId}, ${consent.termsVersion}, ${consent.termsAcceptedAt}, ${consent.autorenewAcceptedAt})
+        INSERT INTO membership_consents (
+          id, member_id, terms_version, terms_accepted_at, autorenew_accepted_at,
+          marketing_email, sms_consent, sms_consent_text, sms_consent_at, sms_consent_version
+        )
+        VALUES (
+          ${consent.id}, ${consent.memberId}, ${consent.termsVersion}, ${consent.termsAcceptedAt}, ${consent.autorenewAcceptedAt},
+          ${consent.marketingEmail}, ${consent.smsConsent}, ${consent.smsConsentText}, ${consent.smsConsentAt}, ${consent.smsConsentVersion}
+        )
         ON CONFLICT (id) DO NOTHING
       `;
+    },
+    async listConsents(memberId) {
+      const rows = await sql`SELECT * FROM membership_consents WHERE member_id = ${memberId} ORDER BY terms_accepted_at`;
+      return rows.map((row) => {
+        const record = row as Row;
+        return {
+          id: requiredText(record.id),
+          memberId: requiredText(record.member_id),
+          termsVersion: requiredText(record.terms_version),
+          termsAcceptedAt: requiredText(record.terms_accepted_at),
+          autorenewAcceptedAt: requiredText(record.autorenew_accepted_at),
+          marketingEmail: record.marketing_email === true,
+          smsConsent: record.sms_consent === true,
+          smsConsentText: text(record.sms_consent_text),
+          smsConsentAt: text(record.sms_consent_at),
+          smsConsentVersion: text(record.sms_consent_version),
+        };
+      });
     },
     async reserveFounding(input) {
       const rows = await sql.query(FOUNDING_RESERVE_SQL, [input.id, input.memberId, input.expiresAt, input.cap]);
@@ -349,7 +379,9 @@ export function createSqlStore(connectionString: string): MembershipStore {
       `;
     },
     async listRefundRequests(memberId) {
-      const rows = await sql`SELECT * FROM membership_refund_requests WHERE member_id = ${memberId} ORDER BY created_at`;
+      const rows = memberId
+        ? await sql`SELECT * FROM membership_refund_requests WHERE member_id = ${memberId} ORDER BY created_at`
+        : await sql`SELECT * FROM membership_refund_requests ORDER BY created_at`;
       return rows.map((row) => {
         const record = row as Row;
         return {
@@ -483,6 +515,42 @@ export function createSqlStore(connectionString: string): MembershipStore {
         RETURNING member_id
       `;
       return text((rows[0] as Row | undefined)?.member_id);
+    },
+    async saveStaffLink(row) {
+      await sql`
+        INSERT INTO membership_staff_links (token_hash, email, expires_at, used)
+        VALUES (${row.tokenHash}, ${row.email}, ${row.expiresAt}, ${row.used})
+        ON CONFLICT (token_hash) DO NOTHING
+      `;
+    },
+    async consumeStaffLink(tokenHash, now) {
+      const rows = await sql`
+        UPDATE membership_staff_links
+        SET used = true
+        WHERE token_hash = ${tokenHash} AND used = false AND expires_at > ${now.toISOString()}::timestamptz
+        RETURNING email
+      `;
+      return text((rows[0] as Row | undefined)?.email);
+    },
+    async saveStaffSession(row) {
+      await sql`
+        INSERT INTO membership_staff_sessions (token_hash, email, role, expires_at)
+        VALUES (${row.tokenHash}, ${row.email}, ${row.role}, ${row.expiresAt})
+        ON CONFLICT (token_hash) DO NOTHING
+      `;
+    },
+    async findStaffSession(tokenHash) {
+      const rows = await sql`SELECT * FROM membership_staff_sessions WHERE token_hash = ${tokenHash} LIMIT 1`;
+      const row = rows[0] as Row | undefined;
+      if (!row) return null;
+      const role = requiredText(row.role);
+      if (role !== "owner" && role !== "coordinator") return null;
+      return {
+        tokenHash: requiredText(row.token_hash),
+        email: requiredText(row.email),
+        role,
+        expiresAt: requiredText(row.expires_at),
+      };
     },
     async getSyncState() {
       const rows = await sql`SELECT * FROM membership_sync_state ORDER BY pulled_at DESC NULLS LAST LIMIT 1`;
@@ -751,7 +819,12 @@ function mapDeal(row: Row): DealRecord {
 }
 
 export function loadMembershipSchema(): string {
-  return readFileSync(path.join(process.cwd(), "db/membership/001_init.sql"), "utf8");
+  const dir = path.join(process.cwd(), "db/membership");
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((name) => readFileSync(path.join(dir, name), "utf8"))
+    .join("\n");
 }
 
 export function unavailableStore(): MembershipStore {
@@ -770,6 +843,7 @@ export function unavailableStore(): MembershipStore {
     saveMember: fail,
     compareAndSave: fail,
     addConsent: fail,
+    listConsents: async () => [],
     reserveFounding: fail,
     setFoundingStatus: fail,
     getCheckout: async () => null,
@@ -796,6 +870,10 @@ export function unavailableStore(): MembershipStore {
     deleteSessionByHash: fail,
     saveRecovery: fail,
     consumeRecovery: async () => null,
+    saveStaffLink: fail,
+    consumeStaffLink: async () => null,
+    saveStaffSession: fail,
+    findStaffSession: async () => null,
     getSyncState: async () => null,
     saveSyncState: fail,
     addAuthAudit: fail,
