@@ -213,6 +213,7 @@ export function createSqlStore(connectionString: string): MembershipStore {
           cancel_at = ${member.cancelAt},
           pause_collection = ${member.pauseCollection},
           attention = ${member.attention},
+          payment_grace_started_at = ${member.paymentGraceStartedAt ?? null},
           last_status_event_created = ${member.lastStatusEventCreated},
           version = ${expectedVersion + 1}
         WHERE id = ${member.id} AND version = ${expectedVersion}

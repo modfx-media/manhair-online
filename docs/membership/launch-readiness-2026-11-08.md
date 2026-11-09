@@ -9,6 +9,7 @@ The owner assigned launch coordination to Codex in this session. The release bra
 - Invoice-first delivery uses subscription metadata; an older paid setup invoice does not lose its payment fact when a newer subscription status already exists.
 - Dispute and early-fraud-warning events resolve the customer through their charge; lookup errors remain retryable. Test/live mode mismatches are rejected. Delayed payment failures cannot regress a paid member.
 - The live Neon database was backed up and restored into an isolated local database. Counts matched across all 25 CMS tables. The additive 29-statement membership migration then completed. Backup evidence and the private dump are stored outside the repository.
+- Isolated SQL-backed integration checks passed for one-use account recovery, sign-out, unauthorized staff rejection, fulfillment usage idempotency, and payment-grace persistence and clearing. The recovery message was marked Delivered by the Resend simulator. These checks exercised local application handlers with the real test database; production ingress still needs verification after deployment.
 - Resend's `manhaironline.com` domain is verified. A sending-only key restricted to this domain is stored as a sensitive production environment variable. Recovery uses `ManHair <accounts@manhaironline.com>`.
 
 ## Still required before opening production checkout
