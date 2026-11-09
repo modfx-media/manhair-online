@@ -399,7 +399,8 @@ test("a consented text is sent from the location default number only when SMS is
   const smsCall = calls.find((call) => call.includes("/conversations/messages"));
   assert.ok(smsCall);
   assert.match(smsCall ?? "", /"type":"SMS"/);
-  assert.doesNotMatch(smsCall ?? "", /"from"/);
+  assert.match(smsCall ?? "", /"fromNumber":"\+19045268500"/);
+  assert.doesNotMatch(smsCall ?? "", /"from":/);
   assert.match(smsCall ?? "", /STOP/);
 });
 

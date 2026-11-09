@@ -45,6 +45,24 @@ export function billingTimeline(start: Date): BillingTimeline {
 }
 
 /** Calendar date in the studio zone. Charge dates do not include the page-load clock time. */
+/** Calendar date key in a zone, YYYY-MM-DD. */
+export function studioDateKey(date: Date, timeZone = APP_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+export function studioHour(date: Date, timeZone = APP_TIMEZONE): number {
+  const hour = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).formatToParts(date)
+    .find((part) => part.type === "hour")?.value;
+  return Number(hour ?? "0");
+}
+
+export function addStudioDays(date: Date, days: number, timeZone = APP_TIMEZONE): string {
+  const key = studioDateKey(date, timeZone);
+  const [year, month, day] = key.split("-").map(Number);
+  const utc = new Date(Date.UTC(year!, month! - 1, day! + days, 20));
+  return studioDateKey(utc, timeZone);
+}
+
 export function formatStudio(date: Date): string {
   const datePart = new Intl.DateTimeFormat("en-US", {
     timeZone: APP_TIMEZONE,

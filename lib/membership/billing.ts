@@ -44,6 +44,7 @@ export type MemberBilling = {
   attention: Attention;
   version: number;
   paymentGraceStartedAt?: string | null;
+  pauseResumeAt?: string | null;
 };
 
 export type StoredInvoice = {
@@ -259,6 +260,7 @@ export function reduceBillingEvent(
         chargeAtSource: charges?.chargeAtSource ?? member.chargeAtSource ?? "estimate",
         cancelAt: fromUnix(event.cancelAt),
         pauseCollection: paused,
+        pauseResumeAt: paused ? fromUnix(event.pauseResumesAt) : null,
         lastStatusEventCreated: event.created,
         attention,
       },

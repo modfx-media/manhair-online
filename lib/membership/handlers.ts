@@ -7,6 +7,9 @@ import { reduceBillingEvent, type MemberBilling } from "./billing";
 import { billingDisclosure, billingTimeline, formatStudio } from "./dates";
 import { buildCheckoutParams, checkoutIdempotencyKey, checkoutPaymentView, isSameOrigin, priceMatches, publicCheckoutOrigin, safeAppOrigin, type PriceSnapshot } from "./checkout";
 import { ghlMode, paidMemberStageChange, pushMembershipProfile, pushOpportunityStage, sendLocationSms, syncHash, syncLead } from "./ghl";
+import { postMembershipEmail, renderAlertCatalog, runDueLifecycle, sendCatalogMessage } from "./lifecycle-send";
+import { formatAppointmentWhen, memberMergeVars } from "./lifecycle-vars";
+import { disputeCopyFacts, invoiceCopyFacts } from "./stripe-map";
 import { membershipGhlPayload, type MembershipGhlInput } from "./ghl-profile";
 import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
@@ -259,6 +262,33 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
     now: deps.now(),
     env: deps.env,
   }));
+  const leadMessage = typeof body.message === "string" ? body.message : typeof body.note === "string" ? body.note : "";
+  const preferred = typeof body.preferredContact === "string" ? body.preferredContact : "";
+  await sendCatalogMessage(deps, {
+    templateId: "lead_consult_received_email",
+    memberId: null,
+    cycleKey: `lead:${dealId}:email`,
+    to: email,
+    purpose: "lifecycle",
+    vars: memberMergeVars({
+      env: deps.env,
+      lead: { firstName, email, phone, message: leadMessage, preferredContact: preferred },
+      now: deps.now(),
+    }),
+  });
+  await sendCatalogMessage(deps, {
+    templateId: "lead_consult_received_sms",
+    memberId: null,
+    cycleKey: `lead:${dealId}:sms`,
+    to: phone ?? "",
+    purpose: "lifecycle",
+    vars: memberMergeVars({
+      env: deps.env,
+      lead: { firstName, email, phone, message: leadMessage, preferredContact: preferred },
+      now: deps.now(),
+    }),
+    smsConsent: body.smsConsent === true,
+  });
   if (resolveGhlTarget(deps.env).ok) {
     const ghl = await syncLead(deps.env, {
       email,
@@ -656,6 +686,42 @@ export async function handleAccountPost(request: Request, deps: Deps): Promise<R
   return json({ ok: false, error: "unknown_action" }, 404);
 }
 
+async function notifyLifecycle(
+  deps: Deps,
+  member: MemberRecord,
+  templateId: string,
+  cycleKey: string,
+  extras?: Record<string, string>,
+): Promise<void> {
+  const invoices = await deps.store.listInvoices(member.id);
+  const pauses = await deps.store.listPauseRequests(member.id);
+  const refunds = await deps.store.listRefundRequests(member.id);
+  const appointments = await deps.store.listAppointments(member.id);
+  const appointment = [...appointments].reverse().find((item) => item.state !== "canceled") ?? appointments.at(-1) ?? null;
+  const deals = await deps.store.listDeals();
+  const consented = (await deps.store.listConsents(member.id)).some((consent) => consent.smsConsent);
+  const vars = memberMergeVars({
+    env: deps.env,
+    member,
+    invoices,
+    pauses,
+    refunds,
+    appointment,
+    extras,
+    now: deps.now(),
+  });
+  await sendCatalogMessage(deps, {
+    templateId,
+    memberId: member.id,
+    cycleKey,
+    to: member.email,
+    purpose: "lifecycle",
+    vars,
+    contactId: deals.find((deal) => deal.memberId === member.id)?.ghlContactId ?? null,
+    smsConsent: consented,
+  });
+}
+
 async function cancelMember(member: MemberRecord, deps: Deps): Promise<Response> {
   await deps.store.addAuthAudit({
     id: newId(),
@@ -670,6 +736,15 @@ async function cancelMember(member: MemberRecord, deps: Deps): Promise<Response>
     now: deps.now(),
     env: deps.env,
   }));
+  const inMinimum = new Date(member.minimumTermEndsAt).getTime() > deps.now().getTime();
+  await notifyLifecycle(
+    deps,
+    member,
+    inMinimum ? "cancel_request_in_minimum_email" : "cancel_request_after_minimum_email",
+    `cancel-request:${member.id}:${deps.now().toISOString()}`,
+    { in_minimum: inMinimum ? "true" : "false" },
+  );
+  await notifyLifecycle(deps, member, "cancel_request_received_sms", `cancel-request-sms:${member.id}:${deps.now().toISOString()}`);
   await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   return json({
     ok: true,
@@ -692,6 +767,7 @@ async function requestPause(member: MemberRecord, body: Record<string, unknown>,
     createdAt: deps.now().toISOString(),
   };
   await deps.store.savePauseRequest(request);
+  await notifyLifecycle(deps, member, "pause_request_received_email", `pause-request:${request.id}`);
   await enqueueStaffAlert(deps, staffNoticeDraft({
     eventId: request.id,
     kind: "pause_requested",
@@ -728,6 +804,7 @@ export async function applyPause(member: MemberRecord, requestId: string, days: 
     status: "paused",
     pauseCollection: true,
     pauseDaysUsed: planned.apply.pauseDaysUsed,
+    pauseResumeAt: planned.apply.resumesAt.toISOString(),
     minimumTermEndsAt: planned.apply.minimumTermEndsAt.toISOString(),
     rateLockEndsAt: planned.apply.rateLockEndsAt.toISOString(),
     entitlementYearEndsAt: planned.apply.entitlementYearEndsAt.toISOString(),
@@ -739,7 +816,13 @@ export async function applyPause(member: MemberRecord, requestId: string, days: 
     status: "applied",
     policyVersion: planned.apply.policyVersion,
     createdAt: deps.now().toISOString(),
+    resumeAt: planned.apply.resumesAt.toISOString(),
   });
+  const paused = await deps.store.findMemberById(member.id);
+  if (paused) {
+    await notifyLifecycle(deps, paused, "pause_confirmed_email", `pause-confirmed:${requestId}`);
+    await notifyLifecycle(deps, paused, "pause_confirmed_sms", `pause-confirmed-sms:${requestId}`);
+  }
   return json({
     ok: true,
     applied: true,
@@ -881,7 +964,8 @@ async function recoverMember(body: Record<string, unknown>, request: Request, de
     const secret = newSecret();
     const expiresAt = new Date(deps.now().getTime() + 30 * 60 * 1000).toISOString();
     await deps.store.saveRecovery({ tokenHash: hashSecret(secret), memberId: eligible[0]!.id, expiresAt, used: false });
-    const sent = await sender({ to: email, url: `${origin}/api/membership/recover/?token=${encodeURIComponent(secret)}` });
+    const next = body.next === "billing" ? "&next=billing" : "";
+    const sent = await sender({ to: email, url: `${origin}/api/membership/recover/?token=${encodeURIComponent(secret)}${next}` });
     if (!sent.sent) {
       await deps.store.consumeRecovery(hashSecret(secret), deps.now());
       return json({ ok: false, error: "email_not_sent", billingRequired: false, message: sent.reason ?? "No message was sent." }, 502);
@@ -911,10 +995,25 @@ export async function handleRecover(request: Request, deps: Deps): Promise<Respo
   });
   await deps.store.addAuthAudit({ id: newId(), memberId, action: "recovery_redeemed", createdAt: deps.now().toISOString() });
   const secure = safeAppOrigin(request, deps.env).startsWith("https://");
+  const next = new URL(request.url).searchParams.get("next");
   return new Response(null, {
     status: 302,
-    headers: { location: "/account/", "set-cookie": cookieHeader(raw, secure), "cache-control": "no-store" },
+    headers: {
+      location: next === "billing" ? "/account/billing/" : "/account/",
+      "set-cookie": cookieHeader(raw, secure),
+      "cache-control": "no-store",
+    },
   });
+}
+
+export async function startBillingPortal(request: Request, deps: Deps): Promise<{ url?: string; signedOut?: boolean; message?: string }> {
+  const member = await currentMember(request, deps);
+  if (!member) return { signedOut: true };
+  const origin = safeAppOrigin(request, deps.env);
+  const response = await openPortal(member, deps, origin);
+  const body = (await response.json()) as { url?: string; message?: string };
+  if (typeof body.url === "string") return { url: body.url };
+  return { message: body.message ?? "Payment method update is not available yet." };
 }
 
 async function logoutMember(request: Request, deps: Deps): Promise<Response> {
@@ -997,7 +1096,22 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
         ? (await deps.store.listInvoices(ownerId)).find((invoice) => invoice.id === effect.invoice!.id) ?? null
         : null;
       const observed = applyInvoiceObservation(prior, { ...effect.invoice, statusEventCreated: internal.created });
-      if (!prior || observed.applied) await deps.store.upsertInvoice(observed.invoice);
+      if (internal.type === "invoice.paid" || internal.type === "invoice.payment_failed") {
+        if (!prior || observed.applied) {
+          const facts = invoiceCopyFacts(event.data.object);
+          const amountDue = facts.amount_due_cents ? Number(facts.amount_due_cents) : null;
+          await deps.store.upsertInvoice({
+            ...observed.invoice,
+            amountDue,
+            hostedInvoiceUrl: facts.hosted_invoice_url || null,
+            cardLast4: facts.card_last4 || null,
+            paidAt: facts.paid_at || null,
+          });
+          await deps.store.saveEventFacts(event.id, facts);
+        }
+      } else if (!prior || observed.applied) {
+        await deps.store.upsertInvoice(observed.invoice);
+      }
       if (ownerId) {
         const fresh = (await deps.store.findMemberById(ownerId)) ?? member;
         if (fresh) {
@@ -1016,6 +1130,17 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
         const current = requests.find((request) => request.id === matched);
         if (matched && current) {
           await deps.store.updateRefundRequest(matched, { status: "processor_succeeded", stripeRefundId: current.stripeRefundId });
+        }
+        const suitability = await deps.store.findSuitabilityCase(holder.id);
+        const refunded = await deps.store.findMemberById(holder.id);
+        if (refunded) {
+          const template = suitability ? "refund_completed_email" : "refund_issued_email";
+          await notifyLifecycle(deps, refunded, template, `refund:${event.id}`, {
+            refund_amount: formatUsd(effect.refundCents),
+            refund_total: formatUsd(effect.refundCents),
+            refund_date: formatStudio(deps.now()),
+          });
+          if (suitability) await notifyLifecycle(deps, refunded, "refund_completed_sms", `refund-sms:${event.id}`, { refund_total: formatUsd(effect.refundCents) });
         }
       }
     }
@@ -1044,9 +1169,20 @@ export async function handleWebhook(request: Request, deps: Deps): Promise<Respo
     });
     if (member) await enqueueDatedConfirmation(deps, member.id);
     if (internal.type === "charge.dispute.created" && member) {
+      await deps.store.saveEventFacts(event.id, { ...disputeCopyFacts(event.data.object), event_id: event.id });
       await enqueueStaffAlert(deps, staffNoticeDraft({
         eventId: event.id,
         kind: "dispute",
+        memberId: member.id,
+        now: deps.now(),
+        env: deps.env,
+      }));
+    }
+    if (internal.type === "radar.early_fraud_warning.created" && member) {
+      await deps.store.saveEventFacts(event.id, { event_id: event.id, stripe_dashboard_url: "https://dashboard.stripe.com/radar" });
+      await enqueueStaffAlert(deps, staffNoticeDraft({
+        eventId: event.id,
+        kind: "fraud_warning",
         memberId: member.id,
         now: deps.now(),
         env: deps.env,
@@ -1166,9 +1302,6 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
     console.info(JSON.stringify({ scope: "membership", event: "alert_fake_recorded", ...alertLogFields(alert) }));
     return "fake";
   }
-  const origin = publicSiteOrigin(deps.env);
-  const accountUrl = `${origin}/account/`;
-  const footer = emailComplianceFooter({ identity: businessIdentity(deps.env), manageUrl: accountUrl });
   const member = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
   const deal = !member ? (await deps.store.listDeals()).find((item) => item.id === alert.sourceEventId) ?? null : null;
   const to = customer ? member?.email : staffAlertRecipients(deps.env);
@@ -1176,55 +1309,50 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
     await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "recipient_missing" });
     return "held";
   }
+  const facts = await deps.store.getEventFacts(alert.sourceEventId);
+  const invoices = member ? await deps.store.listInvoices(member.id) : [];
+  const pauses = member ? await deps.store.listPauseRequests(member.id) : [];
+  const refunds = member ? await deps.store.listRefundRequests(member.id) : [];
+  const vars = memberMergeVars({
+    env: deps.env,
+    member,
+    lead: deal ? { firstName: deal.name.split(" ")[0] || "there", email: deal.email, phone: deal.phone } : null,
+    invoices,
+    pauses,
+    refunds,
+    extras: { ...facts, event_id: facts.event_id || alert.sourceEventId, payment_amount: facts.payment_amount || (alert.amountCents ? formatUsd(alert.amountCents) : "") },
+    now: deps.now(),
+  });
+  const rendered = await renderAlertCatalog(deps, alert, vars);
+  if (!rendered.ok) {
+    await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: rendered.reason });
+    return "held";
+  }
+  const override = deps.env.MEMBERSHIP_TEST_RECIPIENT?.trim();
+  const recipient = override?.includes("@") ? override : to;
   try {
-    const response = await (deps.fetchImpl ?? fetch)("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${deps.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: memberEmailFrom(deps.env).from,
-        reply_to: memberEmailFrom(deps.env).replyTo,
-        to,
-        subject: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
-          ? confirmationMessage(member, deps.env, accountUrl).subject
-          : staffAlertMessage({
-              kind: alert.kind,
-              name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
-              email: member?.email ?? deal?.email ?? "",
-              phone: member?.phone ?? deal?.phone ?? null,
-              plan: member ? TIERS[member.tier].name : null,
-              amountCents: alert.amountCents,
-              occurredAt: new Date(alert.createdAt),
-              hubUrl: `${origin}/hub/`,
-            }).subject,
-        text: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
-          ? confirmationMessage(member, deps.env, accountUrl).text
-          : customer
-            ? `${ownerAlertText(alert)}\n\n${footer}`
-            : staffAlertMessage({
-                kind: alert.kind,
-                name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
-                email: member?.email ?? deal?.email ?? "",
-                phone: member?.phone ?? deal?.phone ?? null,
-                plan: member ? TIERS[member.tier].name : null,
-                amountCents: alert.amountCents,
-                occurredAt: new Date(alert.createdAt),
-                hubUrl: `${origin}/hub/`,
-              }).text,
-        html: customer && alert.kind === "setup_paid" && member?.chargeAtSource === "stripe"
-          ? confirmationMessage(member, deps.env, accountUrl).html
-          : staffAlertMessage({
-              kind: alert.kind,
-              name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
-              email: member?.email ?? deal?.email ?? "",
-              phone: member?.phone ?? deal?.phone ?? null,
-              plan: member ? TIERS[member.tier].name : null,
-              amountCents: alert.amountCents,
-              occurredAt: new Date(alert.createdAt),
-              hubUrl: `${origin}/hub/`,
-            }).html,
-      }),
+    const sent = await postMembershipEmail(deps.env, deps.fetchImpl ?? fetch, {
+      to: recipient,
+      subject: rendered.subject,
+      text: rendered.text,
+      html: rendered.html,
     });
-    if (!response.ok) throw new Error("provider_rejected");
+    if (!sent) throw new Error("provider_rejected");
+    await deps.store.recordLifecycleMessage({
+      id: newId(),
+      dedupeKey: `alert:${alert.dedupeKey}`,
+      memberId: alert.memberId,
+      templateId: rendered.templateId,
+      channel: "email",
+      cycleKey: alert.dedupeKey,
+      status: "sent",
+      recipient: Array.isArray(recipient) ? recipient.join(",") : recipient,
+      subject: rendered.subject,
+      textBody: rendered.text,
+      htmlBody: rendered.html,
+      error: null,
+      createdAt: deps.now().toISOString(),
+    });
     await deps.store.updateAlert(alert.id, { status: "delivered", lastError: null });
     console.info(JSON.stringify({ scope: "membership", event: "alert_delivered", ...alertLogFields(alert) }));
     return "delivered";
@@ -1323,6 +1451,7 @@ async function syncMemberCrm(deps: Deps, memberId: string, options: { promotePai
           `ManHair: your membership setup payment is confirmed. Card charges appear as ${statementDescriptorSuffix(deps.env)}. Reply STOP to opt out.`,
           fetchImpl,
           consented,
+          deps.now(),
         );
         if (sms.sent) {
           await deps.store.addActivity({
@@ -1471,6 +1600,26 @@ async function staffSuitability(body: Record<string, unknown>, deps: Deps): Prom
     now: deps.now(),
     env: deps.env,
   }));
+  const recorded = await deps.store.findMemberById(member.id);
+  if (recorded) {
+    const total = formatUsd(refunds.reduce((sum, item) => sum + item.amountCents, 0));
+    await notifyLifecycle(deps, recorded, "unsuitable_refund_started_email", `unsuitable:${caseId}`, { refund_total: total, staff_email: deps.staffEmail ?? "" });
+    await notifyLifecycle(deps, recorded, "unsuitable_refund_started_sms", `unsuitable-sms:${caseId}`, { refund_total: total });
+    await sendCatalogMessage(deps, {
+      templateId: "staff_unsuitable_recorded_email",
+      memberId: member.id,
+      cycleKey: `staff-unsuitable:${caseId}`,
+      to: staffAlertRecipients(deps.env),
+      purpose: "lifecycle",
+      vars: memberMergeVars({
+        env: deps.env,
+        member: recorded,
+        refunds,
+        extras: { refund_total: total, staff_email: deps.staffEmail ?? "", event_id: caseId },
+        now: deps.now(),
+      }),
+    });
+  }
   await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   const completed = cancelStatus === "processor_canceled" && refunds.length > 0 && refunds.every((refund) => refund.status === "processor_succeeded");
   return json({
@@ -1511,6 +1660,17 @@ async function staffAppointment(body: Record<string, unknown>, deps: Deps): Prom
     updatedAt: now,
   });
   await deps.store.addAuthAudit({ id: newId(), memberId: member.id, action: `appointment_${parsed.appointment.state}`, createdAt: now });
+  const appointmentTemplate = parsed.appointment.state === "canceled"
+    ? "appointment_cancelled"
+    : parsed.appointment.state === "updated"
+      ? "appointment_updated"
+      : "appointment_confirmed";
+  const fresh = await deps.store.findMemberById(member.id);
+  if (fresh) {
+    const when = formatAppointmentWhen(parsed.appointment.startsAt, parsed.appointment.timeZone);
+    await notifyLifecycle(deps, fresh, `${appointmentTemplate}_email`, `${appointmentTemplate}:${fresh.id}:${parsed.appointment.startsAt}`, { appointment_date_time: when });
+    await notifyLifecycle(deps, fresh, `${appointmentTemplate}_sms`, `${appointmentTemplate}-sms:${fresh.id}:${parsed.appointment.startsAt}`, { appointment_date_time: when });
+  }
   await syncMemberCrm(deps, member.id, { promotePaidStage: false });
   return json({
     ok: true,

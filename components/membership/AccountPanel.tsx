@@ -57,12 +57,14 @@ export function AccountPanel({
   pauses,
   cancellationRequests = [],
   afterCheckout = false,
+  signInNext = "",
 }: {
   member: MemberView | null;
   invoices: Invoice[];
   pauses: Pause[];
   cancellationRequests?: CancellationRequest[];
   afterCheckout?: boolean;
+  signInNext?: string;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [live, setLive] = useState(member);
@@ -93,7 +95,10 @@ export function AccountPanel({
         className="grid max-w-md gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          const result = await post("recover", { email: String(new FormData(event.currentTarget).get("email") ?? "") });
+          const result = await post("recover", {
+            email: String(new FormData(event.currentTarget).get("email") ?? ""),
+            next: signInNext === "billing" ? "billing" : "",
+          });
           setMessage(result.message ?? "Sign-in email was not sent.");
         }}
       >

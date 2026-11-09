@@ -30,6 +30,7 @@ export type MemberRecord = {
   pauseCollection: boolean;
   attention: Attention;
   paymentGraceStartedAt?: string | null;
+  pauseResumeAt?: string | null;
   termsVersion: string;
   lastStatusEventCreated: number;
   version: number;
@@ -55,6 +56,10 @@ export type InvoiceRecord = {
   chargeId?: string | null;
   failedAt?: string | null;
   statusEventCreated?: number | null;
+  amountDue?: number | null;
+  hostedInvoiceUrl?: string | null;
+  cardLast4?: string | null;
+  paidAt?: string | null;
 };
 
 export type SuitabilityCaseRecord = {
@@ -141,6 +146,8 @@ export type PauseRequestRecord = {
   status: "requested" | "applied" | "rejected";
   policyVersion: string;
   createdAt: string;
+  resumeAt?: string | null;
+  declineReason?: string | null;
 };
 export type SessionRecord = {
   id: string;
@@ -194,6 +201,22 @@ export type ConsentRecord = {
   smsConsentText: string | null;
   smsConsentAt: string | null;
   smsConsentVersion: string | null;
+};
+
+export type LifecycleMessage = {
+  id: string;
+  dedupeKey: string;
+  memberId: string | null;
+  templateId: string;
+  channel: "email" | "sms";
+  cycleKey: string;
+  status: "queued" | "sent" | "held" | "failed" | "fake" | "skipped";
+  recipient: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+  error: string | null;
+  createdAt: string;
 };
 
 export type UsageResult = "applied" | "replay" | "rejected";
@@ -267,4 +290,10 @@ export interface MembershipStore {
   }): Promise<UsageResult>;
   saveDraft(row: DraftRecord): Promise<void>;
   listDrafts(dealId: string): Promise<DraftRecord[]>;
+  recordLifecycleMessage(row: LifecycleMessage): Promise<"created" | "duplicate">;
+  findLifecycleMessage(dedupeKey: string): Promise<LifecycleMessage | null>;
+  updateLifecycleMessage(id: string, patch: Partial<Pick<LifecycleMessage, "status" | "error">>): Promise<void>;
+  listLifecycleMessages(): Promise<LifecycleMessage[]>;
+  saveEventFacts(eventId: string, facts: Record<string, string>): Promise<void>;
+  getEventFacts(eventId: string): Promise<Record<string, string>>;
 }
