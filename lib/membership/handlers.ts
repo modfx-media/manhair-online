@@ -1,5 +1,6 @@
 import { alertAfterFailure, alertLogFields, alertsForPayment, confirmationEmailReady, customerAlertsReady, ownerAlertText, ownerAlertsReady, staffAlertRecipients, staffNoticeDraft, type AlertDraft, type AlertRecord } from "./alerts";
 import { SMS_CONSENT_TEXT, SMS_CONSENT_VERSION, businessIdentity, emailComplianceFooter, memberEmailFrom, recoveryUnavailableMessage, statementDescriptorSuffix } from "./business";
+import { confirmationMessage, customerStatusLabel, publicSiteOrigin, staffAlertMessage } from "./email-copy";
 import { messageHolds, messageTransport } from "./message-holds";
 import { staffRole, assignableStaff } from "./access";
 import { reduceBillingEvent, type MemberBilling } from "./billing";
@@ -614,6 +615,10 @@ function publicMember(member: MemberRecord, now: Date, invoices: Array<{ id: str
     monthly: formatUsd(member.monthlyCents),
     setup: formatUsd(member.setupCents),
     setupPaid: member.setupPaid,
+    statusLabel: customerStatusLabel(member, now),
+    setupNote: member.setupPaid
+      ? `${formatUsd(member.setupCents)} setup is paid and applies toward your first system.`
+      : "Your setup payment is not confirmed yet.",
     attention: member.attention,
     systemsUsed: member.systemsUsed,
     systemsIncluded: TIERS[member.tier].systems,
@@ -1127,13 +1132,11 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
     console.info(JSON.stringify({ scope: "membership", event: "alert_fake_recorded", ...alertLogFields(alert) }));
     return "fake";
   }
-  const origin = (deps.env.NEXT_PUBLIC_SITE_URL || "https://www.manhaironline.com").replace(/\/$/, "");
-  const footer = emailComplianceFooter({
-    identity: businessIdentity(deps.env),
-    manageUrl: `${origin}/account/`,
-    unsubscribeUrl: customer ? `${origin}/account/` : null,
-  });
-  const member = customer && alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
+  const origin = publicSiteOrigin(deps.env);
+  const accountUrl = `${origin}/account/`;
+  const footer = emailComplianceFooter({ identity: businessIdentity(deps.env), manageUrl: accountUrl });
+  const member = alert.memberId ? await deps.store.findMemberById(alert.memberId) : null;
+  const deal = !member ? (await deps.store.listDeals()).find((item) => item.id === alert.sourceEventId) ?? null : null;
   const to = customer ? member?.email : staffAlertRecipients(deps.env);
   if (!to || (Array.isArray(to) && to.length === 0)) {
     await deps.store.updateAlert(alert.id, { status: "held", nextAttemptAt: null, lastError: "recipient_missing" });
@@ -1147,12 +1150,44 @@ async function deliverAlert(deps: Deps, alert: AlertRecord): Promise<"delivered"
         from: memberEmailFrom(deps.env).from,
         reply_to: memberEmailFrom(deps.env).replyTo,
         to,
-        subject: customer && alert.kind === "setup_paid" ? "Your ManHair membership is confirmed" : `ManHair ${alert.kind.replaceAll("_", " ")}`,
+        subject: customer && alert.kind === "setup_paid" && member
+          ? confirmationMessage(member, deps.env, accountUrl).subject
+          : staffAlertMessage({
+              kind: alert.kind,
+              name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
+              email: member?.email ?? deal?.email ?? "",
+              phone: member?.phone ?? deal?.phone ?? null,
+              plan: member ? TIERS[member.tier].name : null,
+              amountCents: alert.amountCents,
+              occurredAt: new Date(alert.createdAt),
+              hubUrl: `${origin}/hub/`,
+            }).subject,
         text: customer && alert.kind === "setup_paid" && member
-          ? confirmationEmailText(member, deps.env, footer)
+          ? confirmationMessage(member, deps.env, accountUrl).text
           : customer
             ? `${ownerAlertText(alert)}\n\n${footer}`
-            : ownerAlertText(alert),
+            : staffAlertMessage({
+                kind: alert.kind,
+                name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
+                email: member?.email ?? deal?.email ?? "",
+                phone: member?.phone ?? deal?.phone ?? null,
+                plan: member ? TIERS[member.tier].name : null,
+                amountCents: alert.amountCents,
+                occurredAt: new Date(alert.createdAt),
+                hubUrl: `${origin}/hub/`,
+              }).text,
+        html: customer && alert.kind === "setup_paid" && member
+          ? confirmationMessage(member, deps.env, accountUrl).html
+          : staffAlertMessage({
+              kind: alert.kind,
+              name: member ? `${member.firstName} ${member.lastName}` : deal?.name ?? "Unknown",
+              email: member?.email ?? deal?.email ?? "",
+              phone: member?.phone ?? deal?.phone ?? null,
+              plan: member ? TIERS[member.tier].name : null,
+              amountCents: alert.amountCents,
+              occurredAt: new Date(alert.createdAt),
+              hubUrl: `${origin}/hub/`,
+            }).html,
       }),
     });
     if (!response.ok) throw new Error("provider_rejected");
@@ -1245,13 +1280,6 @@ async function syncMemberCrm(deps: Deps, memberId: string, options: { promotePai
   } catch {
     console.info(JSON.stringify({ scope: "membership", event: "crm_sync_failed", memberId }));
   }
-}
-
-function confirmationEmailText(member: MemberRecord, env: AppEnv, footer: string): string {
-  const when = member.recurringStartAt
-    ? ` Your first monthly charge is on ${formatStudio(new Date(member.recurringStartAt))}.`
-    : "";
-  return `Hi ${member.firstName},\n\nYour ManHair setup payment is confirmed and goes toward your first system. Card charges appear on your statement as ${statementDescriptorSuffix(env)}.${when}\n\n${footer}`;
 }
 
 async function membershipGhlInput(deps: Deps, member: MemberRecord, deals: DealRecord[]): Promise<MembershipGhlInput> {

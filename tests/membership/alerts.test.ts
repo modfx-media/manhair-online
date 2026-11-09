@@ -147,7 +147,7 @@ test("the setup confirmation names MANHAIR, the studio address, and the member r
   });
   const customer = drafts.find((draft) => draft.audience === "customer")!;
   await store.enqueueAlert({ ...customer, id: "alert_mail", attempts: 0, lastError: null, createdAt: now.toISOString() });
-  let payload: { from?: string; reply_to?: string; text?: string } = {};
+  let payload: { from?: string; reply_to?: string; text?: string; html?: string; subject?: string } = {};
   await drainAlerts({
     env,
     store,
@@ -162,5 +162,83 @@ test("the setup confirmation names MANHAIR, the studio address, and the member r
   assert.equal(payload.reply_to, "info@manhaironline.com");
   assert.match(payload.text ?? "", /MANHAIR/);
   assert.match(payload.text ?? "", /20 Heron, Lake Forest, CA 92630/);
-  assert.match(payload.text ?? "", /Manage your membership/);
+  assert.match(payload.text ?? "", /Signature/);
+  assert.match(payload.text ?? "", /\$495/);
+  assert.match(payload.text ?? "", /\$559/);
+  assert.match(payload.text ?? "", /Griselda/);
+  assert.match(payload.text ?? "", /unsuitable/);
+  assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/account\//);
+  assert.doesNotMatch(payload.text ?? "", /Unsubscribe/i);
+  assert.match(payload.html ?? "", /You're in, Alex/);
+  assert.doesNotMatch(payload.html ?? "", /Unsubscribe/i);
+});
+
+test("a staff alert names the member and links to the hub", async () => {
+  const env = {
+    RESEND_API_KEY: "re_test",
+    RESEND_FROM: "ManHair <info@manhaironline.com>",
+    MEMBERSHIP_STAFF_ALERT_EMAILS: "justin@example.com,griselda@example.com",
+    MEMBERSHIP_OWNER_ALERTS_SEND: "true",
+    MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+  };
+  const store = createMemoryStore();
+  await store.saveMember({
+    id: "mem_staff",
+    email: "member@example.com",
+    phone: "+1 (904) 555-0100",
+    firstName: "Alex",
+    lastName: "Rivera",
+    tier: "signature",
+    status: "trialing",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionItemId: null,
+    monthlyCents: 55900,
+    setupCents: 49500,
+    setupPaid: true,
+    recurringStartAt: "2026-12-07T19:00:00.000Z",
+    minimumTermEndsAt: "2027-02-07T19:00:00.000Z",
+    rateLockEndsAt: "2028-11-07T19:00:00.000Z",
+    entitlementYearEndsAt: "2027-11-07T19:00:00.000Z",
+    systemsUsed: 0,
+    maintenanceUsed: 0,
+    pauseDaysUsed: 0,
+    cancelAt: null,
+    pauseCollection: false,
+    attention: null,
+    termsVersion: "2026-11-07",
+    lastStatusEventCreated: 0,
+    version: 0,
+    createdAt: now.toISOString(),
+  });
+  await store.enqueueAlert({
+    id: "alert_staff",
+    dedupeKey: "evt_staff:setup_paid:owner",
+    sourceEventId: "evt_staff",
+    kind: "setup_paid",
+    audience: "owner",
+    memberId: "mem_staff",
+    amountCents: 49500,
+    status: "pending",
+    nextAttemptAt: now.toISOString(),
+    attempts: 0,
+    lastError: null,
+    createdAt: now.toISOString(),
+  });
+  let payload: { subject?: string; text?: string; to?: string[] } = {};
+  await drainAlerts({
+    env,
+    store,
+    stripe: null,
+    now: () => now,
+    fetchImpl: async (_input, init) => {
+      payload = JSON.parse(String(init?.body ?? "{}"));
+      return new Response("sent", { status: 200 });
+    },
+  } as Deps);
+  assert.equal(payload.subject, "New ManHair member: Alex Rivera – Signature");
+  assert.match(payload.text ?? "", /member@example.com/);
+  assert.match(payload.text ?? "", /\+1 \(904\) 555-0100/);
+  assert.match(payload.text ?? "", /\$495/);
+  assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/hub\//);
 });

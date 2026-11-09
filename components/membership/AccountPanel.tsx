@@ -14,6 +14,8 @@ type MemberView = {
   monthly: string;
   setup: string;
   setupPaid: boolean;
+  statusLabel?: string;
+  setupNote?: string;
   attention: string | null;
   systemsUsed: number;
   systemsIncluded: number;
@@ -122,9 +124,9 @@ export function AccountPanel({
           <h2 className="font-display text-2xl">{live.payment?.state === "paid" ? "Payment confirmed" : live.payment?.state === "failed" ? "Payment not confirmed" : "Confirming your payment"}</h2>
           <p className="mt-2">
             {live.payment?.state === "paid"
-              ? "The processor confirmed the setup payment. It is credited toward the first system."
+              ? "Your setup payment is confirmed and applies toward your first system."
               : live.payment?.state === "failed"
-                ? "The processor did not confirm a payment. You do not need to pay again unless you start a new checkout."
+                ? "The payment was not confirmed. You do not need to pay again unless you start a new checkout."
                 : "Your checkout returned before the payment confirmation arrived. This page checks again every few seconds. You do not need to pay again."}
           </p>
           <p className="mt-2">The first system typically takes 8–12 weeks. The monthly charge can begin before the system is ready. That 30 days is not a promise that the system arrives.</p>
@@ -135,9 +137,7 @@ export function AccountPanel({
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-600">Membership</p>
         <h1 className="mh-display mt-2 text-4xl">{live.tierName}</h1>
         <p className="mt-3 text-sm leading-6 text-ink-700">
-          Status: {live.status}. {live.monthly} monthly after the first membership charge
-          {live.firstRecurringAt ? ` on ${formatStudio(new Date(live.firstRecurringAt))}` : ""}.
-          Setup {live.setup} is {live.setupPaid ? "marked paid by a processor event" : "not confirmed by a processor event yet"}.
+          {live.statusLabel ?? "Payment not confirmed"}. {live.setupNote ?? ""} {live.monthly} a month.
         </p>
         {live.serviceHold ? (
           <section role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-6 text-red-900">
