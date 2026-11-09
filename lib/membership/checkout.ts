@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { billingDisclosure, billingTimeline } from "./dates";
+import { billingTimeline } from "./dates";
 import { normalizeEmail } from "./tokens";
-import { TERMS_VERSION, TIERS, TRIAL_DAYS, type TierId } from "./offer";
+import { TERMS_VERSION, TIERS, TRIAL_DAYS, formatUsd, type TierId } from "./offer";
 import { expectedPrice, type AppEnv, type Blocker } from "./readiness";
 
 export type PriceSnapshot = {
@@ -108,7 +108,10 @@ export function buildCheckoutParams(input: {
     };
   }
   const timeline = billingTimeline(input.now);
-  const disclosure = billingDisclosure(input.now, expected.monthlyCents, expected.setupCents);
+  const disclosure = checkoutSubmitMessage({
+    setupCents: expected.setupCents,
+    termsUrl: `${input.origin}/membership-terms/`,
+  });
   const params: CheckoutParams = {
     mode: "subscription",
     client_reference_id: input.memberId,
@@ -138,7 +141,7 @@ export function buildCheckoutParams(input: {
     success_url: `${input.origin}/api/membership/return/?token=${encodeURIComponent(input.returnToken)}`,
     cancel_url: `${input.origin}/join/?tier=${input.tier}&checkout=cancelled`,
     payment_method_collection: "always",
-    custom_text: { submit: { message: disclosure.slice(0, 1200) } },
+    custom_text: { submit: { message: disclosure } },
     expires_at: Math.floor(input.now.getTime() / 1000) + 30 * 60,
     integration_identifier: integrationIdentifier(),
   };
@@ -153,6 +156,26 @@ export function buildCheckoutParams(input: {
       termsVersion: TERMS_VERSION,
     }),
   };
+}
+
+/** Stripe Checkout custom_text.submit.message maximum. */
+export const STRIPE_CHECKOUT_SUBMIT_MESSAGE_MAX = 1200;
+
+/** Short complete disclosure for the Stripe pay button. Not a cut-off copy of the long join page. */
+export function checkoutSubmitMessage(input: { setupCents: number; termsUrl: string }): string {
+  const setup = formatUsd(input.setupCents);
+  const message = [
+    `${setup} is charged today and goes toward your first system.`,
+    "The first monthly charge is 30 days later, then each month.",
+    "The minimum term is 3 months, then month to month.",
+    "If a consultation finds the membership unsuitable, the setup and membership charges are refunded and future billing is cancelled.",
+    "A failed monthly payment has 14 days before visits and new system orders are held.",
+    `Full terms are at ${input.termsUrl}.`,
+  ].join(" ");
+  if (message.length > STRIPE_CHECKOUT_SUBMIT_MESSAGE_MAX) {
+    throw new Error("checkout submit message exceeds Stripe's 1200 character limit");
+  }
+  return message;
 }
 
 export function assertSingleSubscription(params: CheckoutParams): void {

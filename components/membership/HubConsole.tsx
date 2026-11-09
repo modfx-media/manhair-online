@@ -186,7 +186,7 @@ export function HubConsole({ initial }: { initial: Snapshot }) {
           <input className="min-h-11 rounded-md border border-ink-300 px-3" name="note" placeholder="What staff confirmed" required minLength={8} />
           <button className="mh-btn mh-btn-ghost w-fit" type="submit">Record suitability request</button>
         </form>
-        <p>Messaging is {data.messaging}. Draft templates below are not approved copy and nothing is sent.</p>
+        <p>Messaging: {data.messaging}. Draft templates below are not approved copy.</p>
         <button className="mh-btn mh-btn-ghost w-fit" type="button" onClick={() => void refresh()}>
           Refresh
         </button>

@@ -96,6 +96,8 @@ const nextConfig: NextConfig = {
               permanent: true,
             },
           ]),
+      { source: "/terms", destination: "/membership-terms/", permanent: true },
+      { source: "/terms/", destination: "/membership-terms/", permanent: true },
       { source: "/before-after", destination: "/results/", permanent: true },
       { source: "/about-us", destination: "/about/", permanent: true },
       { source: "/prices", destination: "/", permanent: true },

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { staffRole, memberCanRead } from "../../lib/membership/access";
-import { assessCheckoutAmount, buildCheckoutParams, priceMatches } from "../../lib/membership/checkout";
+import { STRIPE_CHECKOUT_SUBMIT_MESSAGE_MAX, assessCheckoutAmount, buildCheckoutParams, checkoutSubmitMessage, priceMatches } from "../../lib/membership/checkout";
 import { reduceBillingEvent, type MemberBilling } from "../../lib/membership/billing";
 import { customerStatusLabel, formatStudioDay, formatStudioTime } from "../../lib/membership/email-copy";
 import { APP_TIMEZONE, addMonths, billingTimeline, formatStudio } from "../../lib/membership/dates";
@@ -199,6 +199,21 @@ test("checkout params are one subscription with a 30 day trial and no card types
   assert.equal(built.params.line_items.length, 2);
   assert.equal(built.params.payment_method_collection, "always");
   assert.equal("payment_method_types" in built.params, false);
+  const submit = built.params.custom_text.submit.message;
+  const expectedSubmit = checkoutSubmitMessage({
+    setupCents: 49500,
+    termsUrl: "https://www.manhaironline.com/membership-terms/",
+  });
+  assert.equal(submit, expectedSubmit);
+  assert.ok(submit.length <= STRIPE_CHECKOUT_SUBMIT_MESSAGE_MAX);
+  assert.ok(submit.endsWith("."));
+  assert.match(submit, /\$495 is charged today and goes toward your first system\./);
+  assert.match(submit, /first monthly charge is 30 days later/);
+  assert.match(submit, /3 months, then month to month/);
+  assert.match(submit, /consultation finds the membership unsuitable/);
+  assert.match(submit, /14 days before visits and new system orders are held/);
+  assert.match(submit, /Full terms are at https:\/\/www\.manhaironline\.com\/membership-terms\/\./);
+  assert.doesNotMatch(submit, /…|14 da$/);
   assert.match(built.params.integration_identifier, /^manhair_membership_[a-z]{8}$/);
   assert.equal(assessCheckoutAmount(49500, 49500, 55900), "setup_only");
   assert.equal(assessCheckoutAmount(105400, 49500, 55900), "setup_and_recurring");

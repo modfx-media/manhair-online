@@ -84,6 +84,20 @@ export function customerAlertsReady(env: AppEnv): boolean {
   return confirmationEmailReady(env) && env.MEMBERSHIP_LIFECYCLE_SEND === "true";
 }
 
+export function messagingStatus(env: AppEnv) {
+  return {
+    confirmationEmail: confirmationEmailReady(env) ? "enabled" : "off",
+    lifecycleEmail: customerAlertsReady(env) ? "enabled" : "off",
+    staffAlerts: ownerAlertsReady(env) ? "enabled" : "off",
+    sms: env.MEMBERSHIP_SMS_SEND === "true" ? "enabled" : "off",
+  };
+}
+
+export function messagingSummary(env: AppEnv): string {
+  const status = messagingStatus(env);
+  return `confirmation email ${status.confirmationEmail}, lifecycle email ${status.lifecycleEmail}, staff alerts ${status.staffAlerts}, SMS ${status.sms}`;
+}
+
 export function alertsForPayment(input: {
   eventId: string;
   previousStatus: MemberStatus | null;

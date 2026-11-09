@@ -1,4 +1,4 @@
-import { alertAfterFailure, alertLogFields, alertsForPayment, confirmationEmailReady, customerAlertsReady, ownerAlertText, ownerAlertsReady, staffAlertRecipients, staffNoticeDraft, type AlertDraft, type AlertRecord } from "./alerts";
+import { alertAfterFailure, alertLogFields, alertsForPayment, confirmationEmailReady, customerAlertsReady, messagingSummary, messagingStatus, ownerAlertText, ownerAlertsReady, staffAlertRecipients, staffNoticeDraft, type AlertDraft, type AlertRecord } from "./alerts";
 import { SMS_CONSENT_TEXT, SMS_CONSENT_VERSION, businessIdentity, emailComplianceFooter, memberEmailFrom, recoveryUnavailableMessage, statementDescriptorSuffix } from "./business";
 import { confirmationMessage, customerStatusLabel, publicSiteOrigin, staffAlertMessage } from "./email-copy";
 import { messageHolds, messageTransport } from "./message-holds";
@@ -195,7 +195,7 @@ export async function handleReadiness(deps: Deps): Promise<Response> {
     founding: founding.enabled ? { enabled: true, cap: founding.cap } : { enabled: false, reason: founding.reason },
     ghl: ghlMode(deps.env),
     scheduling: MANUAL_SCHEDULING.status,
-    messaging: "disabled",
+    messaging: messagingStatus(deps.env),
     database: databaseReady(deps.env) ? "configured" : "missing",
     sandboxTimelineConfirmed: CHECKOUT_TIMELINE_SANDBOX_CONFIRMED,
     legalReview: "pending",
@@ -1645,7 +1645,7 @@ async function hubSnapshot(deps: Deps) {
     ok: true,
     ghl: ghlMode(deps.env),
     scheduling: SCHEDULING,
-    messaging: "disabled",
+    messaging: messagingSummary(deps.env),
     messageHolds: messageHolds(),
     messageTemplates: messageDrafts(),
     assignees: assignableStaff(deps.env),

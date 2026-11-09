@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { handleAccountGet, handleAccountPost, handleCheckout, handleConsultation, handleHub, handleHubEnter, handleHubSignIn, handleWebhook, type Deps, type StripeLike } from "../../lib/membership/handlers";
+import { handleAccountGet, handleAccountPost, handleCheckout, handleConsultation, handleHub, handleHubEnter, handleHubSignIn, handleReadiness, handleWebhook, type Deps, type StripeLike } from "../../lib/membership/handlers";
 import { createMemoryStore } from "../../lib/membership/memory-store";
 import type { MemberRecord } from "../../lib/membership/types";
 import { billingTimeline } from "../../lib/membership/dates";
@@ -772,6 +772,35 @@ test("a paid member is not moved from Active Clients into a prospect stage", asy
   assert.equal(response.status, 409);
   const body = await response.json();
   assert.equal(body.error, "stage_regression");
+});
+
+test("readiness reports the real email and SMS flags", async () => {
+  const off = await handleReadiness(deps());
+  const offBody = await off.json();
+  assert.deepEqual(offBody.messaging, {
+    confirmationEmail: "off",
+    lifecycleEmail: "off",
+    staffAlerts: "off",
+    sms: "off",
+  });
+  const on = await handleReadiness(deps({
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_LIFECYCLE_SEND: "true",
+      MEMBERSHIP_OWNER_ALERTS_SEND: "true",
+      MEMBERSHIP_STAFF_ALERT_EMAILS: "owner@manhaironline.com",
+      MEMBERSHIP_SMS_SEND: "true",
+    }),
+  }));
+  const onBody = await on.json();
+  assert.deepEqual(onBody.messaging, {
+    confirmationEmail: "enabled",
+    lifecycleEmail: "enabled",
+    staffAlerts: "enabled",
+    sms: "enabled",
+  });
 });
 
 test("messaging send is refused", async () => {
