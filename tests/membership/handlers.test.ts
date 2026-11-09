@@ -308,6 +308,147 @@ test("checkout session failures log the Stripe error and keep the customer messa
   }
 });
 
+test("an open checkout session blocks a second signup for that email", async () => {
+  const context = deps();
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("open-checkout@example.com")), context)).status, 200);
+  const second = await handleCheckout(checkoutRequest({ ...checkoutBody("open-checkout@example.com"), tier: "essential" }), context);
+  assert.equal(second.status, 409);
+  assert.equal((await second.json()).error, "already_member");
+  const member = (await context.store.listMembersByEmail("open-checkout@example.com"))[0]!;
+  const checkout = await context.store.latestCheckout(member.id);
+  await context.store.saveCheckout({ ...checkout!, createdAt: new Date(NOW.getTime() - 31 * 60 * 1000).toISOString() });
+  assert.equal((await handleCheckout(checkoutRequest({ ...checkoutBody("open-checkout@example.com"), tier: "elite" }), context)).status, 200);
+});
+
+test("setup payment promotes a held subscription in every event order", async () => {
+  const trialStart = 1_700_000_000;
+  const trialEnd = trialStart + 30 * 86400;
+  const permute = <T>(items: T[]): T[][] => items.length === 0
+    ? [[]]
+    : items.flatMap((item, index) => permute([...items.slice(0, index), ...items.slice(index + 1)]).map((order) => [item, ...order]));
+  const sequences: string[][] = [];
+  for (const sub of ["created", "updated"]) {
+    for (const order of permute(["sub", "invoice", "paid"])) sequences.push(order.map((step) => (step === "sub" ? sub : step)));
+    for (const order of permute(["sub", "invoice", "unpaid", "async"])) {
+      if (order.indexOf("unpaid") < order.indexOf("async")) sequences.push(order.map((step) => (step === "sub" ? sub : step)));
+    }
+  }
+  let index = 0;
+  for (const steps of sequences) {
+    const email = `order${index}@example.com`;
+    index += 1;
+    const context = deps({
+      constructEvent: (raw) => JSON.parse(raw),
+      env: baseEnv({
+        RESEND_API_KEY: "re_test",
+        RESEND_FROM: "ManHair <info@manhaironline.com>",
+        MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+        MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+      }),
+      fetchImpl: async () => new Response("ok", { status: 200 }),
+    });
+    assert.equal((await handleCheckout(checkoutRequest(checkoutBody(email)), context)).status, 200, steps.join(">"));
+    const member = (await context.store.listMembersByEmail(email))[0]!;
+    const customer = `cus_${member.id}`;
+    const subscription = `sub_${member.id}`;
+    const send = (id: string, type: string, object: Record<string, unknown>, created: number) => handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+      method: "POST",
+      headers: { "stripe-signature": "test" },
+      body: JSON.stringify({ id, type, livemode: false, created, data: { object } }),
+    }), context);
+    for (const [offset, step] of steps.entries()) {
+      const created = 100 + offset;
+      const id = `evt_${member.id}_${step}_${offset}`;
+      if (step === "created" || step === "updated") {
+        assert.equal((await send(id, `customer.subscription.${step}`, {
+          id: subscription,
+          customer,
+          status: "trialing",
+          metadata: { member_id: member.id },
+          trial_start: trialStart,
+          trial_end: trialEnd,
+          current_period_end: trialEnd,
+          items: { data: [{ id: "si_order" }] },
+        }, created)).status, 200, steps.join(">"));
+      } else if (step === "invoice") {
+        assert.equal((await send(id, "invoice.paid", {
+          id: `in_${member.id}`,
+          customer,
+          amount_paid: 49500,
+          billing_reason: "subscription_create",
+          metadata: { member_id: member.id },
+          lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] },
+        }, created)).status, 200, steps.join(">"));
+      } else if (step === "paid" || step === "unpaid") {
+        assert.equal((await send(id, "checkout.session.completed", {
+          client_reference_id: member.id,
+          customer,
+          subscription,
+          amount_total: 49500,
+          payment_status: step === "paid" ? "paid" : "unpaid",
+        }, created)).status, 200, steps.join(">"));
+      } else {
+        assert.equal((await send(id, "checkout.session.async_payment_succeeded", {
+          client_reference_id: member.id,
+          customer,
+          subscription,
+          amount_total: 49500,
+          payment_status: "paid",
+        }, created)).status, 200, steps.join(">"));
+      }
+    }
+    const saved = await context.store.findMemberById(member.id);
+    assert.equal(saved?.setupPaid, true, steps.join(">"));
+    assert.equal(saved?.status, "trialing", steps.join(">"));
+    assert.equal((await context.store.listDeals()).find((deal) => deal.memberId === member.id)?.stage, "Active Clients", steps.join(">"));
+    assert.equal((await context.store.listAlerts()).filter((alert) => alert.kind === "setup_paid" && alert.audience === "customer").length, 1, steps.join(">"));
+  }
+});
+
+test("a paid checkout re-fetches the subscription when no status was stored", async () => {
+  const trialEnd = 1_700_000_000 + 30 * 86400;
+  const stripe = fakeStripe();
+  stripe.subscriptions.retrieve = async () => ({ status: "trialing", cancel_at: null, pause_collection: null, trial_end: trialEnd, current_period_end: trialEnd });
+  const context = deps({
+    stripe,
+    constructEvent: (raw) => JSON.parse(raw),
+    env: baseEnv({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "ManHair <info@manhaironline.com>",
+      MEMBERSHIP_CUSTOMER_ALERTS_SEND: "true",
+      MEMBERSHIP_MESSAGE_TRANSPORT: "live",
+    }),
+    fetchImpl: async () => new Response("ok", { status: 200 }),
+  });
+  assert.equal((await handleCheckout(checkoutRequest(checkoutBody("refetch@example.com")), context)).status, 200);
+  const member = (await context.store.listMembersByEmail("refetch@example.com"))[0]!;
+  await context.store.saveMember({ ...member, stripeSubscriptionId: "sub_refetch", stripeCustomerId: "cus_refetch" });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST",
+    headers: { "stripe-signature": "test" },
+    body: JSON.stringify({
+      id: "evt_refetch_invoice",
+      type: "invoice.paid",
+      livemode: false,
+      created: 40,
+      data: { object: {
+        id: "in_refetch",
+        customer: "cus_refetch",
+        amount_paid: 49500,
+        billing_reason: "subscription_create",
+        metadata: { member_id: member.id },
+        lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] },
+      } },
+    }),
+  }), context);
+  assert.equal(response.status, 200);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.setupPaid, true);
+  assert.equal(saved?.status, "trialing");
+  assert.equal(saved?.chargeAtSource, "stripe");
+  assert.equal((await context.store.listAlerts()).filter((alert) => alert.kind === "setup_paid" && alert.audience === "customer").length, 1);
+});
+
 test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
   const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
   await handleCheckout(checkoutRequest(checkoutBody()), context);

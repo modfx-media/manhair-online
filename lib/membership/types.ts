@@ -31,6 +31,7 @@ export type MemberRecord = {
   attention: Attention;
   paymentGraceStartedAt?: string | null;
   pauseResumeAt?: string | null;
+  heldStripeStatus?: MemberStatus | null;
   termsVersion: string;
   lastStatusEventCreated: number;
   version: number;
@@ -238,6 +239,7 @@ export interface MembershipStore {
   reserveFounding(input: { id: string; memberId: string; expiresAt: string; cap: number }): Promise<"reserved" | "cap">;
   setFoundingStatus(id: string, status: "converted" | "released"): Promise<void>;
   getCheckout(key: string): Promise<CheckoutRecord | null>;
+  latestCheckout(memberId: string): Promise<CheckoutRecord | null>;
   saveCheckout(row: CheckoutRecord): Promise<void>;
   claimEvent(id: string, type: string): Promise<EventClaim>;
   finishEvent(id: string, status: "processed" | "failed"): Promise<void>;

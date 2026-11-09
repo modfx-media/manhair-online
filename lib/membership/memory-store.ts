@@ -105,6 +105,11 @@ export function createMemoryStore(): MembershipStore {
     async getCheckout(key) {
       return checkouts.get(key) ?? null;
     },
+    async latestCheckout(memberId) {
+      const rows = [...checkouts.values()].filter((row) => row.memberId === memberId);
+      rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return rows[0] ?? null;
+    },
     async saveCheckout(row) {
       checkouts.set(row.idempotencyKey, row);
     },
