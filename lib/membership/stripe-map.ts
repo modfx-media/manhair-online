@@ -106,7 +106,8 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
   }
   if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
     const lineList = linesOf(object);
-    const subscriptionId = lineList.length
+    const parent = object.parent as { subscription_details?: { subscription?: unknown; metadata?: Record<string, string> } } | undefined;
+    const subscriptionId = idOf(parent?.subscription_details?.subscription) ?? idOf(object.subscription) ?? (lineList.length
       ? idOf((object.lines as { data?: Array<{ subscription?: unknown }> } | undefined)?.data?.[0]?.subscription) ??
         idOf(
           (
@@ -114,12 +115,12 @@ export function mapStripeEvent(event: StripeEventShape): InternalEvent {
               .data?.[0]?.parent
           )?.subscription_item_details?.subscription,
         )
-      : null;
+      : null);
     return {
       id: event.id,
       type: event.type,
       created: event.created,
-      memberId: metadata.member_id ?? null,
+      memberId: parent?.subscription_details?.metadata?.member_id ?? metadata.member_id ?? null,
       customerId: idOf(object.customer),
       subscriptionId,
       invoiceId: typeof object.id === "string" ? object.id : event.id,

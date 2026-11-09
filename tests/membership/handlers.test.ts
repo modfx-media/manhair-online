@@ -194,6 +194,28 @@ test("a live event cannot change test membership data", async () => {
   assert.equal(await context.store.seenEvent("evt_wrong_mode"), false);
 });
 
+test("a setup invoice arriving before checkout uses subscription metadata even after a newer status", async () => {
+  const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
+  await handleCheckout(checkoutRequest(checkoutBody()), context);
+  const member = (await context.store.listMembersByEmail("member@example.com"))[0]!;
+  await context.store.saveMember({ ...member, status: "active", lastStatusEventCreated: 100 });
+  const response = await handleWebhook(new Request("https://www.manhaironline.com/api/membership/webhook/", {
+    method: "POST", headers: { "stripe-signature": "test" },
+    body: JSON.stringify({ id: "evt_early_invoice", type: "invoice.paid", livemode: false, created: 99,
+      data: { object: { id: "in_setup_first", customer: "cus_before_checkout", amount_paid: 49500,
+        billing_reason: "subscription_create", metadata: {},
+        parent: { subscription_details: { subscription: "sub_before_checkout", metadata: { member_id: member.id } } },
+        lines: { data: [{ amount: 49500, pricing: { price_details: { price: "price_setup" } } }] } } } }),
+  }), context);
+  assert.equal(response.status, 200);
+  const saved = await context.store.findMemberById(member.id);
+  assert.equal(saved?.setupPaid, true);
+  assert.equal(saved?.status, "active");
+  const invoices = await context.store.listInvoices(member.id);
+  assert.equal(invoices[0]?.id, "in_setup_first");
+  assert.equal(invoices[0]?.amountPaid, 49500);
+});
+
 test("failed delayed checkout stays unpaid and cannot regress a paid member", async () => {
   const context = deps({ constructEvent: (raw) => JSON.parse(raw) });
   await handleCheckout(checkoutRequest(checkoutBody()), context);
