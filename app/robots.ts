@@ -9,6 +9,8 @@ import { SITE } from "@/lib/site";
  */
 const DISALLOW = [
   "/landing-page/",
+  "/book",
+  "/book/",
   "/booking/",
   "/video-call/",
   "/hair-preview/",
