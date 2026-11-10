@@ -24,10 +24,10 @@
    "[[IF x]]...[[ELSE]]...[[/IF]] marks conditional copy (checkin_day90_email, staff_cancel_requested_email).",
    "Recheck state immediately before every delayed send (paid? paused? cancelled? appointment changed?). Skip if the condition no longer holds.",
    "Dedupe per member + template + business transition. Stripe retries of the same invoice never restart grace and never re-send day-0 notices.",
-   "SMS: send only with recorded SMS consent (SMS_CONSENT_TEXT 2026-11-09-tcpa covers membership/visits/billing, not marketing). Recheck STOP/DND before each send. Quiet hours: send 9:00 AM to 8:00 PM in the member's local time (default America/Los_Angeles); queue anything outside the window until 9:00 AM. Billing SMS with the portal link render as about 170-185 characters, which is 2 segments.",
+   "Member SMS: send only with recorded SMS consent (SMS_CONSENT_TEXT 2026-11-09-tcpa covers membership/visits/billing, not marketing). Recheck STOP/DND before each send. Quiet hours: send 9:00 AM to 8:00 PM in the member's local time (default America/Los_Angeles); queue anything outside the window until 9:00 AM. Billing SMS with the portal link render as about 170-185 characters, which is 2 segments. Staff operational texts are not these templates: they go only to STAFF_ALERT_SMS_NUMBERS, ignore member consent and quiet hours, and still require MEMBERSHIP_SMS_SEND=true.",
    "Phase 2 = disabled: marketing (nurture, abandoned signup, win-back, review request), events not modeled in the app (order placed, system ready, no-show), optional monthly reminder, and staff SMS.",
    "Monthly receipt: suppress if Stripe automatic receipt emails are on.",
-   "No booking links, calendar sync, sales-tax, medical, or result-guarantee claims. Customer copy says 'our team', never a staff name (franchise-ready)."
+   "Consultations are booked with our ManHair stylist at {{booking_url}}. No calendar-sync, sales-tax, medical, or result-guarantee claims. Customer copy says 'our ManHair stylist' or 'our team', never a staff member's name."
   ]
  },
  "merge_variables": [
@@ -200,6 +200,12 @@
    "used_by": 4
   },
   {
+   "name": "booking_url",
+   "status": "exists",
+   "source": "`${publicSiteOrigin(env)}/book/`",
+   "used_by": 4
+  },
+  {
    "name": "join_url",
    "status": "needs adding (trivial)",
    "source": "`${origin}/join/`",
@@ -354,12 +360,12 @@
    "enabled_phase": 1,
    "enabled": false,
    "subject": "We got your request, {{first_name}}",
-   "preheader": "Our team will reach out to find a time that works.",
-   "body_html": "<p>Hi {{first_name}},</p><p>Thanks for reaching out to ManHair. We have your request, and someone from our team will contact you personally to set up a time. There's nothing you need to book.</p><p>If you'd like to get started sooner, you can join online and pay before your consultation. If the consultation shows the membership isn't the right fit, we refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.</p><p><a class=\"mh-button\" href=\"{{memberships_url}}\">View memberships</a></p><p>The ManHair team</p>",
-   "body_text": "Hi {{first_name}},\n\nThanks for reaching out to ManHair. We have your request, and someone from our team will contact you personally to set up a time. There's nothing you need to book.\n\nIf you'd like to get started sooner, you can join online and pay before your consultation. If the consultation shows the membership isn't the right fit, we refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.\n\nView memberships: {{memberships_url}}\n\nThe ManHair team",
+   "preheader": "Book your consultation with our ManHair stylist.",
+   "body_html": "<p>Hi {{first_name}},</p><p>Thanks for reaching out to ManHair. We have your request. Book your consultation with our ManHair stylist at the ManHair booking link.</p><p>If you'd like to get started sooner, you can join online and pay before your consultation. If the consultation shows the membership isn't the right fit, we refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.</p><p><a class=\"mh-button\" href=\"{{booking_url}}\">Book your consultation</a></p><p><a href=\"{{memberships_url}}\">View memberships</a></p><p>The ManHair team</p>",
+   "body_text": "Hi {{first_name}},\n\nThanks for reaching out to ManHair. We have your request. Book your consultation with our ManHair stylist at the ManHair booking link: {{booking_url}}\n\nIf you'd like to get started sooner, you can join online and pay before your consultation. If the consultation shows the membership isn't the right fit, we refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.\n\nView memberships: {{memberships_url}}\n\nThe ManHair team",
    "sms_body": null,
    "replaces": "app: lead.consult.received (held)",
-   "notes": "Transactional ack for a lead, not marketing. No booking link, no response-time promise. Soft CTA to memberships_url only."
+   "notes": "Transactional ack for a lead, not marketing. Points at the tracked ManHair booking link. No response-time promise."
   },
   {
    "id": "membership_welcome_email",
@@ -371,11 +377,11 @@
    "enabled": false,
    "subject": "Welcome to ManHair, {{first_name}}",
    "preheader": "Your {{plan_name}} membership is set. Here's what happens next.",
-   "body_html": "<p>Hi {{first_name}},</p><p>Welcome to ManHair. Your {{plan_name}} membership is confirmed, and we're glad you're here.</p><p>Here's where everything stands:</p><ul><li>{{setup_amount}} setup paid today, credited toward your first system</li><li>{{monthly_amount}} a month, with the first charge on {{first_charge_date}}</li><li>3-month minimum through {{minimum_term_end_date}}, then month to month</li><li>Charges show on your card statement as {{statement_descriptor}}</li></ul><p>What happens next: someone from our team will reach out personally to schedule your consultation. A first system typically takes 8 to 12 weeks, and we'll go over timing with you when we meet.</p><p>If the consultation shows the membership isn't the right fit, we'll refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.</p><p>Questions before then? Reply to this email. It comes straight to our team.</p><p><a class=\"mh-button\" href=\"{{account_url}}\">Open your account</a></p><p>The ManHair team</p>",
-   "body_text": "Hi {{first_name}},\n\nWelcome to ManHair. Your {{plan_name}} membership is confirmed, and we're glad you're here.\n\nHere's where everything stands:\n- {{setup_amount}} setup paid today, credited toward your first system\n- {{monthly_amount}} a month, with the first charge on {{first_charge_date}}\n- 3-month minimum through {{minimum_term_end_date}}, then month to month\n- Charges show on your card statement as {{statement_descriptor}}\n\nWhat happens next: someone from our team will reach out personally to schedule your consultation. A first system typically takes 8 to 12 weeks, and we'll go over timing with you when we meet.\n\nIf the consultation shows the membership isn't the right fit, we'll refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.\n\nQuestions before then? Reply to this email. It comes straight to our team.\n\nOpen your account: {{account_url}}\n\nThe ManHair team",
+   "body_html": "<p>Hi {{first_name}},</p><p>Welcome to ManHair. Your {{plan_name}} membership is confirmed, and we're glad you're here.</p><p>Here's where everything stands:</p><ul><li>{{setup_amount}} setup paid today, credited toward your first system</li><li>{{monthly_amount}} a month, with the first charge on {{first_charge_date}}</li><li>3-month minimum through {{minimum_term_end_date}}, then month to month</li><li>Charges show on your card statement as {{statement_descriptor}}</li></ul><p>What happens next: book your consultation with our ManHair stylist at the ManHair booking link. A first system typically takes 8 to 12 weeks, and we'll go over timing with you when we meet.</p><p><a class=\"mh-button\" href=\"{{booking_url}}\">Book your consultation</a></p><p>If the consultation shows the membership isn't the right fit, we'll refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.</p><p>Questions before then? Reply to this email. It comes straight to our team.</p><p><a class=\"mh-button\" href=\"{{account_url}}\">Open your account</a></p><p>The ManHair team</p>",
+   "body_text": "Hi {{first_name}},\n\nWelcome to ManHair. Your {{plan_name}} membership is confirmed, and we're glad you're here.\n\nHere's where everything stands:\n- {{setup_amount}} setup paid today, credited toward your first system\n- {{monthly_amount}} a month, with the first charge on {{first_charge_date}}\n- 3-month minimum through {{minimum_term_end_date}}, then month to month\n- Charges show on your card statement as {{statement_descriptor}}\n\nWhat happens next: book your consultation with our ManHair stylist at the ManHair booking link: {{booking_url}}. A first system typically takes 8 to 12 weeks, and we'll go over timing with you when we meet.\n\nIf the consultation shows the membership isn't the right fit, we'll refund your setup and any membership charges in full and cancel billing. The 3-month minimum doesn't apply in that case.\n\nQuestions before then? Reply to this email. It comes straight to our team.\n\nOpen your account: {{account_url}}\n\nThe ManHair team",
    "sms_body": null,
    "replaces": "app: confirmationMessage() in lib/membership/email-copy.ts (live today)",
-   "notes": "Replaces confirmationMessage() in lib/membership/email-copy.ts (the only customer email live today). Send only when chargeAtSource==='stripe' and first_charge_date is set (existing guard). No booking link."
+   "notes": "Replaces confirmationMessage() in lib/membership/email-copy.ts (the only customer email live today). Send only when chargeAtSource==='stripe' and first_charge_date is set (existing guard). Consultations use the tracked ManHair booking link."
   },
   {
    "id": "appointment_confirmed_email",
@@ -423,7 +429,7 @@
    "body_text": "Hi {{first_name}},\n\nYour appointment on {{appointment_date_time}} has been cancelled.\n\nOur team will reach out to find a new time. If you'd rather reach us first, just reply to this email or call or text {{support_phone}}.\n\nThe ManHair team",
    "sms_body": null,
    "replaces": null,
-   "notes": "Does not imply membership or billing changed. No booking link."
+   "notes": "Does not imply membership or billing changed. A cancelled visit is rescheduled with the team."
   },
   {
    "id": "appointment_reminder_email",
@@ -836,8 +842,8 @@
    "subject": null,
    "preheader": null,
    "body_html": null,
-   "body_text": "ManHair: Welcome. Setup is paid. We'll reach out to schedule your consultation. First monthly charge is {{first_charge_date}}. Reply STOP to opt out, HELP for help.",
-   "sms_body": "ManHair: Welcome. Setup is paid. We'll reach out to schedule your consultation. First monthly charge is {{first_charge_date}}. Reply STOP to opt out, HELP for help.",
+   "body_text": "ManHair: Welcome. Setup is paid. Book your consultation with our ManHair stylist: {{booking_url}} First monthly charge is {{first_charge_date}}. Reply STOP to opt out, HELP for help.",
+   "sms_body": "ManHair: Welcome. Setup is paid. Book your consultation with our ManHair stylist: {{booking_url}} First monthly charge is {{first_charge_date}}. Reply STOP to opt out, HELP for help.",
    "replaces": null,
    "notes": "First message to the member; requires SMS consent captured at signup. Trigger: membership.setup_paid. Quiet hours apply to send time. Must use STOP+HELP wording (first message only)."
   },
@@ -852,8 +858,8 @@
    "subject": null,
    "preheader": null,
    "body_html": null,
-   "body_text": "ManHair: Got your request. Our team will reach out to set a time. Reply STOP to opt out, HELP for help.",
-   "sms_body": "ManHair: Got your request. Our team will reach out to set a time. Reply STOP to opt out, HELP for help.",
+   "body_text": "ManHair: Got your request. Book with our ManHair stylist: {{booking_url}} Reply STOP to opt out, HELP for help.",
+   "sms_body": "ManHair: Got your request. Book with our ManHair stylist: {{booking_url}} Reply STOP to opt out, HELP for help.",
    "replaces": null,
    "notes": "May be the prospect's first text, so includes HELP. Send only if SMS consent was captured on the consultation form (app consent text currently only shown at join; consult form needs it)."
   },
@@ -1223,7 +1229,7 @@
    "body_text": "ManHair: New member {{member_full_name}}, {{plan_name}}, {{member_phone}}. Reach out to schedule. {{hub_url}}",
    "sms_body": "ManHair: New member {{member_full_name}}, {{plan_name}}, {{member_phone}}. Reach out to schedule. {{hub_url}}",
    "replaces": null,
-   "notes": "Phase 2. Keep disabled until a verified staff mobile number is configured and that staff member has opted in to operational texts. Honor STOP. Fall back to the staff email alert."
+   "notes": "Phase 2. Stays disabled. Live staff texts for a new paid member are sent by the app to STAFF_ALERT_SMS_NUMBERS, not this template."
   },
   {
    "id": "staff_hold_started_sms",

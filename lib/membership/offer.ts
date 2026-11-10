@@ -28,13 +28,7 @@ export const REFUND_POLICY = {
 
 export const PAUSE_POLICY_VERSION = "2026-11-07-void-collection-freeze-term";
 
-export const SCHEDULING = {
-  status: "manual" as const,
-  coordinator: "Griselda",
-  bookingUrl: null,
-  summary:
-    "After payment, Griselda arranges the visit manually. This site has no booking link and does not promise how soon she will reply. A confirmation exists only after staff record a real date, time, and time zone.",
-};
+export { SCHEDULING } from "./scheduling";
 
 export const FIRST_SYSTEM_LEAD = "8–12 weeks";
 

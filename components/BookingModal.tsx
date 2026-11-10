@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { bookingPageHref, contactIdFromFormMessage } from "@/lib/booking/link";
 
 const OPEN_EVENT = "manhair:open-booking-modal";
 const GHL_FORM_SRC =
   "https://link.manhaironline.com/widget/form/hh9qLIaLPQ8U3Lmqc9Nf";
-const BOOKING_PATH = "/booking/";
 
 /** Dispatches the global event that opens the booking form modal. */
 export function openBookingModal() {
@@ -27,14 +27,16 @@ function isFormSubmitMessage(data: unknown) {
   return /form[-_ ]?submit|formsubmitted|thank[-_ ]?you/i.test(blob);
 }
 
-function goToBooking() {
-  window.location.assign(BOOKING_PATH);
+function goToBooking(contactId: string | null) {
+  const current = new URLSearchParams(window.location.search);
+  window.location.assign(bookingPageHref(current, contactId));
 }
 
 /**
- * Site-wide booking modal. The form itself is the original GoHighLevel
- * widget; we only style the chrome around it. After the opt-in is
- * submitted, the visitor is sent to the hidden `/booking/` calendar.
+ * Site-wide booking modal. The form itself is the GoHighLevel opt-in
+ * so the lead is captured before anyone reaches the calendar. After
+ * submit, the visitor goes to /book/, which records the click and
+ * redirects to the ManHair stylist's booking link.
  */
 export function BookingModal() {
   const [open, setOpen] = useState(false);
@@ -46,6 +48,7 @@ export function BookingModal() {
       setOpen(true);
     };
     window.addEventListener(OPEN_EVENT, handleOpen);
+    if (new URLSearchParams(window.location.search).get("consult") === "1") handleOpen();
     return () => window.removeEventListener(OPEN_EVENT, handleOpen);
   }, []);
 
@@ -67,7 +70,7 @@ export function BookingModal() {
     if (!open) return;
     const onMessage = (event: MessageEvent) => {
       if (!isTrustedOrigin(event.origin)) return;
-      if (isFormSubmitMessage(event.data)) goToBooking();
+      if (isFormSubmitMessage(event.data)) goToBooking(contactIdFromFormMessage(event.data));
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -142,7 +145,7 @@ export function BookingModal() {
                     return;
                   }
                   if (Date.now() - firstLoadAt.current > 1500) {
-                    goToBooking();
+                    goToBooking(null);
                   }
                 }}
               />

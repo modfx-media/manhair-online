@@ -15,6 +15,7 @@ import { MANHAIR_GHL_LOCATION_ID, resolveGhlTarget } from "./manhair-ghl";
 import { ghlFreshness, mergeInboundLead, parseInbound, pullHighLevel, verifyGhlSignature, webhookTimestampFresh } from "./ghl-inbound";
 import { reviewedLifecycle } from "./lifecycle-review";
 import { appointmentInput, schedulingMessages, MANUAL_SCHEDULING } from "./scheduling";
+import { dispatchStaffSms } from "./staff-sms";
 import { matchConfirmedRefund, planSuitabilityFailure, refundStatusFromProcessor } from "./suitability";
 import { applyInvoiceObservation, paymentServiceHold, reconcileGrace } from "./payment-grace";
 import { isMembershipSchemaMissing } from "./sql-store";
@@ -297,6 +298,13 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
     }),
     smsConsent: body.smsConsent === true,
   });
+  await dispatchStaffSms(deps, {
+    kind: "consultation_requested",
+    sourceId: dealId,
+    name: `${firstName} ${lastName}`,
+    phone,
+    interest: leadMessage || "consultation",
+  });
   if (resolveGhlTarget(deps.env).ok) {
     const ghl = await syncLead(deps.env, {
       email,
@@ -318,7 +326,7 @@ export async function handleConsultation(request: Request, deps: Deps): Promise<
   return json({
     ok: true,
     synced: false,
-    message: "Your consultation request is saved. Griselda arranges the time. This did not start a payment or send you an email.",
+    message: "Your consultation request is saved. Book your consultation with our ManHair stylist at the ManHair booking link: https://www.manhaironline.com/book/. This did not start a payment.",
   });
   } catch (error) {
     if (isMembershipSchemaMissing(error)) return storageNotReady();
@@ -1352,6 +1360,15 @@ async function recordPaymentAlerts(
         createdAt: deps.now().toISOString(),
       });
     }
+    if (fresh && drafts.some((draft) => draft.kind === "setup_paid")) {
+      await dispatchStaffSms(deps, {
+        kind: "setup_paid",
+        sourceId: fresh.id,
+        name: `${fresh.firstName} ${fresh.lastName}`,
+        phone: fresh.phone,
+        plan: TIERS[fresh.tier].name,
+      });
+    }
     await drainAlerts(deps);
   } catch {
     console.info(JSON.stringify({ scope: "membership", event: "alert_enqueue_failed", sourceEventId: input.eventId }));
@@ -1795,7 +1812,7 @@ async function staffAppointment(body: Record<string, unknown>, deps: Deps): Prom
     bookingUrl: null,
     appointment: parsed.appointment,
     messages: schedulingMessages(parsed.appointment),
-    message: "The visit was recorded by staff. No booking link was published, and no confirmation or reminder was sent.",
+    message: "The visit was recorded by staff. Consultations are booked with our ManHair stylist at the ManHair booking link. No confirmation or reminder was sent from this screen.",
   });
 }
 

@@ -1,3 +1,4 @@
+import { PUBLIC_BOOKING_URL } from "@/lib/booking/link";
 import { businessIdentity, emailComplianceFooter, statementDescriptorSuffix, type BusinessIdentity } from "./business";
 import { APP_TIMEZONE } from "./dates";
 import type { AlertKind } from "./alerts";
@@ -72,7 +73,7 @@ export function confirmationMessage(member: ConfirmationMember, env: AppEnv, acc
   const identity = businessIdentity(env);
   const footer = emailComplianceFooter({ identity, manageUrl: accountUrl });
   const refund = "If a consultation finds the membership unsuitable, the setup payment and any membership charges are refunded and future billing is cancelled.";
-  const next = "Griselda will contact you to schedule your consultation. Visits are arranged manually. There is no booking link.";
+  const next = `Book your consultation with our ManHair stylist at the ManHair booking link: ${PUBLIC_BOOKING_URL}`;
   const subject = "Your ManHair membership is confirmed";
   const text = [
     `Hi ${member.firstName},`,

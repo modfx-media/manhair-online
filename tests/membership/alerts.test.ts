@@ -201,7 +201,8 @@ test("the setup confirmation names MANHAIR, the studio address, and the member r
   assert.match(payload.text ?? "", /\$559/);
   assert.match(payload.text ?? "", /Dec 8, 2026/);
   assert.doesNotMatch(payload.text ?? "", /Dec 9, 2026/);
-  assert.match(payload.text ?? "", /someone from our team/);
+  assert.match(payload.text ?? "", /our ManHair stylist/);
+  assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/book\//);
   assert.match(payload.text ?? "", /isn't the right fit/);
   assert.match(payload.text ?? "", /https:\/\/www\.manhaironline\.com\/account\//);
   assert.doesNotMatch(payload.text ?? "", /Unsubscribe/i);

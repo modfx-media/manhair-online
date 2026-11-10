@@ -113,12 +113,12 @@ export const PAGES: PageMeta[] = [
     path: "/booking/",
     title: "Book a Free Consultation | Orange County | ManHair",
     description:
-      "Book a free ManHair consultation online. Pick a time on the calendar for a virtual call, then visit our Orange, CA studio when you are ready.",
+      "Start a free ManHair consultation. Share your details, then book a time with our ManHair stylist.",
     canonical: `${SITE.origin}/booking/`,
     robots: NOINDEX,
     og: og(
       "Book a Free Consultation | Orange County | ManHair",
-      "Book a free ManHair consultation online. Pick a time on the calendar for a virtual call, then visit our Orange, CA studio when you are ready.",
+      "Start a free ManHair consultation. Share your details, then book a time with our ManHair stylist.",
       "/booking/"
     ),
     twitterCard: "summary_large_image",
@@ -127,12 +127,12 @@ export const PAGES: PageMeta[] = [
     path: "/video-call/",
     title: "Book a 45-Minute Video Consultation | ManHair",
     description:
-      "Schedule a private 45-minute ManHair video consultation. Pick a time, join from anywhere, and review hairline options face to face.",
+      "Start a ManHair video consultation. Share your details, then book a time with our ManHair stylist.",
     canonical: `${SITE.origin}/video-call/`,
     robots: NOINDEX,
     og: og(
       "Book a 45-Minute Video Consultation | ManHair",
-      "Schedule a private 45-minute ManHair video consultation. Pick a time, join from anywhere, and review hairline options face to face.",
+      "Start a ManHair video consultation. Share your details, then book a time with our ManHair stylist.",
       "/video-call/"
     ),
     twitterCard: "summary_large_image",

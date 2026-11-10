@@ -271,17 +271,13 @@ export async function pushMembershipProfile(
 /** Texts go out through HighLevel Conversations from the studio number. Off unless MEMBERSHIP_SMS_SEND=true. */
 export const GHL_SMS_FROM = "+19045268500";
 
-export async function sendLocationSms(
+async function postConversationSms(
   env: AppEnv,
   contactId: string | null,
   message: string,
   fetchImpl: typeof fetch,
-  consented: boolean,
-  now: Date = new Date(),
 ): Promise<{ sent: boolean; reason: string }> {
-  if (!consented) return { sent: false, reason: "no_sms_consent" };
   if (env.MEMBERSHIP_SMS_SEND !== "true") return { sent: false, reason: "sms_disabled" };
-  if (!smsWindowOpen(now)) return { sent: false, reason: "quiet_hours" };
   const target = resolveGhlTarget(env);
   if (!target.ok) return { sent: false, reason: "not_connected" };
   if (!contactId) return { sent: false, reason: "no_contact" };
@@ -297,4 +293,87 @@ export async function sendLocationSms(
   });
   if (!response?.ok) return { sent: false, reason: "push_failed" };
   return { sent: true, reason: "sent" };
+}
+
+export async function sendLocationSms(
+  env: AppEnv,
+  contactId: string | null,
+  message: string,
+  fetchImpl: typeof fetch,
+  consented: boolean,
+  now: Date = new Date(),
+): Promise<{ sent: boolean; reason: string }> {
+  if (!consented) return { sent: false, reason: "no_sms_consent" };
+  if (env.MEMBERSHIP_SMS_SEND !== "true") return { sent: false, reason: "sms_disabled" };
+  if (!smsWindowOpen(now)) return { sent: false, reason: "quiet_hours" };
+  return postConversationSms(env, contactId, message, fetchImpl);
+}
+
+/**
+ * Internal staff text. Ignores member consent and quiet hours.
+ * Still requires MEMBERSHIP_SMS_SEND=true. The contact id must already be the staff number's contact.
+ */
+export async function sendStaffSms(
+  env: AppEnv,
+  contactId: string | null,
+  message: string,
+  fetchImpl: typeof fetch,
+): Promise<{ sent: boolean; reason: string }> {
+  return postConversationSms(env, contactId, message, fetchImpl);
+}
+
+function phoneDigits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function samePhone(left: string, right: string): boolean {
+  const a = phoneDigits(left);
+  const b = phoneDigits(right);
+  if (a.length < 10 || b.length < 10) return false;
+  return a === b || (Math.abs(a.length - b.length) <= 3 && (a.endsWith(b) || b.endsWith(a)));
+}
+
+/** Find or create the GoHighLevel contact for a staff phone. Never selects a contact by email. */
+export async function contactIdForStaffNumber(
+  env: AppEnv,
+  phone: string,
+  fetchImpl: typeof fetch,
+): Promise<{ contactId: string | null; reason: string }> {
+  const target = resolveGhlTarget(env);
+  if (!target.ok) return { contactId: null, reason: "not_connected" };
+  const headers = {
+    Authorization: `Bearer ${target.token}`,
+    Version: "2021-07-28",
+    "Content-Type": "application/json",
+  };
+  const searchUrl = new URL("https://services.leadconnectorhq.com/contacts/");
+  searchUrl.searchParams.set("locationId", target.locationId);
+  searchUrl.searchParams.set("query", phone);
+  const searched = await fetchWithRetry(fetchImpl, searchUrl, { headers });
+  if (!searched?.ok) return { contactId: null, reason: "lookup_failed" };
+  const body = (await searched.json()) as { contacts?: Array<GhlContact & { phone?: string }> };
+  const matches = (body.contacts ?? []).filter((contact) => {
+    if (contact.locationId && contact.locationId !== target.locationId) return false;
+    return typeof contact.phone === "string" && samePhone(contact.phone, phone);
+  });
+  if (matches[0]?.id) return { contactId: matches[0].id, reason: "matched" };
+  const created = await fetchWithRetry(fetchImpl, "https://services.leadconnectorhq.com/contacts/", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      locationId: target.locationId,
+      phone,
+      firstName: "ManHair",
+      lastName: "Staff",
+      source: "ManHair staff alert",
+    }),
+  });
+  if (!created?.ok) return { contactId: null, reason: "create_failed" };
+  const createdBody = (await created.json()) as { contact?: { id?: string; locationId?: string } };
+  if (createdBody.contact?.locationId && createdBody.contact.locationId !== target.locationId) {
+    return { contactId: null, reason: "location_mismatch" };
+  }
+  return createdBody.contact?.id
+    ? { contactId: createdBody.contact.id, reason: "created" }
+    : { contactId: null, reason: "create_failed" };
 }

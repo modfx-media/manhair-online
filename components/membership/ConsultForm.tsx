@@ -35,7 +35,7 @@ export function ConsultForm() {
       return;
     }
     setDone(true);
-    setMessage(body.message ?? "Your consultation request is saved. Griselda arranges the time. This did not start a payment.");
+    setMessage(body.message ?? "Your consultation request is saved. Book your consultation with our ManHair stylist at the ManHair booking link: https://www.manhaironline.com/book/. This did not start a payment.");
   }
 
   if (done) {
@@ -73,7 +73,7 @@ export function ConsultForm() {
       <button className="mh-btn mh-btn-primary min-h-11" type="submit" disabled={pending}>
         {pending ? "Saving" : "Request a consultation"}
       </button>
-      <p className="text-sm leading-6 text-ink-700">This does not start a payment, book a visit, or send an email.</p>
+      <p className="text-sm leading-6 text-ink-700">This saves your request and does not start a payment. Book a time with our ManHair stylist at the ManHair booking link.</p>
       {message ? (
         <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {message}

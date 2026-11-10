@@ -82,6 +82,7 @@ export function memberMergeVars(input: {
     extra_visit_price: formatUsd(EXTRA_MAINTENANCE_CENTS),
     event_id: "",
     memberships_url: `${origin}/memberships/`,
+    booking_url: `${origin}/book/`,
     join_url: `${origin}/join/`,
     billing_portal_url: billingPortalUrl(input.env),
     appointment_date_time: input.appointment ? formatAppointmentWhen(input.appointment.startsAt, input.appointment.timeZone) : "",

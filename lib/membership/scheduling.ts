@@ -1,16 +1,22 @@
 /**
- * Manual appointment coordination. Griselda arranges visits by hand.
- * This module does not call a booking vendor and does not publish a booking URL.
+ * Consultations are booked on the public ManHair link. Studio visits are
+ * confirmed only after a real date, time, and time zone are recorded.
+ * This module does not call GlossGenius and does not send confirmations.
  */
 
-export const MANUAL_SCHEDULING = {
-  status: "manual" as const,
-  coordinator: "Griselda",
-  bookingUrl: null,
+import { PUBLIC_BOOKING_URL } from "@/lib/booking/link";
+
+export const SCHEDULING = {
+  status: "booking_link" as const,
+  coordinator: "our ManHair stylist",
+  bookingUrl: PUBLIC_BOOKING_URL,
   responseTime: null,
   summary:
-    "After payment, Griselda arranges the visit manually. This site has no booking link and does not promise how soon she will reply. A confirmation exists only after staff record a real date, time, and time zone.",
+    `Consultations are booked with our ManHair stylist through the ManHair booking link (${PUBLIC_BOOKING_URL}). A visit is confirmed only after a real date, time, and time zone are on the calendar.`,
 };
+
+/** Readiness still reports this object. The name is historical. */
+export const MANUAL_SCHEDULING = SCHEDULING;
 
 export type AppointmentState = "scheduled" | "updated" | "canceled";
 

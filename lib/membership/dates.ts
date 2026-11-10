@@ -89,7 +89,7 @@ export function billingDisclosure(start: Date, monthlyCents: number, setupCents:
     "A consultation is optional. You can join and pay before one, and a consultation request is not required to check out.",
     "You can join and pay before a consultation. If that consultation finds the membership unsuitable, the setup payment and any membership charges already collected are refunded and future billing is cancelled. The 3-month minimum does not block that refund.",
     "A failed monthly payment has 14 days before visits and new system orders are held. The membership stays open, and an order already underway is not cancelled.",
-    "Griselda arranges visits manually. This checkout has no booking link.",
+    "Consultations are booked with our ManHair stylist through the ManHair booking link at https://www.manhaironline.com/book/.",
     MERCHANT.disclosure,
   ].join(" ");
 }

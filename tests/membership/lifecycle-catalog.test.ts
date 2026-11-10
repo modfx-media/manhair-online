@@ -40,6 +40,7 @@ const FIXTURE: Record<string, string> = {
   extra_visit_price: "$225",
   event_id: "evt_123",
   memberships_url: "https://www.manhaironline.com/memberships/",
+  booking_url: "https://www.manhaironline.com/book/",
   join_url: "https://www.manhaironline.com/join/",
   billing_portal_url: "https://www.manhaironline.com/account/billing/",
   appointment_date_time: "Tue, Nov 17 at 2:30 PM PST",
