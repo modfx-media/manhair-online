@@ -119,7 +119,7 @@ export function Footer() {
           <div className="flex flex-wrap gap-3">
             <ContactChip
               icon={<PhoneIcon size={18} />}
-              label="Orange County"
+              label={CONTACT.studio.phoneNote}
               value={CONTACT.studio.phone}
               href={CONTACT.studio.phoneHref}
             />

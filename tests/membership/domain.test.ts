@@ -339,7 +339,7 @@ test("staff deny by default and member isolation", () => {
   );
   assert.equal(memberCanRead("mem_1", "mem_2"), false);
   assert.equal(memberCanRead("mem_1", "mem_1"), true);
-  assert.equal(businessIdentity({}).publicPhone, "+1 (904) 526-8500");
+  assert.equal(businessIdentity({}).publicPhone, "+1 (714) 604-6001");
   assert.equal(businessIdentity({}).supportEmail, "info@manhaironline.com");
   assert.equal(businessIdentity({}).publicAddress, "20 Heron, Lake Forest, CA 92630");
   const previousOwner = process.env.MEMBERSHIP_OWNER_EMAILS;

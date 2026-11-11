@@ -5,7 +5,7 @@ export const BUSINESS_DEFAULTS = {
   legalName: "ManHair",
   publicAddress: "20 Heron, Lake Forest, CA 92630",
   supportEmail: "info@manhaironline.com",
-  publicPhone: "+1 (904) 526-8500",
+  publicPhone: "+1 (714) 604-6001",
   replyTo: "info@manhaironline.com",
   from: "ManHair <info@manhaironline.com>",
   statementDescriptor: "MANHAIR",

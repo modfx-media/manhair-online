@@ -204,7 +204,7 @@ export function MobileNav() {
                 <PhoneIcon size={14} />
               </span>
               <span className="mh-mnav-contact-body">
-                <span className="mh-mnav-contact-label">Orange County, CA</span>
+                <span className="mh-mnav-contact-label">{CONTACT.studio.phoneNote}</span>
                 <span className="mh-mnav-contact-value">{CONTACT.studio.phone}</span>
               </span>
             </a>

@@ -40,8 +40,10 @@ export const CONTACT = {
     addressLocality: "Lake Forest",
     addressRegion: "CA",
     postalCode: "92630",
-    phone: "+1 (904) 526-8500",
-    phoneHref: "tel:+19045268500",
+    // Griselda's direct line. The GoHighLevel texting number (904) 526-8500 is not monitored.
+    phone: "+1 (714) 604-6001",
+    phoneHref: "tel:+17146046001",
+    phoneNote: "Text or call Griselda",
     region: "CA",
   },
   email: "info@manhaironline.com",

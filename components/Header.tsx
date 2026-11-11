@@ -58,7 +58,7 @@ export function Header() {
           <div className="flex items-center gap-5">
             <a href={CONTACT.studio.phoneHref} className="mh-topbar-link">
               <PhoneIcon size={12} />
-              {CONTACT.studio.label}: {CONTACT.studio.phone}
+              {CONTACT.studio.phoneNote}: {CONTACT.studio.phone}
             </a>
             <span aria-hidden="true" className="h-3 w-px bg-[color:var(--mh-border-strong)]" />
             <div className="flex items-center gap-1.5">
@@ -103,7 +103,7 @@ export function Header() {
           <a
             href={CONTACT.studio.phoneHref}
             className="mh-icon-btn !h-11 !w-11 border !border-[color:var(--mh-border-strong)]"
-            aria-label={`Call ${CONTACT.studio.phone}`}
+            aria-label={`${CONTACT.studio.phoneNote} at ${CONTACT.studio.phone}`}
           >
             <PhoneIcon size={16} />
           </a>

@@ -693,6 +693,7 @@ test("a consented text is sent from the location default number only when SMS is
   assert.match(smsCall ?? "", /"fromNumber":"\+19045268500"/);
   assert.doesNotMatch(smsCall ?? "", /"from":/);
   assert.match(smsCall ?? "", /STOP/);
+  assert.match(smsCall ?? "", /isn't monitored\. Text or call Griselda: \+1 \(714\) 604-6001/);
 });
 
 test("an active membership cannot start a second signup", async () => {

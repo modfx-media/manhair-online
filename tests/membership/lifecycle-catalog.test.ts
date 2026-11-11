@@ -23,7 +23,7 @@ const FIXTURE: Record<string, string> = {
   staff_sign_in_url: "https://www.manhaironline.com/api/membership/hub/enter/?token=one",
   hub_url: "https://www.manhaironline.com/hub/",
   support_email: "info@manhaironline.com",
-  support_phone: "+1 (904) 526-8500",
+  support_phone: "+1 (714) 604-6001",
   business_address: "20 Heron, Lake Forest, CA 92630",
   member_full_name: "Alex Rivera",
   member_email: "alex@example.com",

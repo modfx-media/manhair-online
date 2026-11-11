@@ -874,8 +874,8 @@
    "subject": null,
    "preheader": null,
    "body_html": null,
-   "body_text": "ManHair: Confirmed for {{appointment_date_time}} at {{business_address}}. Reply to change. Reply STOP to opt out.",
-   "sms_body": "ManHair: Confirmed for {{appointment_date_time}} at {{business_address}}. Reply to change. Reply STOP to opt out.",
+   "body_text": "ManHair: Confirmed for {{appointment_date_time}} at {{business_address}}. Reply STOP to opt out.",
+   "sms_body": "ManHair: Confirmed for {{appointment_date_time}} at {{business_address}}. Reply STOP to opt out.",
    "replaces": null,
    "notes": "Trigger: appointment.scheduled, sent after staff records a real date/time in the hub. No calendar-sync claim."
   },
@@ -890,8 +890,8 @@
    "subject": null,
    "preheader": null,
    "body_html": null,
-   "body_text": "ManHair: Your appointment time changed to {{appointment_date_time}}. Reply to change. Reply STOP to opt out.",
-   "sms_body": "ManHair: Your appointment time changed to {{appointment_date_time}}. Reply to change. Reply STOP to opt out.",
+   "body_text": "ManHair: Your appointment time changed to {{appointment_date_time}}. Reply STOP to opt out.",
+   "sms_body": "ManHair: Your appointment time changed to {{appointment_date_time}}. Reply STOP to opt out.",
    "replaces": null,
    "notes": "Trigger: appointment.updated. Send only when the date/time actually changed."
   },
@@ -922,8 +922,8 @@
    "subject": null,
    "preheader": null,
    "body_html": null,
-   "body_text": "ManHair: Reminder, you're set for {{appointment_date_time}} at {{business_address}}. Reply to change. Reply STOP to opt out.",
-   "sms_body": "ManHair: Reminder, you're set for {{appointment_date_time}} at {{business_address}}. Reply to change. Reply STOP to opt out.",
+   "body_text": "ManHair: Reminder, you're set for {{appointment_date_time}} at {{business_address}}. Reply STOP to opt out.",
+   "sms_body": "ManHair: Reminder, you're set for {{appointment_date_time}} at {{business_address}}. Reply STOP to opt out.",
    "replaces": null,
    "notes": "Send 24h before appointment start, quiet hours apply. Skip if appointment changed/cancelled or booked under 24h out."
   },

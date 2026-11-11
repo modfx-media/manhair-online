@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sendLocationSms } from "../../lib/membership/ghl";
+import { sendLocationSms, withUnmonitoredNote } from "../../lib/membership/ghl";
 import { lifecycleTemplate, templateMaySend } from "../../lib/membership/lifecycle-render";
 import { createMemoryStore } from "../../lib/membership/memory-store";
 import { smsWindowOpen } from "../../lib/membership/sms-window";
@@ -129,4 +129,12 @@ test("member texts still require consent even when staff texts do not", async ()
     MEMBERSHIP_LIFECYCLE_SEND: "true",
     MEMBERSHIP_LIFECYCLE_PHASE1: "true",
   }, "operational"), false);
+});
+
+test("member texts say the number is not monitored, once", () => {
+  const phone = "+1 (714) 604-6001";
+  const once = withUnmonitoredNote("ManHair: Welcome. Reply STOP to opt out.", phone);
+  assert.match(once, /This number isn't monitored\. Text or call Griselda: \+1 \(714\) 604-6001$/);
+  assert.equal(withUnmonitoredNote(once, phone), once);
+  assert.equal(withUnmonitoredNote("Hi", null), "Hi");
 });

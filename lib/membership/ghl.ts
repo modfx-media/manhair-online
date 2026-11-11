@@ -1,5 +1,6 @@
 import { GHL_MEMBERSHIP_TAGS, type MembershipGhlPayload } from "./ghl-profile";
 import { resolveGhlTarget } from "./manhair-ghl";
+import { businessIdentity } from "./business";
 import { smsWindowOpen } from "./sms-window";
 import type { AppEnv } from "./readiness";
 
@@ -295,6 +296,17 @@ async function postConversationSms(
   return { sent: true, reason: "sent" };
 }
 
+/**
+ * Member texts go out from the GoHighLevel number, which nobody monitors.
+ * Tell the member where a human answers. Staff texts do not use this.
+ */
+export function withUnmonitoredNote(message: string, phone: string | null): string {
+  const contact = phone?.trim();
+  const body = message.trim();
+  if (!contact || /isn['\u2019]t monitored/i.test(body)) return body;
+  return `${body} This number isn't monitored. Text or call Griselda: ${contact}`;
+}
+
 export async function sendLocationSms(
   env: AppEnv,
   contactId: string | null,
@@ -306,7 +318,7 @@ export async function sendLocationSms(
   if (!consented) return { sent: false, reason: "no_sms_consent" };
   if (env.MEMBERSHIP_SMS_SEND !== "true") return { sent: false, reason: "sms_disabled" };
   if (!smsWindowOpen(now)) return { sent: false, reason: "quiet_hours" };
-  return postConversationSms(env, contactId, message, fetchImpl);
+  return postConversationSms(env, contactId, withUnmonitoredNote(message, businessIdentity(env).publicPhone), fetchImpl);
 }
 
 /**
