@@ -8,7 +8,7 @@ import {
   type GoogleReviewsMeta,
 } from "./reviews";
 
-const REVIEWS_REVALIDATE_SECONDS = 60 * 60 * 24;
+const REVIEWS_REVALIDATE_SECONDS = 60 * 60 * 24 * 3;
 const PLACES_FIELD_MASK = "id,rating,userRatingCount,googleMapsUri,reviews";
 
 export type GoogleReviewsPayload = {
