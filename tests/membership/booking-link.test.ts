@@ -7,6 +7,8 @@ import {
   bookingRedirectUrl,
   consultStartPath,
   contactIdFromFormMessage,
+  iframeBreakoutHtml,
+  isIframeNavigation,
   safeBookingUrl,
 } from "../../lib/booking/link";
 import { loadMembershipSchema } from "../../lib/membership/sql-store";
@@ -77,6 +79,14 @@ test("a form submit message can carry a contact id and nothing else is trusted",
   assert.equal(contactIdFromFormMessage('{"contact_id":"Hh9qLIaLPQ8U","token":"secret"}'), "Hh9qLIaLPQ8U");
   assert.equal(contactIdFromFormMessage({ id: "not-a-contact", email: "a@b.com" }), null);
   assert.equal(contactIdFromFormMessage({ contactId: "short" }), null);
+});
+
+test("an iframe navigation to /book/ breaks out instead of framing GlossGenius", () => {
+  const headers = new Headers({ "sec-fetch-dest": "iframe" });
+  assert.equal(isIframeNavigation({ headers }), true);
+  assert.equal(isIframeNavigation({ headers: new Headers() }), false);
+  const html = iframeBreakoutHtml(DEFAULT_BOOKING_URL);
+  assert.ok(html.includes(`window.top.location.replace(${JSON.stringify(DEFAULT_BOOKING_URL)})`));
 });
 
 test("booking clicks are stored in an additive membership table and skip a missing database", async () => {

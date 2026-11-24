@@ -76,6 +76,16 @@ export function bookingRedirectUrl(env: AppEnv, params: URLSearchParams): {
   };
 }
 
+/** GlossGenius refuses to be framed. An iframe navigation must break out instead of following the 302. */
+export function isIframeNavigation(request: { headers: { get(name: string): string | null } }): boolean {
+  return request.headers.get("sec-fetch-dest") === "iframe";
+}
+
+export function iframeBreakoutHtml(url: string): string {
+  const literal = JSON.stringify(url);
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Continue to booking</title></head><body><p><a href=${literal}>Continue to booking</a></p><script>window.top.location.replace(${literal})</script></body></html>`;
+}
+
 export function bookingClickLog(input: {
   at: string;
   utm: Partial<Record<UtmKey, string>>;

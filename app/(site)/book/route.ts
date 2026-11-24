@@ -1,4 +1,4 @@
-import { bookingClickLog, bookingRedirectUrl } from "@/lib/booking/link";
+import { bookingClickLog, bookingRedirectUrl, iframeBreakoutHtml, isIframeNavigation } from "@/lib/booking/link";
 import { recordBookingClick, withTimeout } from "@/lib/booking/clicks";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +19,16 @@ export async function GET(request: Request) {
     false,
   );
   console.info(JSON.stringify(bookingClickLog({ at, utm: click.utm, contactId: click.contactId, stored })));
+  if (isIframeNavigation(request)) {
+    return new Response(iframeBreakoutHtml(click.url), {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "x-robots-tag": "noindex, nofollow",
+      },
+    });
+  }
   return redirectResponse(request);
 }
 

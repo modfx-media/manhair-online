@@ -6,6 +6,8 @@ import { bookingPageHref, contactIdFromFormMessage } from "@/lib/booking/link";
 const OPEN_EVENT = "manhair:open-booking-modal";
 const GHL_FORM_SRC =
   "https://link.manhaironline.com/widget/form/hh9qLIaLPQ8U3Lmqc9Nf";
+/** Tall enough for the opt-in, privacy line, and SMS consent before the embed reports its height. */
+const FALLBACK_FORM_HEIGHT = 1120;
 
 /** Dispatches the global event that opens the booking form modal. */
 export function openBookingModal() {
@@ -32,6 +34,17 @@ function goToBooking(contactId: string | null) {
   window.location.assign(bookingPageHref(current, contactId));
 }
 
+function readFrameHeight(data: unknown): number | null {
+  if (typeof data === "string" && data.startsWith("[iFrameSizer]")) {
+    const height = Number(data.slice("[iFrameSizer]".length).split(":")[1]);
+    return Number.isFinite(height) && height > 480 ? height : null;
+  }
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  const height = Number(record.height ?? record.iFrameHeight);
+  return Number.isFinite(height) && height > 480 ? height : null;
+}
+
 /**
  * Site-wide booking modal. The form itself is the GoHighLevel opt-in
  * so the lead is captured before anyone reaches the calendar. After
@@ -40,11 +53,12 @@ function goToBooking(contactId: string | null) {
  */
 export function BookingModal() {
   const [open, setOpen] = useState(false);
-  const firstLoadAt = useRef(0);
+  const [frameHeight, setFrameHeight] = useState(FALLBACK_FORM_HEIGHT);
+  const frameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     const handleOpen = () => {
-      firstLoadAt.current = 0;
+      setFrameHeight(FALLBACK_FORM_HEIGHT);
       setOpen(true);
     };
     window.addEventListener(OPEN_EVENT, handleOpen);
@@ -68,12 +82,38 @@ export function BookingModal() {
 
   useEffect(() => {
     if (!open) return;
+    const frame = frameRef.current;
+
+    const applyHeight = (px: number) => {
+      if (!Number.isFinite(px) || px < 480 || px > 2400) return;
+      const next = Math.round(px);
+      setFrameHeight((current) => (Math.abs(current - next) < 2 ? current : next));
+    };
+
+    const fromElement = () => {
+      const raw = frame?.style.height ?? "";
+      if (!raw.endsWith("px")) return;
+      applyHeight(Number.parseFloat(raw));
+    };
+
     const onMessage = (event: MessageEvent) => {
       if (!isTrustedOrigin(event.origin)) return;
+      const height = readFrameHeight(event.data);
+      if (height) applyHeight(height);
       if (isFormSubmitMessage(event.data)) goToBooking(contactIdFromFormMessage(event.data));
     };
+
+    const observer = frame
+      ? new MutationObserver(fromElement)
+      : null;
+    observer?.observe(frame!, { attributes: true, attributeFilter: ["style"] });
+    frame?.addEventListener("load", fromElement);
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      observer?.disconnect();
+      frame?.removeEventListener("load", fromElement);
+      window.removeEventListener("message", onMessage);
+    };
   }, [open]);
 
   if (!open) return null;
@@ -86,9 +126,9 @@ export function BookingModal() {
       className="fixed inset-0 z-[200] overflow-y-auto overscroll-contain bg-[#1A130E]/70 backdrop-blur-md"
       onClick={() => setOpen(false)}
     >
-      <div className="flex min-h-dvh items-center justify-center p-[max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))] sm:p-5">
+      <div className="flex min-h-full justify-center p-[max(0.75rem,env(safe-area-inset-top))_max(0.75rem,env(safe-area-inset-right))_max(0.75rem,env(safe-area-inset-bottom))_max(0.75rem,env(safe-area-inset-left))] sm:p-5">
         <div
-          className="relative flex w-full max-w-[26rem] max-h-[calc(100dvh-1.5rem)] flex-col overflow-hidden rounded-2xl bg-[color:var(--mh-bg)] shadow-[0_24px_64px_-16px_rgba(26,19,14,0.5)] ring-1 ring-black/10 sm:rounded-[24px]"
+          className="relative my-auto w-full max-w-[26rem] rounded-2xl bg-[color:var(--mh-bg)] shadow-[0_24px_64px_-16px_rgba(26,19,14,0.5)] ring-1 ring-black/10 sm:rounded-[24px]"
           onClick={(e) => e.stopPropagation()}
         >
           <div
@@ -114,15 +154,17 @@ export function BookingModal() {
             </h2>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 sm:px-4 sm:pb-4">
-            <div className="h-[min(38rem,calc(100dvh-11rem))] overflow-hidden rounded-[20px] bg-white ring-1 ring-[color:var(--mh-border)]">
+          <div className="px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="overflow-hidden rounded-[20px] bg-white ring-1 ring-[color:var(--mh-border)]">
               <iframe
+                ref={frameRef}
                 src={GHL_FORM_SRC}
+                scrolling="no"
                 style={{
                   width: "100%",
-                  height: "100%",
+                  height: frameHeight,
                   border: "none",
-                  borderRadius: 20,
+                  display: "block",
                 }}
                 id="inline-hh9qLIaLPQ8U3Lmqc9Nf"
                 data-layout="{'id':'INLINE'}"
@@ -139,15 +181,6 @@ export function BookingModal() {
                 data-cookie-consent="true"
                 data-cookie-consent-provider="auto"
                 title="ManHair Optin"
-                onLoad={() => {
-                  if (!firstLoadAt.current) {
-                    firstLoadAt.current = Date.now();
-                    return;
-                  }
-                  if (Date.now() - firstLoadAt.current > 1500) {
-                    goToBooking(null);
-                  }
-                }}
               />
             </div>
           </div>
